@@ -1,6 +1,6 @@
 # Storypress
 
-A hackathon web app: tell a memory, discover a relevant piece of history, and create an editable personal newspaper. Built with React and a self-contained Cloudflare Worker. Private by default.
+A web app built at AI Engineer MLH hackathon: tell a memory, discover a relevant piece of history, and create an editable personal newspaper. Built with React and a self-contained Cloudflare Worker. Private by default.
 
 ## Run
 
