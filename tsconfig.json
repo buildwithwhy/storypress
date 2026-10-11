@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","lib":["DOM","DOM.Iterable","ES2022"],"module":"ESNext","moduleResolution":"Bundler","jsx":"react-jsx","strict":true,"noEmit":true,"skipLibCheck":true,"types":["node"]},"include":["app/client.tsx","app/storypress.tsx","lib/story.ts","lib/editorial.ts","lib/providers.ts","server/api.ts","worker/main.ts","types.d.ts"]}

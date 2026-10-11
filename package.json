@@ -1,0 +1,25 @@
+{
+  "name": "storypress",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/bundle.mjs && bash scripts/build.sh && node scripts/validate-artifact.mjs",
+    "dev": "npm run build && node scripts/dev-server.mjs",
+    "start": "node scripts/dev-server.mjs",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "lucide-react": "0.523.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "esbuild": "0.27.4",
+    "typescript": "6.0.3",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@types/node": "22.19.19"
+  }
+}
