@@ -48,6 +48,20 @@ try {
   })];
   assert.deepEqual((await (await handleApi(request('interview'), env)).json()).researchSuggestion, suggestion);
   assert.equal(queue.length, 0, 'Interview suggestions must not automatically search');
+  // A selected story mode must reach both model steps, including legacy IDs.
+  for (const [occasion, label] of [['life', 'A life memory'], ['wedding', 'A love story'], ['graduation', 'A new chapter']]) {
+    for (const action of ['interview', 'write']) {
+      const output = action === 'interview' ? { question: 'Which moment would you like to develop?', readyToWrite: false } : { headline: 'A remembered moment', standfirst: 'A fictional fixture.', paragraphs: ['I moved from California to London.'], quote: '' };
+      queue = [model(action, output, body => {
+        const context = JSON.parse(body.contents[0].parts[0].text);
+        assert.equal(context.storyFocus.label, label);
+        assert.ok(context.storyFocus.interview && context.storyFocus.writing);
+        if (action === 'write') assert.ok(context.transcript.every(turn => turn.role === 'user'), 'Mode focus must not allow interviewer suggestions into testimony');
+      })];
+      assert.equal((await handleApi(request(action, { story: { ...story, occasion } }), env)).status, 200);
+      assert.equal(queue.length, 0);
+    }
+  }
   queue = [model('interview', { question: 'Why did you decide to move?', readyToWrite: false, researchSuggestion: null })];
   assert.equal((await (await handleApi(request('interview'), env)).json()).researchSuggestion, null);
   queue = [model('interview', { question: 'Why did you decide to move?', researchSuggestion: { query: 'q'.repeat(221), reason: 'Too long.' } })];

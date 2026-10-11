@@ -5,6 +5,7 @@ import { interviewer, researcher, contextualEditor, ghostwriter, photoReader } f
 import { createProviders, ServiceError } from "../lib/providers";
 import {owner,reserveAi,type Bindings} from './storage';
 import {photoPart} from '../lib/photo';
+import {storyFocus} from '../lib/story-modes';
 export async function handleApi(request: Request, env: Bindings) {
  const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson}=createProviders(env as Record<string,string|undefined>);
  if(request.method !== "POST"&&request.method !== "GET") return new Response("Method not allowed",{status:405});
@@ -26,7 +27,7 @@ export async function handleApi(request: Request, env: Bindings) {
     const action = z.enum(["interview", "discover", "write", "photo", "illustrate"]).parse(body.action);
     const story = storySchema.parse(body.story);
     // Assistant questions can contain visual guesses. Only narrator turns reach research/writing.
-    const context = JSON.stringify({ name: story.name, language: story.language, occasion: story.occasion, transcript: action==='interview'||action==='photo'?story.turns:story.turns.filter(t=>t.role==='user'), historicalContext: story.sources.filter(s => s.selected), ...(action==='interview'?{previousResearchSuggestions:story.researchQueries||[]}:{}) , ...(action==='interview'&&story.photoAnalysis?{unverifiedPhotoClues:{visibleDetails:story.photoAnalysis.visibleDetails,possibleContext:story.photoAnalysis.possibleContext}}:{}) });
+    const context = JSON.stringify({ name: story.name, language: story.language, occasion: story.occasion, ...(action==='interview'||action==='write'?{storyFocus:storyFocus[story.occasion]}:{}), transcript: action==='interview'||action==='photo'?story.turns:story.turns.filter(t=>t.role==='user'), historicalContext: story.sources.filter(s => s.selected), ...(action==='interview'?{previousResearchSuggestions:story.researchQueries||[]}:{}) , ...(action==='interview'&&story.photoAnalysis?{unverifiedPhotoClues:{visibleDetails:story.photoAnalysis.visibleDetails,possibleContext:story.photoAnalysis.possibleContext}}:{}) });
     if(context.length>60000)throw new ServiceError("This interview is getting long. Save it and begin a new chapter before another AI step.",400);
     if(!modelConfigured())throw new ServiceError("The story editor is not connected yet. Your words are kept.",503);
     if(action==='discover'&&!setting('NIMBLE_API_KEY'))throw new ServiceError("Historical search is not connected yet. You can continue with your own memories.",503);

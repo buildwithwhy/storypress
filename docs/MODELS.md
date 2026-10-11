@@ -16,7 +16,7 @@ Per-task routing is available, but **no task default has changed**. Resolution i
 | Recorded-answer transcription | `GEMINI_TRANSCRIPTION_MODEL` |
 | Research planning and source editing | `GEMINI_RESEARCH_MODEL` |
 
-Keep `GEMINI_BACKEND=vertex` to retain the Cloud billing route. AI Studio remains a separate supported text backend; Google Cloud's $300 welcome credit does not cover its Developer API. Keys belong only in server environment settings. The frontend never selects arbitrary models.
+Set `GEMINI_BACKEND=vertex` for the Google Cloud billing route. AI Studio is a separate supported text backend with separate billing; Google Cloud welcome credits do not cover its Developer API. Keys belong only in server environment settings. The frontend never selects arbitrary models.
 
 ## Economical next experiments
 

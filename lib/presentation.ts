@@ -1,4 +1,5 @@
-import { firstQuestion, initialStory, sampleMemory, samplePaper, sampleSource, type Paper, type Source, type Story } from "./story";
+import { initialStory, sampleMemory, samplePaper, sampleSource, type Paper, type Source, type Story } from "./story";
+import { openingQuestion } from './story-modes';
 
 type SampleEdition = { name: string; memory: string; followup: string; paper: Paper; source: Source };
 export const sampleEditions: Record<Story["language"], SampleEdition> = {
@@ -31,7 +32,7 @@ export const sampleEditions: Record<Story["language"], SampleEdition> = {
 
 export function createSampleStory(language: Story["language"]): Story {
   const sample = sampleEditions[language];
-  return { ...initialStory, language, name: sample.name, sample: true, turns: [{ role: "assistant", text: firstQuestion[language] }, { role: "user", text: sample.memory }, { role: "assistant", text: sample.followup }] };
+  return { ...initialStory, language, name: sample.name, sample: true, turns: [{ role: "assistant", text: openingQuestion({language,occasion:'life'}) }, { role: "user", text: sample.memory }, { role: "assistant", text: sample.followup }] };
 }
 
 export const presentation = {
