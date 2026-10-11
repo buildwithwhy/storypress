@@ -4,7 +4,7 @@ import {editionSnapshot, editionHtml} from '../lib/edition';
 import {ServiceError} from '../lib/providers';
 export type Bindings=Record<string,string|undefined>;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
-export function configured(env:Bindings){return !!(env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY&&env.SUPABASE_SERVICE_ROLE_KEY);}
+export function configured(env:Bindings){return !!(env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY&&env.SUPABASE_SECRET_KEY);}
 function supabase(env:Bindings){if(!configured(env))throw new ServiceError('Account saving is not connected yet. Your device draft is kept.',503);return env.SUPABASE_URL!.replace(/\/$/,'');}
 export async function identity(request:Request,env:Bindings){
  if(!env.SUPABASE_URL){const id=request.headers.get('oai-authenticated-user-id');return id?{id,email:''}:null;}
@@ -14,8 +14,9 @@ export async function identity(request:Request,env:Bindings){
  const user=await response.json() as {id?:string;email?:string};return user.id&&z.string().uuid().safeParse(user.id).success?{id:user.id,email:user.email||''}:null;
 }
 export async function owner(request:Request,env:Bindings){const user=await identity(request,env);if(!user)throw new ServiceError('Sign in to use AI or save your stories. You can still explore the sample.',401);return user.id;}
+// Modern secret keys belong only in apikey; Authorization is reserved for user JWTs.
 async function db(env:Bindings,path:string,method='GET',body?:unknown){
- const response=await fetch(`${supabase(env)}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY!,Authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY!}`,'Content-Type':'application/json',Prefer:'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+ const response=await fetch(`${supabase(env)}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SECRET_KEY!,'User-Agent':'Storypress-Server/1.0','Content-Type':'application/json',Prefer:'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
  if(!response.ok)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
  return response.status===204?null:response.json();
 }

@@ -5,8 +5,8 @@ Use a dedicated Supabase project for Storypress. The React site and its Worker r
 1. Create the project and apply `supabase/migrations/202610110001_storypress.sql` in its SQL editor. The migration creates new namespaced tables, RLS and one server-only quota function. It is a first-run migration, not a repeatable reset. Never run it against unrelated production tables.
 2. Fill the ignored `.dev.vars` file and the host's server environment with:
    - `SUPABASE_URL`: the project HTTPS URL.
-   - `SUPABASE_PUBLISHABLE_KEY`: its publishable key (or legacy anon key).
-   - `SUPABASE_SERVICE_ROLE_KEY`: legacy service_role JWT; server secret, never browser code.
+   - `SUPABASE_PUBLISHABLE_KEY`: its publishable key beginning with `sb_publishable_`.
+   - `SUPABASE_SECRET_KEY`: its secret key beginning with `sb_secret_`; server-only, never browser code. Do not use a legacy JWT key.
    - `STORYPRESS_PUBLIC_SHARING=false`: keep false while the frontend is owner-private.
 3. Enable email sign-in. Leave the default magic-link template in place. Set Auth Site URL to the frontend URL and add the exact localhost and production redirect URLs, each ending in `/`. Configure production SMTP before inviting external users; Supabase's default email sender is limited. Never commit SMTP credentials.
 4. Restart the local server, sign in through **My stories**, save a fictional story, reload and reopen it. Sign into a second test account and verify the first account's story is inaccessible. Run the migration/integration checks against this actual project before opening the app publicly. Automated tests currently mock Supabase responses and do not prove a live database deployment.
@@ -15,7 +15,7 @@ Use a dedicated Supabase project for Storypress. The React site and its Worker r
 
 ## Privacy and account behavior
 
-All stories start private. Worker requests verify Supabase tokens against `/auth/v1/user`; client user IDs are never trusted. Server database requests include the verified owner ID. RLS additionally restricts authenticated direct reads to the owner, and anonymous reads and all direct client writes are denied. The service-role secret stays in server environment variables.
+All stories start private. Worker requests verify Supabase tokens against `/auth/v1/user`; client user IDs are never trusted. Server database requests include the verified owner ID. RLS additionally restricts authenticated direct reads to the owner, and anonymous reads and all direct client writes are denied. The secret key stays in server environment variables and travels only in the `apikey` header. A signed-in user’s JWT travels in `Authorization` when verifying that user. The modern secret key still resolves to the Postgres `service_role` role, so the SQL grants keep that role name.
 
 Sharing creates a separate approved snapshot containing only the newspaper, photograph/caption and selected published source details. Interview turns, unfinished text and researcher questions are removed. Public routes fetch only this edition field and return no-store/noindex headers. Anyone holding the URL can read it. Link revocation cannot recall downloaded copies.
 
@@ -38,3 +38,12 @@ Before Supabase is configured, the existing owner-private pilot continues to use
 `node scripts/check-voice.mjs`
 
 `node scripts/check-sharing.mjs`
+
+## Why the server key is used
+
+The publishable key plus a user session is enough for basic Supabase sign-in and operations allowed by RLS. This backend deliberately reserves story writes, publication snapshots and quota mutations for the trusted server. Its anonymous share route reads only the approved edition selected by a valid share token. These operations use `SUPABASE_SECRET_KEY` after the app’s authorization checks (or capability-token check for a shared edition).
+
+A different design could expose narrowly scoped database functions and use only user/anonymous credentials, but that is not the current implementation. Do not simply remove the server key or loosen table permissions. Secret keys bypass RLS; owner filters, approval checks and server-side quotas remain necessary.
+
+Current key guidance: https://supabase.com/docs/guides/getting-started/api-keys
+Migration guidance: https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys

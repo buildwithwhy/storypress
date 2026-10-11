@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import worker from '../dist/server/index.js';
 const user='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
-const env={SUPABASE_URL:'https://storypress-test.supabase.co',SUPABASE_PUBLISHABLE_KEY:'public-test-key',SUPABASE_SERVICE_ROLE_KEY:'private-service-key',STORYPRESS_PUBLIC_SHARING:'true',GEMINI_API_KEY:'provider-test-key'};
+const env={SUPABASE_URL:'https://storypress-test.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test-only',SUPABASE_SECRET_KEY:'sb_secret_test-only',STORYPRESS_PUBLIC_SHARING:'true',GEMINI_API_KEY:'provider-test-key'};
 const token='a'.repeat(64),base='https://story.test';
 const story={name:'Test narrator',language:'en',occasion:'life',turns:[{role:'user',text:'PRIVATE_INTERVIEW_SENTINEL'}],draft:'PRIVATE_DRAFT_SENTINEL',sources:[],paper:{headline:'A <script>alert(1)</script> memory',standfirst:'A family story.',paragraphs:['A remembered afternoon.'],quote:''},approved:true,sample:false};
 const req=(path,body,auth=true)=>new Request(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Origin:base,...(auth?{Authorization:'Bearer test-user-token'}:{'oai-authenticated-user-id':'spoofed'})},body:body?JSON.stringify(body):undefined});
 const original=globalThis.fetch;let queue=[];
-globalThis.fetch=async(url,init)=>{const next=queue.shift();assert.ok(next,'Unexpected upstream call');next.check?.(String(url),init);return Response.json(next.data,{status:next.status||200});};
+globalThis.fetch=async(url,init)=>{if(String(url).includes('/rest/v1/')){assert.equal(init.headers.apikey,env.SUPABASE_SECRET_KEY);assert.equal(init.headers.Authorization,undefined,'Secret key must not be sent as a bearer JWT');assert.equal(init.headers['User-Agent'],'Storypress-Server/1.0');}const next=queue.shift();assert.ok(next,'Unexpected upstream call');next.check?.(String(url),init);return Response.json(next.data,{status:next.status||200});};
 const authenticated=()=>({data:{id:user,email:'fictional@example.invalid'},check:(url,init)=>{assert.ok(url.endsWith('/auth/v1/user'));assert.equal(init.headers.Authorization,'Bearer test-user-token');assert.equal(init.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);}});
 assert.equal((await worker.fetch(req('/api/stories',undefined,false),env)).status,401,'Sites header must not bypass Supabase authentication');
 queue=[{status:401,data:{error:'invalid'}}];assert.equal((await worker.fetch(req('/api/stories'),env)).status,401);
@@ -20,6 +20,10 @@ queue=[{data:[],check:url=>{assert.ok(url.includes('select=edition'));assert.ok(
 queue=[{data:[{edition:{...story,turns:[],draft:undefined}}]}];const edition=await worker.fetch(req('/s/'+token,undefined,false),env);assert.equal(edition.status,200);assert.equal(edition.headers.get('Cache-Control'),'no-store');const html=await edition.text();assert.ok(!html.includes('PRIVATE_'));assert.ok(!html.includes('<script>alert(1)</script>'));assert.ok(html.includes('&lt;script&gt;'));
 assert.equal((await worker.fetch(req('/s/'+token),{...env,STORYPRESS_PUBLIC_SHARING:'false'})).status,404);
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
-queue=[authenticated()];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes('private-service-key'));assert.ok(!config.includes('provider-test-key'));
+queue=[authenticated()];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));
+assert.equal(queue.length,0);
+const incomplete={...env,SUPABASE_SECRET_KEY:''};
+const account=await(await worker.fetch(req('/api/account',undefined,false),incomplete)).json();assert.equal(account.storage,false);assert.equal(account.supabase,null);
+assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),incomplete)).status,503,'Missing server key must fail closed before paid model calls');
 assert.equal(queue.length,0);globalThis.fetch=original;
 console.log('Passed: verified account identity, owner filters, stale-save rejection, approval gating, private-note exclusion, escaped HTML, link revocation, no-store responses, server-only keys and quota refusal. Supabase responses mocked; live database activation still required.');
