@@ -3,10 +3,12 @@ import {storySchema,type Story} from './story';
 export const DRAFT_PREFIX='storypress-draft-v1';
 export const GUEST_DRAFT_KEY=DRAFT_PREFIX+':guest';
 export const HANDOFF_KEY='storypress-sign-in-handoff-v1';
+export const GOOGLE_HANDOFF_KEY='storypress-google-handoff-v1';
+export const GOOGLE_HANDOFF_TTL=15*60*1000;
 export const HANDOFF_TTL=24*60*60*1000;
 type Store=Pick<Storage,'getItem'|'setItem'|'removeItem'>;
 export type DraftSnapshot={story:Story;saved:{id:string;revision:number;share_token?:string|null}|null;stage?:'home'|'tell'|'discover'|'paper';mode?:'type'|'dictate'|'voice'};
-type Intent={id:string;email:string;createdAt:number;status:'pending'|'consumed';userId?:string};
+type Intent={id:string;email:string;provider?:'google';createdAt:number;status:'pending'|'consumed';userId?:string};
 export type DraftLoad={key:string;snapshot:DraftSnapshot|null;resumed:boolean;failed:boolean};
 export const accountDraftKey=(id:string)=>DRAFT_PREFIX+':'+id;
 const activeKey=(id:string)=>DRAFT_PREFIX+':active:'+id;
@@ -35,14 +37,25 @@ export function prepareGuestHandoff(store:Store,email:string,snapshot:DraftSnaps
  store.setItem(HANDOFF_KEY,JSON.stringify({id,email:normalized,createdAt:now,status:'pending'} satisfies Intent));
  return ()=>{const current=readIntent(store);if(current?.id===id&&current.status==='pending')store.removeItem(HANDOFF_KEY);};
 }
+// Google chooses the email after leaving this page. Bind the draft transfer to
+// the tab that explicitly started OAuth, then bind it to the returned account.
+export function prepareGoogleHandoff(store:Store,tabStore:Store,snapshot:DraftSnapshot,now=Date.now(),id=crypto.randomUUID()){
+ writeDraft(store,GUEST_DRAFT_KEY,{...snapshot,saved:null});
+ tabStore.setItem(GOOGLE_HANDOFF_KEY,id);
+ store.setItem(HANDOFF_KEY,JSON.stringify({id,email:'',provider:'google',createdAt:now,status:'pending'} satisfies Intent));
+ return ()=>{const current=readIntent(store);if(current?.id===id&&current.status==='pending')store.removeItem(HANDOFF_KEY);if(tabStore.getItem(GOOGLE_HANDOFF_KEY)===id)tabStore.removeItem(GOOGLE_HANDOFF_KEY);};
+}
 function preferredDraft(store:Store,userId:string):DraftLoad{
  const base=accountDraftKey(userId);let key=base;
  try{const active=store.getItem(activeKey(userId));if(active?.startsWith(base+':handoff:')&&readDraft(store,active))key=active;}catch{}
  return {key,snapshot:readDraft(store,key),resumed:false,failed:false};
 }
-export function resumeGuestHandoff(store:Store,user:{id:string;email?:string},now=Date.now()):DraftLoad{
+export function resumeGuestHandoff(store:Store,user:{id:string;email?:string},now=Date.now(),tabStore?:Store):DraftLoad{
  const fallback=preferredDraft(store,user.id),intent=readIntent(store);
- if(!intent||normalizeEmail(user.email||'')!==intent.email||now<intent.createdAt||now-intent.createdAt>HANDOFF_TTL)return fallback;
+ if(!intent||now<intent.createdAt||now-intent.createdAt>(intent.provider==='google'?GOOGLE_HANDOFF_TTL:HANDOFF_TTL))return fallback;
+ if(intent.provider==='google'){
+  if(intent.status==='pending'&&tabStore?.getItem(GOOGLE_HANDOFF_KEY)!==intent.id)return fallback;
+ }else if(normalizeEmail(user.email||'')!==intent.email)return fallback;
  const key=accountDraftKey(user.id)+':handoff:'+intent.id;
  if(intent.status==='consumed')return intent.userId===user.id&&fallback.key===key?{...fallback,resumed:true}:fallback;
  const guest=readDraft(store,GUEST_DRAFT_KEY);if(!guest)return fallback;

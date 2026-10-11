@@ -8,7 +8,7 @@ Use a dedicated Supabase project for Storypress. The React site and its Worker r
    - `SUPABASE_PUBLISHABLE_KEY`: its publishable key beginning with `sb_publishable_`.
    - `SUPABASE_SECRET_KEY`: its secret key beginning with `sb_secret_`; server-only, never browser code. Do not use a legacy JWT key.
    - `STORYPRESS_PUBLIC_SHARING=false`: keep false while the frontend is owner-private.
-3. Enable email sign-in. Leave the default magic-link template in place. Set Auth Site URL to the frontend URL and add the exact localhost and production redirect URLs, each ending in `/`. Configure production SMTP before inviting external users; Supabase's default email sender is limited. Never commit SMTP credentials.
+3. Configure Google sign-in as described below. Email links remain available as a fallback; enable email sign-in. Leave the default magic-link template in place. Set Auth Site URL to the frontend URL and add the exact localhost and production redirect URLs, each ending in `/`. Configure production SMTP before inviting external users; Supabase's default email sender is limited. Never commit SMTP credentials.
 4. Restart the local server, sign in through **My stories**, save a fictional story, reload and reopen it. Sign into a second test account and verify the first account's story is inaccessible. Run the migration/integration checks against this actual project before opening the app publicly. The configured Storypress project passed live migration, identity, isolation, sharing and quota checks on October 11, 2026; rerun these checks when changing projects.
 5. Once the owner explicitly chooses to open the frontend to visitors, enable its public audience and set `STORYPRESS_PUBLIC_SHARING=true`. A private frontend's login gate also blocks its `/s/...` links. Do not advertise anonymous sharing before this is verified in a signed-out browser.
 6. Approve a fictional newspaper, create its link, read it signed out, then turn the link off and verify the same URL becomes unavailable. Saving edits privately leaves the shared edition unchanged; **Update shared edition** explicitly replaces it. A revoked link is discarded, so creating another link later produces a new token.
@@ -47,3 +47,18 @@ A different design could expose narrowly scoped database functions and use only 
 
 Current key guidance: https://supabase.com/docs/guides/getting-started/api-keys
 Migration guidance: https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys
+
+## Google sign-in
+
+The sign-in panel offers **Continue with Google** in English, Chinese and Spanish. It uses Supabase OAuth, returns to the same frontend origin and preserves a draft in the originating browser tab. A pending Google draft transfer expires after 15 minutes and becomes bound to the authenticated account after it is consumed.
+
+1. In Google Cloud project `storyteller-511316`, configure Google Auth Platform branding and audience for Storypress, then create a **Web application** OAuth client. For public access, use an external audience in production; testing mode only permits listed test users.
+2. Add these authorized JavaScript origins:
+   - `https://storypress-app.vercel.app`
+   - `https://storypress-memories.coppermango10.chatgpt.site`
+3. Add this authorized redirect URI: `https://ciciuohgtvsdkeakfiht.supabase.co/auth/v1/callback`.
+4. In the Storypress Supabase project, open **Authentication → Sign In / Providers → Google**. Enable Google and enter the OAuth Client ID and Client Secret there. Leave nonce checks enabled and “Allow users without an email” disabled. These credentials belong in Supabase, not Vercel or frontend source. A Gemini/Vertex API key is not an OAuth client credential.
+5. Ensure Supabase's redirect allowlist contains both frontend origins with a trailing `/`. The app uses the origin where sign-in started.
+6. Verify a signed-out Google login, return to the same host, preservation of unfinished text/photo, and access to that user's own stories. Google login does not send a Supabase login email; the email-link fallback still uses the project's email allowance.
+
+Reference: https://supabase.com/docs/guides/auth/social-login/auth-google
