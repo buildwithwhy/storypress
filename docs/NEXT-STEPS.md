@@ -1,9 +1,9 @@
 # Connect and test Storypress
 
-Continue the project in this folder. Product context: a very simple interface for older and nontechnical people to tell stories in their language. Thoughtful interviewing Skills should help them recall specific scenes. Nimble optionally finds a relevant historical item that may unlock another memory. The result is an editable personal newspaper with testimony separate from sourced context. ValueCompass is out of scope for today.
+Continue the project in this folder. Product context: a very simple interface for older and nontechnical people to tell stories in their language. Thoughtful interviewing prompts should help them recall specific scenes. Nimble optionally finds a relevant historical item that may unlock another memory. The result is an editable personal newspaper with testimony separate from sourced context. ValueCompass is out of scope for today.
 
 ## Already built
-React client with English/Chinese/Spanish selection, guided or AI interview, recording/transcription, photo upload, local drafts, curated sample, historical recognition and inclusion, newspaper editing/review/printing, original transcript and JSON export. Runtime editorial Skills have primary-source research notes. A Cloudflare Worker supplies same-origin APIs and static assets. `worker/index.js` is bundled; source is in `app`, `lib`, `server`, and `worker/main.ts`.
+React client with English/Chinese/Spanish selection, guided or AI interview, recording/transcription, photo upload, local drafts, curated sample, historical recognition and inclusion, newspaper editing/review/printing, original transcript and JSON export. Editorial workflow prompts have primary-source research notes. A Cloudflare Worker supplies same-origin APIs and static assets. `worker/index.js` is bundled; source is in `app`, `lib`, `server`, and `worker/main.ts`.
 
 ## Do next
 1. Run `npm install` where package-network access works, then `npm run dev` (local URL 127.0.0.1:4173). The bundled Worker also runs via `npm start` with no package download if dist is present.
@@ -17,4 +17,9 @@ React client with English/Chinese/Spanish selection, guided or AI interview, rec
 Does a real archival finding improve the conversation? Does the finished story sound like the narrator? Can someone unfamiliar with AI complete the flow without explanation? Which additional languages deserve careful localization? Do not add books, comics, public contribution links or Sentry until the core loop works with actual users.
 
 ## Known limits
-No cross-device account storage or public family invitations; private first version. Photos are used in layout, not analyzed. Recordings need downloading before refresh; drafts persist locally. Home previews, sample editions and newspaper presentation support English, Chinese and Spanish; some interview and discovery explanations remain English. Exact-quote/source-URL checks cannot validate all factual content. Narrator review remains essential. No Sentry integration yet.
+Supabase account saving and revocable edition links are implemented but require project configuration and live verification; see SUPABASE-SETUP.md. The frontend remains owner-private. Photos are used in layout, not analyzed. Recordings need downloading before refresh; drafts persist locally. Home previews, sample editions and newspaper presentation support English, Chinese and Spanish; some interview and discovery explanations remain English. Exact-quote/source-URL checks cannot validate all factual content. Narrator review remains essential. No Sentry integration yet.
+
+## Mobile and voice update
+Implemented three input modes: type (default), record-to-text with review, and voice interview with automatic spoken follow-ups. All modes preserve the same draft. Mobile layouts use larger tap targets and readable fields; Chinese/Spanish interview controls are localized. Speech output uses browser voices, with replay and a visible fallback when unavailable. Users explicitly tap to start/finish a recording; optional pre-submit review and latest-answer corrections remain available.
+
+Next real-device test: open in Safari on iPhone or Chrome on Android; select the desired language; try each mode; allow the microphone only when prompted by a tap; test pause/replay, a correction, a background interruption, and the two-minute limit. Compare Gemini TTS and ElevenLabs only after evaluating actual voice quality, response delay and cost. The deployment is still owner-private; sharing requires a separate audience decision.

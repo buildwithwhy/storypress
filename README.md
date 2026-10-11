@@ -31,15 +31,15 @@ Without keys, guided writing preserves the person's exact input. The clearly lab
 ## First version
 
 - English, Chinese and Spanish input/UI; Gemini questions and drafts use the selected language. The home preview, sample newspaper and newspaper presentation are localized, including Chinese newspaper typography. Some interview and discovery explanations remain English.
-- Voice recording in browsers with MediaRecorder; review transcript before submitting. Original recording can be downloaded before refreshing. Two-minute recording limit.
+- Three independent input choices share one story: typing (default), record-to-text (review then submit), and voice interview (record an answer, finish, then hear the next question automatically). Voice mode also offers review before each answer, pause/replay, and correction of the latest transcript. Browser speech synthesis reads questions in the selected language; Gemini transcribes and generates follow-ups. Playback support and voice quality depend on the device and language. Recordings are limited to two minutes per answer; the latest recording can be downloaded before recording another or refreshing. The microphone opens only on an explicit tap, and stops on finish, cancel, navigation, or hiding the page.
 - Photograph upload, local draft persistence, original-text export and full-story JSON export.
 - Candidate historical discoveries with citations, recognition feedback and explicit selection.
 - Editable newspaper; narrator review enables browser Print / Save as PDF.
-- Four runtime editorial Skills in `lib/editorial.ts`, with source notes in `docs/EDITORIAL-SKILLS.md`.
+- Four specialized editorial workflow prompts in `lib/editorial.ts`, with source notes in `docs/EDITORIAL-SKILLS.md`.
 
 ## Boundaries and next steps
 
-Drafts and photographs currently live in browser localStorage, not cross-device storage. Recordings are temporary in memory. Photos are added to the newspaper but are not analyzed by the model. The newspaper can be exported; hosting remains owner-private until explicitly changed. No public contribution links, cloud archive, comic generation, or book production yet. Sentry is not integrated. Live Gemini and Nimble connection checks passed; the complete narrator and voice flow still needs testing. Editorial prompts are safeguards, not proof of fidelity: test with narrators and bilingual readers.
+Drafts and photographs currently live in browser localStorage, not cross-device storage. Recordings are temporary in memory. Photos are added to the newspaper but are not analyzed by the model. The newspaper can be exported; hosting remains owner-private until explicitly changed. No public contribution links, cloud archive, comic generation, or book production yet. Sentry is not integrated. Live Gemini and Nimble connection checks passed. Phone layouts and mode switching are checked in a browser viewport; actual iPhone/Android microphone, audio playback, permissions, and narrator experience still need testing. Editorial prompts are safeguards, not proof of fidelity: test with narrators and bilingual readers.
 
 ## Demo
 
@@ -54,3 +54,11 @@ Build and TypeScript checks passed. `node scripts/check-worker.mjs` covers authe
 Keep project code, editorial prompts, public-source references and fictional demo content in the private source repository. API keys, local environment files, recordings, photographs and exported personal stories are not project source and must not be committed. Future approved code updates should also be pushed to the connected GitHub repository once it is available; the Site source and deployment remain managed by the Sites workflow.
 
 The supplied `Storypress-preview.html` is a standalone interactive preview. Open it directly in your browser; it runs the sample and guided writing mode, without a server. Full AI features require running the app server and configuring the keys.
+
+`node scripts/check-voice.mjs` checks recording cleanup, cancellation during permissions/transcription, empty audio, microphone denial, language selection and interrupted speech with mocked browser devices. These checks do not establish physical-device compatibility.
+
+## Supabase accounts and sharing
+
+Supabase Auth and Postgres integration is prepared. Follow [the setup guide](docs/SUPABASE-SETUP.md) to activate it. The current private pilot has no Supabase connection yet. Accounts use an emailed sign-in link; stories are saved privately with owner checks and revision conflict protection. An approved edition can have a revocable, unlisted link once the frontend is opened and sharing enabled. Shared snapshots exclude interview notes and unfinished text. Downloads and supported native file sharing work without a Supabase account; downloaded HTML includes print/PDF controls.
+
+Durable AI request allowances activate with Supabase; no payment collection is enabled. Run `node scripts/check-sharing.mjs` for mocked identity, ownership, sharing, escaping and quota-refusal checks. Live Supabase/RLS and two-account tests are still required after configuration.

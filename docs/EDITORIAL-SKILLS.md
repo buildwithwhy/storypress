@@ -1,6 +1,6 @@
-# Storypress application Skills
+# Storypress editorial workflow prompts
 
-Runtime guides are compiled in lib/editorial.ts. These are app components, not personal coding-assistant extensions. Each has a narrow role and JSON output contract. The application routes tasks, validates responses, retains original words and keeps historical context separate.
+Specialized system prompts are compiled in `lib/editorial.ts`. Each has a narrow role and JSON output contract. These are prompt-based stages in a fixed application workflow, not autonomous agents, installable Skills, or fine-tuned models. The older filename is retained for existing references. The application routes tasks, validates responses, retains original words and keeps historical context separate.
 
 ## Interviewing
 One open question at a time. Follow concrete details, allow uncertainty, ask about firsthand experience, avoid leading prompts, and let the narrator skip, correct or stop. Respond in their preferred language. Example: “You mentioned the back room. What do you remember about being there?”
@@ -18,3 +18,14 @@ Preserve voice, meaning, uncertainty and cultural expressions. Use supplied deta
 - https://www.loc.gov/static/programs/teachers/about-this-program/teaching-with-primary-sources-partner-program/documents/critical-thinking.pdf
 
 These rules are our operational adaptation; the institutions do not endorse this app. Prompts reduce risk but cannot guarantee factual fidelity. Evaluate with actual narrators and bilingual readers.
+
+## What the evidence supports
+The Oral History Association guidelines support open questions, attentive follow-ups, respect for the narrator's language and perspective, and narrator review. The Smithsonian interview guide also recommends one simple question at a time, avoiding leading questions, adapting to the person's responses, and allowing pauses. Sources were revisited on 2026-10-11.
+
+These are a starting point informed by professional practice, not an exhaustive review of interviewing or narrative craft and not a validated optimum. We have not fine-tuned Gemini. Changing the prompt, examples, response schema, or workflow is application tuning. The current writing prompt emphasizes fidelity; literary quality still needs testing and improvement.
+
+## How to tune with narrators
+Keep the original input and compare one change at a time. Try a short answer, a vivid scene, an uncertain date, a later correction, a skipped topic, and a mixed-language answer. Assess whether the interviewer follows meaningful details without leading, respects corrections and uncertainty, and avoids repetitive questions. Assess whether the newspaper preserves voice and meaning without invented details. Use bilingual review for Chinese and Spanish. A fictional fixture or passing schema check does not validate human experience.
+
+## Voice delivery
+The same interviewer prompt serves typing, record-to-text, and voice interview modes. Gemini transcribes recordings and generates follow-ups. The browser's speech synthesis reads those follow-ups; it is not Gemini speech generation. Voices depend on device/language support. Voice input is explicitly started and stopped, with optional review before sending and correction of the latest answer. No continuously open microphone or silence cutoff is used.
