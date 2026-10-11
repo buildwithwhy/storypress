@@ -1,32 +1,48 @@
 import { z } from "zod";
 type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
+export type ModelTask = "interview" | "write" | "photo" | "transcribe" | "research";
+const DEFAULT_MODEL = "gemini-3.8-flash";
+const taskModelSettings: Record<ModelTask, string> = {
+  interview: "GEMINI_INTERVIEW_MODEL",
+  write: "GEMINI_WRITING_MODEL",
+  photo: "GEMINI_PHOTO_MODEL",
+  transcribe: "GEMINI_TRANSCRIPTION_MODEL",
+  research: "GEMINI_RESEARCH_MODEL",
+};
 export function createProviders(env: Record<string, string | undefined>) {
 function setting(key: string): string { return env[key] || ""; }
 function backend(): string { return setting("GEMINI_BACKEND") || "ai-studio"; }
+function validateModel(model: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(model)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
+  return model;
+}
+function modelFor(task: ModelTask): string {
+  return validateModel(setting(taskModelSettings[task]) || setting("GEMINI_MODEL") || DEFAULT_MODEL);
+}
 function modelConfigured(): boolean {
   if (backend() === "vertex") return !!setting("VERTEX_API_KEY") && !!setting("GOOGLE_CLOUD_PROJECT");
   return backend() === "ai-studio" && !!setting("GEMINI_API_KEY");
 }
 
-async function gemini(system: string, input: ModelInput, json = true): Promise<string> {
-  if (backend() === "vertex") return vertex(system, input, json);
+async function gemini(system: string, input: ModelInput, json = true, model?: string): Promise<string> {
+  const selectedModel = validateModel(model ?? (setting("GEMINI_MODEL") || DEFAULT_MODEL));
+  if (backend() === "vertex") return vertex(system, input, json, selectedModel);
   if (backend() !== "ai-studio") throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
   const key = setting("GEMINI_API_KEY");
   if (!key) throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.", 503);
-  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: setting("GEMINI_MODEL") || "gemini-3.8-flash", system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false }), signal: AbortSignal.timeout(55000) });
+  const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false }), signal: AbortSignal.timeout(55000) });
   if (!res.ok) throw providerError(res.status);
   const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] };
   const output = data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
 }
-async function vertex(system: string, input: ModelInput, json: boolean): Promise<string> {
+async function vertex(system: string, input: ModelInput, json: boolean, model: string): Promise<string> {
   const key = setting("VERTEX_API_KEY");
   const project = setting("GOOGLE_CLOUD_PROJECT");
   const location = setting("GOOGLE_CLOUD_LOCATION") || "global";
-  const model = setting("GEMINI_MODEL") || "gemini-3.8-flash";
   if (!key || !project) throw new ServiceError("The story editor's Google Cloud connection is not ready yet. Your words are still saved on this device.", 503);
-  if (!/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9-]+$/.test(location) || !/^[a-zA-Z0-9._-]+$/.test(model)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
+  if (!/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9-]+$/.test(location)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
   const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
   const parts = typeof input === "string" ? [{ text: input }] : input.map(part => part.type === "text" ? { text: part.text } : { inlineData: { mimeType: part.mime_type, data: part.data } });
   const res = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`, {
@@ -65,6 +81,6 @@ async function nimble(query: string, locale: string) {
   return parsed.data.results.map(r => ({ ...r, content: (r.content || r.description || "").slice(0, 9000) }));
 }
 
-return { setting, backend, modelConfigured, gemini, nimble, parseJson };
+return { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson };
 }
 export class ServiceError extends Error { constructor(message: string, public status = 502) { super(message); } }

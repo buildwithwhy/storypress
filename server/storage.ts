@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {storySchema} from '../lib/story';
 import {editionSnapshot, editionHtml} from '../lib/edition';
+import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
 export type Bindings=Record<string,string|undefined>;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
@@ -41,7 +42,8 @@ export async function storiesApi(request:Request,env:Bindings){
   const body=JSON.parse(raw);
   if(body.action==='save'){
    const story=storySchema.parse(body.story),id=body.id?uuid.parse(body.id):crypto.randomUUID(),now=new Date().toISOString();
-   const title=story.paper?.headline||story.name||{en:'My story',zh:'我的故事',es:'Mi historia'}[story.language];
+   const opening=story.turns.find(turn=>turn.role==='user'&&turn.text.trim())?.text.trim()||story.draft?.trim();
+   const title=story.paper?.headline||(opening?{en:'Draft · ',zh:'草稿 · ',es:'Borrador · '}[story.language]+opening.slice(0,80)+(opening.length>80?'…':''):story.name||{en:'My story',zh:'我的故事',es:'Mi historia'}[story.language]);
    let rows;
    if(body.id){const revision=z.number().int().positive().parse(body.revision);rows=await db(env,`storypress_stories?id=eq.${id}&${own}&revision=eq.${revision}`,'PATCH',{title,data:story,revision:revision+1,updated_at:now});}
    else rows=await db(env,'storypress_stories','POST',{id,owner_id:userId,title,data:story});
@@ -66,7 +68,7 @@ export async function storiesApi(request:Request,env:Bindings){
 export async function sharedEdition(request:Request,env:Bindings,token:string){
  if(env.STORYPRESS_PUBLIC_SHARING!=='true'||!/^[a-f0-9]{64}$/.test(token)||!['GET','HEAD'].includes(request.method))return new Response('Not found',{status:404,headers:{'Cache-Control':'no-store'}});
  try{const [row]=await db(env,`storypress_stories?share_token=eq.${token}&select=edition`);if(!row?.edition)return new Response('This edition is private or the link has expired.',{status:404,headers:{'Cache-Control':'no-store'}});
- return new Response(request.method==='HEAD'?null:editionHtml(storySchema.parse(row.edition)),{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}});
+ return new Response(request.method==='HEAD'?null:editionHtml(storySchema.parse(row.edition),editionArtwork(storySchema.parse(row.edition))),{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"}});
  }catch{return new Response('This edition is unavailable.',{status:503,headers:{'Cache-Control':'no-store'}})}
 }
 export async function reserveAi(userId:string,env:Bindings,action:string){

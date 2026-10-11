@@ -1,0 +1,24 @@
+.story-art{max-width:900px;margin:0 auto 28px;padding:22px;border:1px solid #d1d8c6;border-radius:11px;background:#eff2e8;color:var(--ink);overflow-wrap:anywhere}
+.story-art h2{font-family:var(--serif);font-weight:400;font-size:30px;line-height:1.25;margin:0 0 9px}
+.story-art .story-art-hint{font-size:13px;line-height:1.65;color:#66725d;margin:0}
+.story-art-create{display:flex;flex-wrap:wrap;gap:12px;margin:17px 0 10px}
+.story-art .secondary{min-height:48px;max-width:100%;font-size:14px;line-height:1.5;padding:11px 17px;white-space:normal;text-align:left}
+.story-art button>svg{flex-shrink:0}
+.story-art-progress{display:flex;gap:11px;align-items:flex-start;padding:15px 0 3px;font-size:14px;line-height:1.6}
+.story-art-progress>svg{flex-shrink:0;margin-top:2px;animation:story-art-spin 1.2s linear infinite}
+.story-art-progress .story-art-hint{margin-top:3px}
+.story-art-result{border-top:1px solid #d0d7c3;padding-top:19px;margin-top:19px}
+.story-art-result figure{margin:0}
+.story-art-result img{display:block;max-width:100%;width:100%;height:auto;max-height:600px;object-fit:contain;background:#fffdf7;border:1px solid #d7d4c7;border-radius:5px}
+.story-art-result figcaption{font-size:12px;line-height:1.6;color:#6c745f;margin-top:8px}
+.story-art-actions{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 20px;margin-top:13px}
+.story-art-selected{display:flex;align-items:center;gap:8px;font-size:14px;line-height:1.6;color:var(--green);min-height:44px}
+.story-art-selected>svg{flex-shrink:0}
+.story-art-actions .text-button{min-height:44px;font-size:13px;line-height:1.5;text-align:left}
+.story-art:lang(zh) h2{font-size:27px;line-height:1.5}
+@keyframes story-art-spin{to{transform:rotate(360deg)}}
+@media(max-width:600px){.story-art{padding:18px;margin-bottom:22px}.story-art h2{font-size:27px}.story-art-create{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.story-art-create .secondary{width:100%;justify-content:flex-start;font-size:16px;min-height:52px}.story-art-actions{align-items:flex-start}.story-art-actions .text-button{font-size:14px}.story-art-result img{max-height:none}.story-art:lang(zh) h2{font-size:25px}}
+@media(prefers-reduced-motion:reduce){.story-art-progress>svg{animation:none}}
+@media print{.story-art{display:none}}
+
+.story-generated-art img{aspect-ratio:auto!important;object-fit:contain!important;height:auto!important;max-height:none!important}@media print{.story-generated-art img{max-height:105mm!important}}

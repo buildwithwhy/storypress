@@ -1,18 +1,26 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {StoryArt} from "./story-art";
+import {compactImage} from "../lib/compact-image";
+import { ResearchThread } from "./research-thread";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Asterisk, ArrowRight, ArrowLeft, Mic, Square, Volume2, ImagePlus, Check, X, Search, Newspaper, BookOpen, Sparkles, Download, Settings, ExternalLink, Pencil, RotateCcw, Globe2, LoaderCircle, Heart, Plus, FileText } from "lucide-react";
-import { firstQuestion, initialStory, languages, originalWords, safeSourceUrl, storySchema, type Story, type Source, type Paper, type PhotoAnalysis } from "../lib/story";
+import { firstQuestion, initialStory, languages, originalWords, safeSourceUrl, type Story, type Source, type Paper, type PhotoAnalysis } from "../lib/story";
 
 import { createSampleStory, presentation, sampleEditions } from "../lib/presentation";
 import { createVoiceSession, type VoicePhase } from "../lib/voice-session";
 import { interviewCopy } from "../lib/interview-copy";
 
-import {setupAccount,accountHeaders,type AccountConfig} from "../lib/account-client";
-import {Sharing,type SavedStory} from "./sharing";
+import {setupAccount,accountHeaders,accountRequest,type AccountConfig} from "../lib/account-client";
+import {Sharing} from "./sharing";
+import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '../lib/story-saver';
+import {saveCopy} from '../lib/save-copy';
 import {sharingCopy} from "../lib/sharing-copy";
 import {PhotoStory} from './photo-story';
 import {photoCopy} from '../lib/photo-copy';
 import {flowCopy} from '../lib/flow-copy';
+import {ArtworkPicker} from './artwork-picker';
+import {artworkPath,artworkCopy,chosenArtwork,artworkCaption,artworkAlt} from '../lib/artwork';
+import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft,prepareGuestHandoff,resumeGuestHandoff,restoreAccountDraft,type DraftSnapshot} from '../lib/draft-handoff';
 
 type InterviewMode = "type" | "dictate" | "voice";
 type Stage = "home" | "tell" | "discover" | "paper";
@@ -22,22 +30,30 @@ const copy = {
  es: { tell: "Tu historia", discover: "Un descubrimiento", paper: "Tu periódico", start: "Empezar mi historia", sample: "Ver un ejemplo", name: "¿Cómo te llamas?", optional: "Tu nombre (opcional)", question: "Tómate tu tiempo. Los pequeños detalles importan.", placeholder: "Empieza por un lugar, una persona, un momento…", send: "Guardar y continuar", record: "Cuéntalo en voz alta", stop: "Terminar grabación", listen: "Escuchar la pregunta", skip: "Otra pregunta", discovery: "Buscar una conexión", create: "Crear mi periódico", saved: "Guardado en este dispositivo", own: "Con tus palabras", back: "Volver a mi historia", photo: "Añadir una fotografía", continue: "Continuar mi historia", fresh: "Empezar otra historia", edit: "Editar mi periódico", print: "Imprimir / guardar PDF", done: "Terminar edición", include: "Incluir en mi periódico", familiar: "Me resulta familiar", unsure: "No sé", unfamiliar: "No es mi recuerdo", prompt: "Contar más sobre esto", no: "Continuar sin contexto", review: "Lo he leído y refleja mi historia.", your: "Una historia de", context: "El mundo de tu historia" }
 };
 
-const STORAGE = "storypress-draft-v1";
+const STORAGE = DRAFT_PREFIX;
 function download(name: string, data: string, type = "text/plain") { const url = URL.createObjectURL(new Blob([data], { type })); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 500); }
-async function callApi(action: string, story?: Story, audio?: { data: string; mime: string }, signal?: AbortSignal, photoSearch?: {query:string;approved:true}) { const res = await fetch("/api/story", { method: "POST", headers: { "Content-Type": "application/json", ...await accountHeaders() }, body: JSON.stringify({ action, story: story ? { ...story, photo: action==='photo'?story.photo:undefined } : undefined, audio, ...(action==='photo'?{photoConsent:true}:{}), photoSearch }), signal }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "That didn’t finish. Please try again."); return data; }
+async function callApi(action: string, story?: Story, audio?: { data: string; mime: string }, signal?: AbortSignal, photoSearch?: {query:string;approved:true}, researchSearch?: {query:string;approved:true},imageStyle?:'illustration'|'comic') { const res = await fetch("/api/story", { method: "POST", headers: { "Content-Type": "application/json", ...await accountHeaders() }, body: JSON.stringify({ action, story: story ? { ...story, generatedArt:undefined,photo: action==='photo'?story.photo:undefined } : undefined, audio, ...(action==='photo'?{photoConsent:true}:{}), photoSearch, researchSearch, imageStyle }), signal }); const data = await res.json(); if (!res.ok) throw new Error(data.error || "That didn’t finish. Please try again."); return data; }
 
 export default function App() {
  const [account,setAccount]=useState<AccountConfig|null>(null);
  const [problem,setProblem]=useState('');
- useEffect(()=>{let active=true,dispose=()=>{};void setupAccount(user=>{if(active)setAccount(c=>c?{...c,user}:c);}).then(result=>{dispose=result.dispose;if(active)setAccount(result.config);else dispose();}).catch(e=>setProblem(e.message));return()=>{active=false;dispose();};},[]);
+ const flushDraft=useRef<()=>void>(()=>{});
+ useEffect(()=>{let active=true,dispose=()=>{};void setupAccount(user=>{if(active){flushDraft.current();setAccount(c=>c?{...c,user}:c);}}).then(result=>{dispose=result.dispose;if(active)setAccount(result.config);else dispose();}).catch(e=>setProblem(e.message));return()=>{active=false;dispose();};},[]);
  if(!account)return <main className="account-loading"><h1>Storypress</h1><p role="status">{problem||'Opening your story studio…'}</p>{problem&&<button className="secondary" onClick={()=>location.reload()}>Try again</button>}</main>;
- return <Storypress key={account.user?.id||'guest'} account={account}/>;
+ return <Storypress key={account.user?.id||'guest'} account={account} flushDraft={flushDraft}/>;
 }
-function Storypress({account}:{account:AccountConfig}) {
- const storageKey=STORAGE+':'+(account.user?.id||'guest');
+function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:MutableRefObject<()=>void>}) {
+ const [storageKey,setStorageKey]=useState(account.user?accountDraftKey(account.user.id):GUEST_DRAFT_KEY);
+ const [resumedDraft,setResumedDraft]=useState(false);
+ const [earlierDraft,setEarlierDraft]=useState(false);
  const [saved,setSaved]=useState<SavedStory|null>(null);
+ const [cloudStatus,setCloudStatus]=useState<SaveStatus>('idle');
+ const [cloudError,setCloudError]=useState('');
+ const [switching,setSwitching]=useState(false);
  const [showAccount,setShowAccount]=useState(false);
  const [story, setStory] = useState<Story>(initialStory);
+ const [setupName,setSetupName]=useState(initialStory.name);
+ const [setupOccasion,setSetupOccasion]=useState<Story["occasion"]>(initialStory.occasion);
  const [stage, setStage] = useState<Stage>("home");
  const [ready, setReady] = useState(false);
  const [input, setInput] = useState("");
@@ -58,7 +74,7 @@ function Storypress({account}:{account:AccountConfig}) {
  const [correction, setCorrection] = useState("");
  const recording = voicePhase === "recording";
  const voiceBusy = ["starting", "recording", "transcribing"].includes(voicePhase);
- const interactionBusy = !!busy || voiceBusy;
+ const interactionBusy = !!busy || voiceBusy || switching;
  const [recordingUrl, setRecordingUrl] = useState("");
  const [recordingMime, setRecordingMime] = useState("");
  const [showSetup, setShowSetup] = useState(false);
@@ -79,12 +95,43 @@ function Storypress({account}:{account:AccountConfig}) {
  const d = presentation[story.language];
  const p = photoCopy[story.language];
  const f = flowCopy[story.language];
+ const sc=saveCopy[story.language];
  const sample = sampleEditions[story.language];
  const words = originalWords(story);
  const wordCount = words.join(" ").split(/\s+/).filter(Boolean).length;
  const patch = (value: Partial<Story>) => setStory(s => ({ ...s, ...value }));
- useEffect(() => { try { const raw = localStorage.getItem(storageKey) || (!account.supabase ? localStorage.getItem(STORAGE) : null); if (raw) { const parsed=JSON.parse(raw); if(parsed.saved) setSaved(parsed.saved); const valid = storySchema.safeParse(parsed.story||parsed); if (valid.success) { setStory(valid.data); setInput(valid.data.draft || ""); } } } catch {} setReady(true); fetch("/api/story").then(r => r.json()).then(setServices).catch(() => {}); }, []);
- useEffect(() => { if (!ready) return; try { localStorage.setItem(storageKey, JSON.stringify({story,saved})); setSaveError(false); } catch { setSaveError(true); } }, [story, saved, ready, storageKey]);
+ const draftState=useRef({story,input,saved,stage,mode,ready,storageKey});
+ const lastWrittenDraft=useRef<string|null>(null);
+ draftState.current={story,input,saved,stage,mode,ready,storageKey};
+ function currentDraft():DraftSnapshot{const current=draftState.current;return {story:{...current.story,draft:current.input},saved:current.saved,stage:current.stage,mode:current.mode};}
+ const saver=useRef<ReturnType<typeof createStorySaver>|null>(null);
+ if(account.user&&!saver.current)saver.current=createStorySaver({save:(next,identity)=>accountRequest({action:'save',id:identity?.id,revision:identity?.revision,story:next}),changeSharing:(action,identity)=>accountRequest({action,id:identity.id,revision:identity.revision}),remove:async id=>{await accountRequest({action:'delete',id});},onSaved:identity=>{draftState.current.saved=identity;setSaved(identity);},onStatus:(status,problem)=>{setCloudStatus(status);setCloudError(problem||'');}});
+ async function saveCurrent(){persistDraft();if(!saver.current)return null;saver.current.update(currentDraft().story);return saver.current.flush();}
+ async function changeSharing(action:'share'|'private'){await saveCurrent();return saver.current!.changeSharing(action);}
+ async function openAccount(){voice.current?.cancel();try{if(account.user){setSwitching(true);await saveCurrent();}else persistDraft();setShowAccount(true);}catch(problem){setError((problem as Error).message);setShowAccount(true);}finally{setSwitching(false);}}
+ async function loadStory(next:Story,identity:SavedStory|null=null){setSwitching(true);try{if(saver.current)await saver.current.switchTo(next,identity,!!identity);setStory(next);setInput(next.draft||'');setSaved(identity);setReadyToWrite(false);setSearched(false);setResumedDraft(false);navigate(next.paper?'paper':'tell');}finally{setSwitching(false);}}
+ async function deleteStory(id:string){const wasCurrent=await saver.current?.remove(id);if(wasCurrent){const next={...initialStory,name:story.name,language:story.language,occasion:story.occasion};saver.current?.replace(next,null);setStory(next);setInput('');setSaved(null);setStage('home');}}
+ async function flushThenNavigate(next:Stage){try{if(account.user)await saveCurrent();navigate(next);}catch(problem){setError((problem as Error).message);}}
+ function persistDraft(){if(!draftState.current.ready)return;try{lastWrittenDraft.current=writeChangedDraft(localStorage,draftState.current.storageKey,currentDraft(),lastWrittenDraft.current,account.user?.id);setSaveError(false);}catch{setSaveError(true);}}
+ useEffect(()=>{const flush=()=>persistDraft();flushDraft.current=flush;window.addEventListener('pagehide',flush);return()=>{window.removeEventListener('pagehide',flush);if(flushDraft.current===flush)flushDraft.current=()=>{};};},[flushDraft]);
+ useEffect(() => {
+  try{
+   const loaded=account.user?resumeGuestHandoff(localStorage,account.user):{key:GUEST_DRAFT_KEY,snapshot:readDraft(localStorage,GUEST_DRAFT_KEY)||(!account.supabase?readDraft(localStorage,STORAGE):null),resumed:false,failed:false};
+   setStorageKey(loaded.key);setSaveError(loaded.failed);
+   if(account.user)saver.current?.replace(loaded.snapshot?.story||initialStory,loaded.snapshot?.saved||null);
+   if(loaded.snapshot){setStory(loaded.snapshot.story);setInput(loaded.snapshot.story.draft||'');setSaved(loaded.snapshot.saved);}
+   if(loaded.resumed&&loaded.snapshot){const resumeStage=loaded.snapshot.stage||'tell';setStage(resumeStage==='paper'&&!loaded.snapshot.story.paper?'tell':resumeStage==='home'?'tell':resumeStage);setMode(loaded.snapshot.mode||'type');setVoicePaused(true);setResumedDraft(true);}
+   if(!loaded.failed){const snapshot=loaded.snapshot;const resumeStage=snapshot?.stage||'tell';lastWrittenDraft.current=JSON.stringify({story:{...(snapshot?.story||initialStory),draft:snapshot?.story.draft||''},saved:snapshot?.saved||null,stage:loaded.resumed?(resumeStage==='paper'&&!snapshot?.story.paper?'tell':resumeStage==='home'?'tell':resumeStage):'home',mode:loaded.resumed?snapshot?.mode||'type':'type'});}
+   if(account.user)setEarlierDraft(loaded.key!==accountDraftKey(account.user.id)&&!!readDraft(localStorage,accountDraftKey(account.user.id)));
+  }catch{setSaveError(true);}
+  setReady(true);fetch('/api/story').then(r=>r.json()).then(setServices).catch(()=>{});
+ }, []);
+ useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
+ useEffect(()=>{if(!ready||!saver.current)return;saver.current.update({...story,draft:input});const timer=setTimeout(()=>{void saver.current?.flush().catch(()=>{});},700);return()=>clearTimeout(timer);},[story,input,ready]);
+ useEffect(()=>()=>saver.current?.dispose(),[]);
+ function prepareSignIn(email:string){try{return prepareGuestHandoff(localStorage,email,currentDraft());}catch{setSaveError(true);throw new Error(sharingCopy[story.language].handoffFailure);}}
+ async function restoreEarlierDraft(){if(!account.user)return;setSwitching(true);try{await saveCurrent();const previous=restoreAccountDraft(localStorage,account.user.id);if(!previous)return;saver.current?.replace(previous.story,previous.saved);setStorageKey(accountDraftKey(account.user.id));setStory(previous.story);setInput(previous.story.draft||'');setSaved(previous.saved);setStage(previous.story.paper?'paper':'tell');setEarlierDraft(false);setResumedDraft(false);setShowAccount(false);}catch(problem){setError((problem as Error).message);}finally{setSwitching(false);}}
+ useEffect(()=>{setSetupName(story.name);setSetupOccasion(story.occasion);},[story.name,story.occasion]);
  useEffect(() => { document.documentElement.lang = story.language; }, [story.language]);
  useEffect(() => {
   voice.current = createVoiceSession({
@@ -115,13 +162,13 @@ function Storypress({account}:{account:AccountConfig}) {
  }, []);
  function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); setStage(next); setError(""); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
  function changeMode(next: InterviewMode) { voice.current?.cancel(); setMode(next); setError(""); setVoicePaused(false); setShowText(false); if (next === "voice" && stage === "tell") voice.current?.speak(question, story.language); }
- function begin(preview = false) {
+ async function begin(preview = false) {
   let next=story;
-  if(preview){if(words.length&&!story.sample&&!window.confirm(d.replaceSample))return;next={...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}]};setSaved(null);setStory(next);setInput('');navigate('paper');return;}
+  if(preview){if(hasStoryContent(currentDraft().story)){if(!account.user){setError(sc.guestNew);setShowAccount(true);return;}try{await saveCurrent();}catch(problem){setError((problem as Error).message);return;}}next={...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}]};saver.current?.replace(next,null);setSaved(null);setStory(next);setInput('');navigate('paper');return;}
   if(story.sample){
    // Preserve anything the narrator typed into an older demo, excluding its fictional seed.
    const ownTurns=story.turns.filter(t=>t.role==='user').slice(1);
-   next={...initialStory,language:story.language,name:story.name===sample.name?'':story.name,turns:ownTurns,draft:input,photo:story.photo,photoCaption:story.photoCaption};setSaved(null);
+   next={...initialStory,language:story.language,name:story.name===sample.name?'':story.name,turns:ownTurns,draft:input,photo:story.photo,photoCaption:story.photoCaption};saver.current?.replace(next,null);setSaved(null);
   }
   if(!next.turns.length)next={...next,turns:[{role:'assistant',text:firstQuestion[next.language]}]};
   setStory(next);setReadyToWrite(false);setSearched(false);navigate('tell');setVoicePaused(false);
@@ -131,7 +178,8 @@ function Storypress({account}:{account:AccountConfig}) {
  async function nextQuestion(next:Story){
   if(next.sample)throw new Error(flowCopy[next.language].sample);
   const result=await callApi('interview',next);setReadyToWrite(result.readyToWrite===true);
-  return [result.acknowledgement,result.question].filter(Boolean).join(' ');
+  const suggestion=result.readyToWrite?null:result.researchSuggestion||null;
+  return {text:[result.acknowledgement,result.question].filter(Boolean).join(' '),researchSuggestion:suggestion,researchQueries:[...new Set([...(next.researchQueries||[]),...(suggestion?[suggestion.query]:[])])].slice(-60)};
  }
  function speakFollowup(q: string, language: Story["language"]) { const current = latest.current; if (current.mode === "voice" && !current.voicePaused && current.stage === "tell") voice.current?.speak(q, language); }
  async function send(value = input.trim()) {
@@ -142,7 +190,7 @@ function Storypress({account}:{account:AccountConfig}) {
   const id = ++requestId.current;
   const next: Story = { ...current, draft: "", approved: false, paper: undefined, turns: [...current.turns, { role: "user", text: value.trim() }] };
   setStory(next); setInput(""); setReviewing(false); setShowText(false); setBusy(v.thinking); setError("");
-  try { const q = await nextQuestion(next); if (id !== requestId.current) return; setStory({ ...next, turns: [...next.turns, { role: "assistant", text: q }] }); speakFollowup(q, next.language); }
+  try { const q = await nextQuestion(next); if (id !== requestId.current) return; setStory({ ...next, researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries, turns: [...next.turns, { role: "assistant", text: q.text }] }); speakFollowup(q.text, next.language); }
   catch(e) { if (id === requestId.current) setError((e as Error).message); }
   finally { if (id === requestId.current) { setBusy(""); submitting.current = false; } }
  }
@@ -151,7 +199,7 @@ function Storypress({account}:{account:AccountConfig}) {
   if (interactionBusy || correcting || !canUseAi()) return;
   if (story.turns.length > 57) { setError(v.maxTurns); return; }
   voice.current?.cancel(); setBusy(v.alternate); setError("");
-  try { const q=await nextQuestion({...story,turns:[...story.turns,{role:'user',text:'Please ask about a different, unanswered aspect of my story. I want to keep talking.'}]});patch({turns:[...story.turns,{role:'assistant',text:q}]});speakFollowup(q,story.language); }
+  try { const q=await nextQuestion({...story,turns:[...story.turns,{role:'user',text:'Please ask about a different, unanswered aspect of my story. I want to keep talking.'}]});patch({researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...story.turns,{role:'assistant',text:q.text}]});speakFollowup(q.text,story.language); }
   catch(e) { setError((e as Error).message); } finally { setBusy(""); }
  }
  function listen() { setError(""); if (voicePhase === "speaking") voice.current?.cancel(); else voice.current?.speak(question, story.language); }
@@ -172,7 +220,7 @@ function Storypress({account}:{account:AccountConfig}) {
   if (index < 0) return;
   const next: Story = { ...story, paper: undefined, approved: false, turns: story.turns.slice(0, index + 1).map((t, i) => i === index ? { ...t, text: correction.trim() } : t) };
   setStory(next); setCorrecting(false); setBusy(v.thinking); setError("");
-  try { const q = await nextQuestion(next); setStory({ ...next, turns: [...next.turns, { role: "assistant", text: q }] }); speakFollowup(q, next.language); }
+  try { const q = await nextQuestion(next); setStory({ ...next, researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries, turns: [...next.turns, { role: "assistant", text: q.text }] }); speakFollowup(q.text, next.language); }
   catch(e) { setError((e as Error).message); } finally { setBusy(""); }
  }
  function modePicker() { return <div className="interview-modes" role="group" aria-label={v.chooseMode}>{(["type", "dictate", "voice"] as const).map(m => <button key={m} type="button" aria-pressed={mode === m} disabled={interactionBusy || correcting} onClick={() => changeMode(m)}>{m === "type" ? <Pencil size={18}/> : m === "dictate" ? <Mic size={18}/> : <Volume2 size={18}/>}<span>{v[m]}</span></button>)}</div>; }
@@ -200,16 +248,33 @@ function Storypress({account}:{account:AccountConfig}) {
   if(story.turns.length>57){setError(v.maxTurns);return;}
   voice.current?.cancel();const id=++requestId.current;const current=story;setBusy(p.analysing);setError('');
   try{
-   let analysis=corrections,question:string;
-   if(analysis){patch({photoAnalysis:analysis});question=await nextQuestion({...current,photoAnalysis:analysis});}
+   let analysis=corrections,question:string,research:Partial<Story>={};
+   if(analysis){patch({photoAnalysis:analysis});const result=await nextQuestion({...current,photoAnalysis:analysis});question=result.text;research={researchSuggestion:result.researchSuggestion,researchQueries:result.researchQueries};}
    else{analysis=(await callApi('photo',current)).analysis;question=analysis!.question;}
    if(id!==requestId.current)return;
-   setStory({...current,photoAnalysis:analysis,turns:[...current.turns,{role:'assistant',text:question}]});speakFollowup(question,current.language);
+   setStory({...current,...research,photoAnalysis:analysis,turns:[...current.turns,{role:'assistant',text:question}]});speakFollowup(question,current.language);
   }catch(e){if(id===requestId.current)setError((e as Error).message);}finally{if(id===requestId.current)setBusy('');}
  }
- async function discover(photoQuery?:string) { if(interactionBusy||correcting)return;navigate("discover"); setBusy(p.searching); try { if (story.sample) { patch({ sources: story.sources.length ? story.sources : [{ ...sample.source }] }); } else { const result = await callApi("discover", story,undefined,undefined,photoQuery?{query:photoQuery,approved:true}:undefined); patch({ sources: result.sources,approved:false }); } setSearched(true); } catch(e) { setError((e as Error).message); } finally { setBusy(""); } }
+ async function discover(photoQuery?:string,inlineQuery?:string) {
+  if(interactionBusy||correcting||(!story.sample&&!canUseAi()))return;
+  if(!inlineQuery)navigate("discover");else voice.current?.cancel();
+  setBusy(p.searching);setError('');
+  try {
+   if(story.sample)patch({sources:story.sources.length?story.sources:[{...sample.source}]});
+   else {
+    const result=await callApi("discover",story,undefined,undefined,photoQuery?{query:photoQuery,approved:true}:undefined,inlineQuery?{query:inlineQuery,approved:true}:undefined);
+    // Preserve previously chosen context while accumulating new discoveries.
+    const byUrl=new Map(story.sources.map(s=>[s.url,s]));
+    for(const source of result.sources as Source[])if(!byUrl.has(source.url))byUrl.set(source.url,source);
+    const sources=[...byUrl.values()].sort((a,b)=>Number(b.selected)-Number(a.selected)).slice(0,8);
+    patch({sources,approved:false,researchSuggestion:result.sources.length?null:story.researchSuggestion,researchQueries:[...new Set([...(story.researchQueries||[]),result.query])].slice(-60)});
+   }
+   setSearched(true);
+  }catch(e){setError((e as Error).message);}finally{setBusy('');}
+ }
+
  function updateSource(id: string, value: Partial<Source>) { patch({ sources: story.sources.map(s => s.id === id ? { ...s, ...value } : s), approved: false }); }
- function exploreSource(source: Source) { patch({ turns: [...story.turns, { role: "assistant", text: source.question }] }); navigate("tell"); }
+ function exploreSource(source: Source) { if(story.turns.length>57){setError(v.maxTurns);return;}patch({ turns: [...story.turns, { role: "assistant", text: source.question }] }); navigate("tell"); }
  async function makePaper() {
   if(interactionBusy||(!words.length&&!input.trim())||(!story.sample&&!canUseAi()))return;
   const next:Story=input.trim()?{...story,turns:[...story.turns,{role:'user',text:input.trim()}],draft:'',approved:false}:story;
@@ -219,18 +284,35 @@ function Storypress({account}:{account:AccountConfig}) {
   catch(e){setError((e as Error).message);}finally{setBusy('');}
  }
 
+ async function generateArtwork(style:'illustration'|'comic'){
+  if(interactionBusy||editing||!canUseAi())return;
+  voice.current?.cancel();const id=++requestId.current,current=story;
+  const available=Math.min(300000,2180000-new TextEncoder().encode(JSON.stringify({...current,generatedArt:undefined})).length);
+  if(available<50000){setError('This story has too much photo or text data to add artwork. Your existing story is kept.');return;}
+  setBusy({en:'Drawing your story…',zh:'正在绘制你的故事……',es:'Ilustrando tu historia…'}[story.language]);setError('');
+  try{
+   const {image}=await callApi('illustrate',current,undefined,undefined,undefined,undefined,style);
+   const data=await compactImage(image.data,available);
+   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(originalWords(current))));
+   const sourceKey=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+   if(id!==requestId.current)return;
+   patch({generatedArt:{data,style,model:image.model,sourceKey},artwork:'generated',approved:false});
+  }catch(e){if(id===requestId.current)setError((e as Error).message);}finally{if(id===requestId.current)setBusy('');}
+ }
  function exportOriginal() { download("storypress-original-words.txt", story.turns.map(t => `${t.role === "user" ? story.name || "Storyteller" : "Interviewer"}: ${t.text}`).join("\n\n")); }
  function editPaper(value: Partial<Paper>) { if (story.paper) patch({ paper: { ...story.paper, ...value }, approved: false }); }
- function startFresh() { if (!window.confirm("Start a new story? Download this story first if you want to keep a copy.")) return; setSaved(null); setStory({ ...initialStory, language: story.language }); setInput(""); setReviewing(false); setCorrecting(false); setSearched(false); if (clipUrl.current) URL.revokeObjectURL(clipUrl.current); clipUrl.current = ""; setRecordingUrl(""); navigate("home"); }
+ async function startFresh(withPhoto=false){if(interactionBusy||correcting)return;if(!account.user&&hasStoryContent(currentDraft().story)){persistDraft();setError(sc.guestNew);setShowAccount(true);return;}setSwitching(true);try{if(account.user)await saveCurrent();const next:Story={...initialStory,name:story.sample&&setupName===story.name?'':setupName,language:story.language,occasion:setupOccasion,turns:[{role:'assistant',text:firstQuestion[story.language]}]};saver.current?.replace(next,null);setSaved(null);setStory(next);setInput('');setReviewing(false);setCorrecting(false);setReadyToWrite(false);setSearched(false);setResumedDraft(false);setShowAccount(false);if(clipUrl.current)URL.revokeObjectURL(clipUrl.current);clipUrl.current='';setRecordingUrl('');navigate('tell');if(withPhoto)choosePhoto();}catch(problem){setError((problem as Error).message);}finally{setSwitching(false);}}
  return <div className="app-shell">
-  <header className="site-header no-print"><button className="brand" disabled={interactionBusy || correcting} onClick={() => navigate("home")} aria-label="Storypress home"><span className="brand-mark"><Asterisk size={30}/></span>storypress<span className="brand-period">.</span></button><div className="header-right"><button className="text-button account-nav" disabled={interactionBusy || correcting} onClick={()=>{voice.current?.cancel();setShowAccount(true);}}>{sharingCopy[story.language].account}</button><label className="language"><Globe2 size={16}/><span className="sr-only">Language</span><select value={story.language} disabled={interactionBusy || correcting} onChange={e => { voice.current?.cancel(); setVoicePaused(true); patch({ language: e.target.value as Story["language"] }); }}>{Object.entries(languages).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label><button className="icon-button" aria-label="Maker setup" onClick={() => setShowSetup(true)}><Settings size={19}/></button></div></header>
-  {stage !== "home" && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => navigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
+  <header className="site-header no-print"><button className="brand" disabled={interactionBusy || correcting} onClick={() => void flushThenNavigate("home")} aria-label="Storypress home"><span className="brand-mark"><Asterisk size={30}/></span>storypress<span className="brand-period">.</span></button><div className="header-right"><button className="text-button" disabled={interactionBusy||correcting} onClick={()=>void startFresh()}><Plus size={16}/>{sc.newStory}</button><button className="text-button account-nav" disabled={interactionBusy || correcting} onClick={()=>void openAccount()}>{sharingCopy[story.language].account}</button><label className="language"><Globe2 size={16}/><span className="sr-only">Language</span><select value={story.language} disabled={interactionBusy || correcting} onChange={e => { voice.current?.cancel(); setVoicePaused(true); patch({ language: e.target.value as Story["language"] }); }}>{Object.entries(languages).map(([k,v]) => <option key={k} value={k}>{v}</option>)}</select></label><button className="icon-button" aria-label="Maker setup" onClick={() => setShowSetup(true)}><Settings size={19}/></button></div></header>
+  {stage !== "home" && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => void flushThenNavigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
   {story.sample && stage !== "home" && <div className="sample-banner no-print"><Sparkles size={14}/> {f.sampleBanner} <button disabled={interactionBusy || correcting} onClick={()=>begin()}>{d.tryOwn}</button></div>}
   {error && <div className="message error no-print" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss message"><X size={18}/></button></div>}
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
+  {account.user&&hasStoryContent(story)&&<div className={cloudStatus==='error'?'message error no-print':'message no-print'} role={cloudStatus==='error'?'alert':'status'}>{cloudStatus==='error'?sc.error:cloudStatus==='saved'?sc.saved:cloudStatus==='saving'?sc.saving:sc.waiting}{cloudStatus==='error'&&<><span>{cloudError}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></>}</div>}
+  {resumedDraft&&<div className="message no-print" role="status">{sharingCopy[story.language].resumed}<button onClick={()=>setResumedDraft(false)} aria-label={sharingCopy[story.language].close}><X size={18}/></button></div>}
   {stage === "home" && <main className="home">
    <section className="intro"><p className="eyebrow"><span/> {d.eyebrow}</p><h1>{story.language === "zh" ? <>每个人生，<br/>都值得<span>上头版。</span></> : story.language === "es" ? <>Toda vida merece<br/><span>su portada.</span></> : <>Every life has<br/>a <span>front page.</span></>}</h1><p className="intro-text">{story.language === "zh" ? "聊聊你的回忆，找回那个世界。我们一起把它变成一份值得珍藏的报纸。" : story.language === "es" ? "Cuenta un recuerdo. Redescubre su mundo. Juntos haremos un periódico para conservar." : "Tell a memory. Rediscover its world. Together, we’ll turn it into a newspaper worth keeping."}</p>
-    <div className="start-card"><label htmlFor="name">{c.name}</label><input id="name" value={story.name} maxLength={80} placeholder={c.optional} onChange={e => patch({ name: e.target.value })}/><div className="occasion-options" aria-label="Kind of story">{([{ id:"life", label: story.language === "zh" ? "人生回忆" : story.language === "es" ? "Un recuerdo" : "A life memory", icon: <BookOpen size={15}/> }, { id:"wedding", label: story.language === "zh" ? "爱情故事" : story.language === "es" ? "Una historia de amor" : "A love story", icon:<Heart size={15}/> }, { id:"graduation", label:story.language === "zh" ? "新的篇章" : story.language === "es" ? "Un nuevo capítulo" : "A new chapter",icon:<Sparkles size={15}/> }] as const).map(o => <button key={o.id} aria-pressed={story.occasion === o.id} className={story.occasion===o.id?"occasion selected":"occasion"} onClick={() => patch({occasion:o.id})}>{o.icon}{o.label}</button>)}</div>{modePicker()}<button className="primary wide" onClick={() => begin()}>{words.length ? c.continue : c.start}<ArrowRight size={19}/></button><button className="text-button photo-start" disabled={interactionBusy||correcting} onClick={()=>{begin();choosePhoto();}}><ImagePlus size={17}/>{p.start}</button><p className="quiet">{story.language === "zh" ? "说出来或写下来，按你的节奏。" : story.language === "es" ? "Habla o escribe. Siempre a tu ritmo." : "Speak or type. No perfect words needed."}</p></div><button className="text-button sample-link" onClick={() => begin(true)}><BookOpen size={17}/>{c.sample}<ArrowRight size={16}/></button>
+    <div className="start-card"><label htmlFor="name">{c.name}</label><input id="name" disabled={interactionBusy} value={setupName} maxLength={80} placeholder={c.optional} onChange={e=>setSetupName(e.target.value)}/><div className="occasion-options" aria-label="Kind of story">{([{ id:"life", label: story.language === "zh" ? "人生回忆" : story.language === "es" ? "Un recuerdo" : "A life memory", icon: <BookOpen size={15}/> }, { id:"wedding", label: story.language === "zh" ? "爱情故事" : story.language === "es" ? "Una historia de amor" : "A love story", icon:<Heart size={15}/> }, { id:"graduation", label:story.language === "zh" ? "新的篇章" : story.language === "es" ? "Un nuevo capítulo" : "A new chapter",icon:<Sparkles size={15}/> }] as const).map(o => <button key={o.id} disabled={interactionBusy} aria-pressed={setupOccasion===o.id} className={setupOccasion===o.id?"occasion selected":"occasion"} onClick={()=>setSetupOccasion(o.id)}>{o.icon}{o.label}</button>)}</div>{modePicker()}<button className="primary wide" disabled={interactionBusy} onClick={()=>void startFresh()}>{sc.startNew}<ArrowRight size={19}/></button>{hasStoryContent(story)&&<button className="secondary wide" disabled={interactionBusy} onClick={()=>story.paper?void flushThenNavigate("paper"):void begin()}>{sc.continue}<ArrowRight size={18}/></button>}<button className="text-button photo-start" disabled={interactionBusy||correcting} onClick={()=>void startFresh(true)}><ImagePlus size={17}/>{p.start}</button><p className="quiet">{story.language === "zh" ? "说出来或写下来，按你的节奏。" : story.language === "es" ? "Habla o escribe. Siempre a tu ritmo." : "Speak or type. No perfect words needed."}</p></div><button className="text-button sample-link" onClick={() => begin(true)}><BookOpen size={17}/>{c.sample}<ArrowRight size={16}/></button>
    </section>
    <section className="hero-preview" aria-label={d.previewAria}><div className="preview-label">{d.previewLabel} <span>↘</span></div><div className="paper-stack"><NewspaperView story={{...initialStory,language:story.language,name:sample.name,sample:true,paper:sample.paper,sources:[{...sample.source,selected:true}]}} miniature/><div className="paper-sticker"><Heart size={19}/>{d.stickerTop}<br/><strong>{d.stickerBottom}</strong></div></div><div className="preview-caption"><span className="tiny-line"/> {d.caption}</div></section>
    <section className="how-strip">{d.steps.map((step,i)=><div key={i}><span>{String(i+1).padStart(2,"0")}</span><div><h3>{step.title}</h3><p>{step.description}</p></div></div>)}</section>
@@ -250,6 +332,7 @@ function Storypress({account}:{account:AccountConfig}) {
    </section>}
    {(mode !== "voice" || showText || reviewing || !!input) && !correcting && <div className="answer-editor">{reviewing && <div className="transcript-heading"><h2>{v.reviewTitle}</h2><p>{v.reviewHelp}</p></div>}<label className="sr-only" htmlFor="story-answer">{v.memory}</label><textarea id="story-answer" ref={textArea} className="story-input" placeholder={c.placeholder} value={input} maxLength={12000} onChange={e => { setInput(e.target.value); patch({draft:e.target.value}); }} disabled={interactionBusy}/><div className="answer-actions"><button className="primary" onClick={() => void send()} disabled={!input.trim() || interactionBusy}>{busy ? <LoaderCircle className="spin" size={18}/> : <ArrowRight size={18}/>} {reviewing ? v.continue : c.send}</button></div></div>}
    {mode === "type" && busy && <p className="working" role="status">{busy}</p>}
+   <ResearchThread story={story} disabled={interactionBusy||correcting} canSearch={services.nimble} searching={busy===p.searching} searched={searched} onSearch={query=>void discover(undefined,query)} onDismiss={()=>patch({researchSuggestion:null})} onExplore={exploreSource} onUpdateSource={updateSource}/>
    {(words.length>0||!!input.trim())&&!story.sample&&<section className="finish-interview" aria-label={f.ready}><div><h2>{f.ready}</h2><p>{readyToWrite?f.readyNote:f.finish}</p></div><button className="primary" onClick={()=>void makePaper()} disabled={interactionBusy||correcting}><Newspaper size={18}/>{c.create}</button></section>}
    {error&&words.length>0&&!story.sample&&<button className="text-button" disabled={interactionBusy||correcting} onClick={()=>void skip()}>{f.retry}</button>}
    {words.length > 0 && <section className="latest-transcript"><div><h2>{v.transcript}</h2>{!correcting && <button className="text-button" onClick={editLastWords} disabled={interactionBusy || !!input}><Pencil size={15}/>{v.edit}</button>}</div>{correcting ? <><textarea aria-label={v.edit} value={correction} maxLength={12000} onChange={e => setCorrection(e.target.value)}/><div className="correction-actions"><button className="primary" onClick={saveCorrection} disabled={!correction.trim() || interactionBusy}>{v.save}</button><button className="text-button" onClick={() => setCorrecting(false)}>{v.discard}</button></div></> : <p>{words.at(-1)}</p>}</section>}
@@ -257,9 +340,9 @@ function Storypress({account}:{account:AccountConfig}) {
    {recordingUrl && <details className="recording-preview"><summary>{v.recordingDetails}</summary><audio controls src={recordingUrl} onPlay={() => voice.current?.cancel()}/><a href={recordingUrl} download={`my-memory.${recordingMime.includes("mp4")?"m4a":recordingMime.includes("ogg")?"ogg":"webm"}`}>{v.download}</a><small>{v.temporary}</small></details>}
    {!services.gemini && !story.sample && <p className="offline-note">{f.offline}</p>}
   </section><aside className="notebook"><div className="notebook-heading"><BookOpen size={19}/><h2>{v.collection}</h2><span>{words.length}</span></div>{words.length ? <details className="memory-collection"><summary>{v.savedMemories} ({words.length})</summary><div className="memory-excerpts">{words.map((w,i) => <div key={i}><span className="memory-number">{v.memoryLabel} {String(i+1).padStart(2,"0")}</span><p>{w}</p></div>)}</div></details> : <div className="empty-notebook"><span>✳</span><p>{v.empty}</p></div>}<div className="notebook-actions"><button className="secondary wide" onClick={()=>void discover()} disabled={!words.length || interactionBusy || correcting}><Search size={17}/>{c.discovery}</button><button className="primary wide" onClick={makePaper} disabled={(!words.length&&!input.trim()) || interactionBusy || correcting}><Newspaper size={17}/>{c.create}</button>{!saveError && <p className="save-status"><Check size={13}/>{c.saved} · {wordCount} {v.wordLabel}</p>}</div></aside></main>}
-  {stage === "discover" && <main className="discovery-page"><button className="text-button" onClick={() => navigate("tell")}><ArrowLeft size={16}/>{c.back}</button><div className="section-intro"><p className="eyebrow">A THREAD TO THE PAST</p><h1>{story.language === "zh" ? "看着熟悉吗？" : story.language === "es" ? "¿Te trae algún recuerdo?" : "Does this bring anything back?"}</h1><p>A place, an event, a little piece of the world you remember.<br/>You decide what belongs in your story.</p></div>{busy ? <div className="searching"><Search size={40}/><h3>{busy}</h3><p>Your memories will be here when we’re done.</p><LoaderCircle className="spin"/></div> : story.sources.length ? <div className="source-grid">{story.sources.map(s => <article className="source-card" key={s.id}><div className="source-top"><span><FileText size={15}/>{s.publisher}</span><span>{s.date}</span></div>{story.sample && <div className="moon-art" aria-hidden="true"><div className="moon-disc"/><span>APOLLO 11 / 1969</span><small>{d.decoration}</small></div>}<div className="source-body"><h2>{s.title}</h2><p>{s.description}</p><div className="connection"><Asterisk size={16}/><p>{s.connection}</p></div><a className="text-button" href={safeSourceUrl(s.url) || "#"} target="_blank" rel="noreferrer">Read the source<ExternalLink size={14}/></a><div className="recognition" aria-label="Does this relate to your memory?">{(["familiar","unsure","unfamiliar"] as const).map(r => <button key={r} className={s.reaction===r?"chosen":""} aria-pressed={s.reaction===r} onClick={() => updateSource(s.id,{reaction:r,...(r==="unfamiliar"?{selected:false}:{})})}>{c[r]}</button>)}</div><label className="checkbox"><input type="checkbox" checked={s.selected} onChange={e => updateSource(s.id,{selected:e.target.checked})}/>{c.include}</label><button className="secondary wide" onClick={() => exploreSource(s)}>{c.prompt}<ArrowRight size={17}/></button></div></article>)}</div> : <div className="empty-discovery"><Search size={36}/><h2>{searched?"No useful connection this time.":"Your memory is the starting point."}</h2><p>{searched?"Your story doesn’t need historical material to be worth keeping.":"We’ll look for public places, events or objects you mentioned."}</p><button className="secondary" onClick={()=>void discover()}>{searched?"Try again":c.discovery}</button></div>}<div className="discovery-footer"><p>Historical context stays separate from your own recollections.</p><button className="primary" onClick={makePaper} disabled={!!busy||!words.length}>{story.sources.some(s=>s.selected)?c.create:c.no}<ArrowRight size={18}/></button></div></main>}
-  {stage === "paper" && story.paper && <main className="paper-page"><div className="paper-toolbar no-print"><button className="text-button" onClick={() => navigate("tell")}><ArrowLeft size={16}/>{c.back}</button><div><button className="secondary" onClick={() => setEditing(!editing)}>{editing ? <Check size={16}/> : <Pencil size={16}/>} {editing?c.done:c.edit}</button><button className="primary" disabled={!story.approved || editing} onClick={() => window.print()}><Download size={17}/>{c.print}</button></div></div><div className="paper-intro no-print"><p className="eyebrow">{d.paperEyebrow}</p><h1>{d.paperTitle}</h1><p>{d.paperIntro}</p></div>{editing ? <section className="editor-form no-print"><label>{d.headline}<input value={story.paper.headline} maxLength={160} onChange={e=>editPaper({headline:e.target.value})}/></label><label>{d.introduction}<textarea value={story.paper.standfirst} maxLength={600} onChange={e=>editPaper({standfirst:e.target.value})}/></label><label>{d.paragraphs}<textarea rows={14} value={story.paper.paragraphs.join("\n\n")} onChange={e=>editPaper({paragraphs:e.target.value.split(/\n\n/).filter(Boolean)})}/></label><label>{d.quote}<textarea value={story.paper.quote} maxLength={400} onChange={e=>editPaper({quote:e.target.value})}/></label><button className="primary" onClick={()=>setEditing(false)}><Check size={17}/>{c.done}</button></section> : <NewspaperView story={story}/> }<div className="review-bar no-print"><label className="checkbox"><input type="checkbox" checked={story.approved} onChange={e=>patch({approved:e.target.checked})}/>{c.review}</label><button className="text-button" onClick={()=>setShowOriginal(true)}>{d.compare}<ArrowRight size={15}/></button></div>{!editing&&<Sharing story={story} config={account} saved={saved} onSaved={setSaved} onLoad={setStory} storageKey={storageKey}/>}<div className="paper-bottom no-print"><button className="text-button" onClick={exportOriginal}><Download size={15}/>{d.downloadWords}</button><button className="text-button" onClick={()=>download("storypress-story.json",JSON.stringify(story,null,2),"application/json")}><Download size={15}/>{d.downloadStory}</button><button className="text-button" onClick={startFresh}><Plus size={16}/>{c.fresh}</button></div></main>}
-  {showAccount&&<div className="modal-backdrop no-print" onClick={()=>setShowAccount(false)}><div className="modal account-modal" role="dialog" aria-modal="true" aria-label={sharingCopy[story.language].account} onClick={e=>e.stopPropagation()}><Sharing accountOnly story={story} config={account} saved={saved} onSaved={setSaved} onLoad={next=>{setStory(next);setInput(next.draft||"");navigate(next.paper?"paper":"tell");}} storageKey={storageKey} onClose={()=>setShowAccount(false)}/></div></div>}
+  {stage === "discover" && <main className="discovery-page"><button className="text-button" onClick={() => void flushThenNavigate("tell")}><ArrowLeft size={16}/>{c.back}</button><div className="section-intro"><p className="eyebrow">A THREAD TO THE PAST</p><h1>{story.language === "zh" ? "看着熟悉吗？" : story.language === "es" ? "¿Te trae algún recuerdo?" : "Does this bring anything back?"}</h1><p>A place, an event, a little piece of the world you remember.<br/>You decide what belongs in your story.</p></div>{busy ? <div className="searching"><Search size={40}/><h3>{busy}</h3><p>Your memories will be here when we’re done.</p><LoaderCircle className="spin"/></div> : story.sources.length ? <div className="source-grid">{story.sources.map(s => <article className="source-card" key={s.id}><div className="source-top"><span><FileText size={15}/>{s.publisher}</span><span>{s.date}</span></div>{story.sample && <div className="moon-art" aria-hidden="true"><div className="moon-disc"/><span>APOLLO 11 / 1969</span><small>{d.decoration}</small></div>}<div className="source-body"><h2>{s.title}</h2><p>{s.description}</p><div className="connection"><Asterisk size={16}/><p>{s.connection}</p></div><a className="text-button" href={safeSourceUrl(s.url) || "#"} target="_blank" rel="noreferrer">Read the source<ExternalLink size={14}/></a><div className="recognition" aria-label="Does this relate to your memory?">{(["familiar","unsure","unfamiliar"] as const).map(r => <button key={r} className={s.reaction===r?"chosen":""} aria-pressed={s.reaction===r} onClick={() => updateSource(s.id,{reaction:r,...(r==="unfamiliar"?{selected:false}:{})})}>{c[r]}</button>)}</div><label className="checkbox"><input type="checkbox" checked={s.selected} onChange={e => updateSource(s.id,{selected:e.target.checked})}/>{c.include}</label><button className="secondary wide" onClick={() => exploreSource(s)}>{c.prompt}<ArrowRight size={17}/></button></div></article>)}</div> : <div className="empty-discovery"><Search size={36}/><h2>{searched?"No useful connection this time.":"Your memory is the starting point."}</h2><p>{searched?"Your story doesn’t need historical material to be worth keeping.":"We’ll look for public places, events or objects you mentioned."}</p><button className="secondary" onClick={()=>void discover()}>{searched?"Try again":c.discovery}</button></div>}<div className="discovery-footer"><p>Historical context stays separate from your own recollections.</p><button className="primary" onClick={makePaper} disabled={!!busy||!words.length}>{story.sources.some(s=>s.selected)?c.create:c.no}<ArrowRight size={18}/></button></div></main>}
+  {stage === "paper" && story.paper && <main className="paper-page"><div className="paper-toolbar no-print"><button className="text-button" onClick={() => void flushThenNavigate("tell")}><ArrowLeft size={16}/>{c.back}</button><div><button className="secondary" disabled={interactionBusy} onClick={() => setEditing(!editing)}>{editing ? <Check size={16}/> : <Pencil size={16}/>} {editing?c.done:c.edit}</button><button className="primary" disabled={!story.approved || editing || interactionBusy} onClick={() => window.print()}><Download size={17}/>{c.print}</button></div></div><div className="paper-intro no-print"><p className="eyebrow">{d.paperEyebrow}</p><h1>{d.paperTitle}</h1><p>{d.paperIntro}</p></div><ArtworkPicker story={story} disabled={interactionBusy} onChange={artwork=>patch({artwork,approved:false})}/>{!editing&&<StoryArt story={story} busy={interactionBusy} onGenerate={style=>void generateArtwork(style)} onSelect={()=>patch({artwork:'generated',approved:false})} onRemove={()=>patch({generatedArt:undefined,artwork:undefined,approved:false})}/>}{editing ? <section className="editor-form no-print"><label>{d.headline}<input value={story.paper.headline} maxLength={160} onChange={e=>editPaper({headline:e.target.value})}/></label><label>{d.introduction}<textarea value={story.paper.standfirst} maxLength={600} onChange={e=>editPaper({standfirst:e.target.value})}/></label><label>{d.paragraphs}<textarea rows={14} value={story.paper.paragraphs.join("\n\n")} onChange={e=>editPaper({paragraphs:e.target.value.split(/\n\n/).filter(Boolean)})}/></label><label>{d.quote}<textarea value={story.paper.quote} maxLength={400} onChange={e=>editPaper({quote:e.target.value})}/></label><button className="primary" onClick={()=>setEditing(false)}><Check size={17}/>{c.done}</button></section> : <NewspaperView story={story}/> }<div className="review-bar no-print"><label className="checkbox"><input type="checkbox" checked={story.approved} onChange={e=>patch({approved:e.target.checked})}/>{c.review}</label><button className="text-button" onClick={()=>setShowOriginal(true)}>{d.compare}<ArrowRight size={15}/></button></div>{!editing&&<Sharing story={story} config={account} saved={saved} onSave={saveCurrent} onChangeSharing={changeSharing} onNew={startFresh} onDelete={deleteStory} onLoad={loadStory} storageKey={storageKey} onPrepareSignIn={prepareSignIn} accountError={cloudStatus==='error'?cloudError:undefined} onRestoreEarlier={earlierDraft?restoreEarlierDraft:undefined}/>}<div className="paper-bottom no-print"><button className="text-button" onClick={exportOriginal}><Download size={15}/>{d.downloadWords}</button><button className="text-button" onClick={()=>download("storypress-story.json",JSON.stringify(story,null,2),"application/json")}><Download size={15}/>{d.downloadStory}</button><button className="text-button" onClick={()=>void startFresh()}><Plus size={16}/>{c.fresh}</button></div></main>}
+  {showAccount&&<div className="modal-backdrop no-print" onClick={()=>setShowAccount(false)}><div className="modal account-modal" role="dialog" aria-modal="true" aria-label={sharingCopy[story.language].account} onClick={e=>e.stopPropagation()}><Sharing accountOnly story={story} config={account} saved={saved} onSave={saveCurrent} onChangeSharing={changeSharing} onNew={startFresh} onDelete={deleteStory} onLoad={loadStory} storageKey={storageKey} onPrepareSignIn={prepareSignIn} accountError={cloudStatus==='error'?cloudError:undefined} onRestoreEarlier={earlierDraft?restoreEarlierDraft:undefined} onClose={()=>setShowAccount(false)}/></div></div>}
   <input ref={file} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={e=>{const f=e.target.files?.[0]; if(f) void addPhoto(f);e.target.value="";}}/>
   <footer className="site-footer no-print"><span>{d.footer}</span><span>STORYPRESS <Asterisk size={12}/> EST. 2026</span></footer>
   {(showSetup || showOriginal) && <div className="modal-backdrop no-print" onClick={()=>{setShowSetup(false);setShowOriginal(false);}}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title" onClick={e=>e.stopPropagation()}><button className="icon-button close" aria-label="Close" onClick={()=>{setShowSetup(false);setShowOriginal(false);}}><X size={21}/></button>{showOriginal ? <><p className="eyebrow">{d.asTold}</p><h2 id="dialog-title">{d.original}</h2>{words.map((w,i)=><p key={i} className="original-turn">{w}</p>)}<button className="secondary" onClick={exportOriginal}><Download size={16}/>{d.downloadWords}</button></> : <><p className="eyebrow">MAKER SETUP</p><h2 id="dialog-title">Connect the story studio</h2><p>The sample is fully usable. Real AI interviewing, transcription and editing need Gemini; historical discovery also needs Nimble.</p><div className="service-row"><strong>Gemini · {services.geminiBackend === "vertex" ? "Google Cloud" : "AI Studio"}</strong><span className={services.gemini?"connected":""}>{services.gemini?"Key configured":"Not configured"}</span></div><div className="service-row"><strong>Nimble</strong><span className={services.nimble?"connected":""}>{services.nimble?"Key configured":"Not configured"}</span></div><p>{services.geminiBackend === "vertex" ? <>Configure <code>VERTEX_API_KEY</code> and <code>GOOGLE_CLOUD_PROJECT</code> for Google Cloud.</> : <>Configure <code>GEMINI_API_KEY</code> for AI Studio.</>} Historical search uses <code>NIMBLE_API_KEY</code>. Keys stay on the server. “Key configured” does not verify billing or permissions.</p><p className="quiet left">Drafts and photographs are saved in this browser. AI requests send your words to Gemini. Photo assistance sends a resized copy of your photo only when you choose it. Photo search sends only the query you review to Nimble; visual guesses are kept out of newspaper writing. Recordings are transcribed by Gemini and remain downloadable until you close the page.</p><a className="text-button" href={services.geminiBackend === "vertex" ? "https://console.cloud.google.com/agent-platform/studio/settings/api-keys" : "https://aistudio.google.com/api-keys"} target="_blank" rel="noreferrer">{services.geminiBackend === "vertex" ? "Google Cloud console" : "Google AI Studio"}<ExternalLink size={14}/></a><a className="text-button" href="https://online.nimbleway.com/" target="_blank" rel="noreferrer">Nimble dashboard<ExternalLink size={14}/></a></>}</section></div>}
@@ -269,6 +352,7 @@ export function NewspaperView({ story, miniature = false }: { story: Story; mini
  const p = story.paper || sampleEditions[story.language].paper;
  const c = copy[story.language];
  const d = presentation[story.language];
+ const art=artworkPath(story),artKey=chosenArtwork(story),artLabels=artworkCopy[story.language];
  return <article className={miniature ? "newspaper miniature" : "newspaper"} lang={story.language}>
   <div className="paper-topline"><span>{d.topline}</span><Asterisk size={16}/><span>{d.edition}</span></div>
   <div className="masthead">{d.masthead}</div>
@@ -276,7 +360,7 @@ export function NewspaperView({ story, miniature = false }: { story: Story; mini
   <div className="paper-main">
    <p className="paper-kicker">{d.kickers[story.occasion]}</p><h2>{p.headline}</h2>
    {p.standfirst && <p className="standfirst">{p.standfirst}</p>}
-   {story.photo ? <figure className="personal-photo"><img src={story.photo} alt={story.photoCaption || d.photo}/>{story.photoCaption && <figcaption>{story.photoCaption}</figcaption>}</figure> : story.sample ? <div className="paper-illustration" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="large-moon"/><span>{d.illustration}</span><small>{d.decoration}</small></div> : null}
+   {story.photo&&artKey!=='generated'&&artKey!=='none' ? <figure className="personal-photo"><img src={story.photo} alt={story.photoCaption || d.photo}/>{story.photoCaption && <figcaption>{story.photoCaption}</figcaption>}</figure> : story.sample&&miniature ? <div className="paper-illustration" aria-hidden="true"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="large-moon"/><span>{d.illustration}</span><small>{d.decoration}</small></div> : art&&artKey!=='none' ? <figure className={artKey==='generated'?"editorial-art story-generated-art":"editorial-art"}><img src={art} alt={artworkAlt(story)} width={1536} height={1024}/><figcaption>{artworkCaption(story)}</figcaption></figure> : null}
    <div className="paper-columns"><div className="story-prose">{p.paragraphs.map((text,i)=><p key={i}>{text}</p>)}</div>
     <aside className="paper-aside">{p.quote && <blockquote>“{p.quote}”</blockquote>}
      {story.sources.filter(s=>s.selected).map(s=><section className="historical-context" key={s.id}><p className="paper-kicker">{c.context}</p><h3>{s.title}</h3><p>{s.description}</p><a href={safeSourceUrl(s.url)||"#"} target="_blank" rel="noreferrer">{s.publisher} · {s.date} ↗</a><span className="print-source">{s.url}</span></section>)}

@@ -7,6 +7,15 @@ For each paragraph, identify the supporting narrator turn. Remove an assertion t
 - “We moved in 1984” does not establish why the family moved.
 - A later correction supersedes an earlier version of the same fact.
 - A quote translated from Chinese into English is not an exact original quote.
+- “My sister and I” does not establish the narrator's gender. Preserve the relationship instead of describing “two sisters”. Apply the same care to gendered adjectives and nouns in Spanish.
+- “She waited until I could do it myself” does not establish that she felt proud, or that the narrator learned independence, unless the narrator says so.
+
+Review craft separately from fidelity:
+- For a rich interview, retain the distinctive actions and reflections from across the conversation. Do not flatten them into a list or leave out most of the material.
+- For a sparse interview, keep a small piece. Structure and precision can improve it; invented atmosphere cannot.
+- Give the standfirst a different job from the opening paragraph. Start in a supplied moment where possible and avoid repeating the same exposition.
+- Let the ending grow from something the narrator supplied. Remove a moral or emotional conclusion added only to make the piece sound complete.
+- Read aloud for register and rhythm. A narrator's plain words may carry more character than polished sentiment.
 
 Keep the narrator's review central. See the Oral History Association's best practices and ethics guidance, consulted October 11, 2026:
 - https://oralhistory.org/best-practices/

@@ -13,6 +13,7 @@ try{
   assert.equal(config.outputDirectory,'dist-public');
   assert.match(await fs.readFile('dist-public/index.html','utf8'),/id="root"/);
   assert.ok((await fs.stat('dist-public/app.js')).size>10000);
+  for(const key of ['memories','together','journey'])assert.deepEqual(await fs.readFile('dist-public/artwork/'+key+'.jpg'),await fs.readFile('public/artwork/'+key+'.jpg'));
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',{})).status,503);
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',env)).status,401);
   assert.equal((await serveVercel(request('/api/stories'),'/api/stories',env)).status,401);

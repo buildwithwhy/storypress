@@ -1,3 +1,4 @@
+import {artworkData} from '../lib/artwork-data';
 import { handleApi } from '../server/api';
 import {accountApi,storiesApi,sharedEdition,type Bindings} from '../server/storage';
 import { html, css, javascript, icon } from 'virtual:storypress-assets';
@@ -9,6 +10,8 @@ export default {
   if(url.pathname === '/api/stories') return storiesApi(request,env);
   if(url.pathname.startsWith('/s/')) return sharedEdition(request,env,url.pathname.slice(3));
   if(!['GET','HEAD'].includes(request.method)) return new Response('Method not allowed',{status:405});
+  const artKey=/^\/artwork\/(memories|together|journey)\.jpg$/.exec(url.pathname)?.[1] as keyof typeof artworkData|undefined;
+  if(artKey){const data=atob(artworkData[artKey].split(',')[1]);return new Response(request.method==='HEAD'?null:Uint8Array.from(data,c=>c.charCodeAt(0)),{headers:{'Content-Type':'image/jpeg','Cache-Control':'public, max-age=86400','X-Content-Type-Options':'nosniff'}});}
   const routes: Record<string,[string,string]> = {'/app.js':[javascript,'text/javascript; charset=utf-8'],'/app.css':[css,'text/css; charset=utf-8'],'/favicon.svg':[icon,'image/svg+xml'],'/':[html,'text/html; charset=utf-8']};
   const route=routes[url.pathname];
   if(!route) return new Response('Not found',{status:404});

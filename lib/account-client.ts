@@ -18,5 +18,5 @@ export async function accountRequest(body?:unknown,id?:string){
  const response=await fetch(`/api/stories${id?'?id='+encodeURIComponent(id):''}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...await accountHeaders()},body:body?JSON.stringify(body):undefined});
  const data=await response.json();if(!response.ok)throw new Error(data.error||'That change could not be saved.');return data;
 }
-export async function signIn(email:string){if(!client)throw new Error('Accounts are not connected yet.');const {error}=await client.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin+'/'}});if(error)throw error;}
+export async function signIn(email:string){if(!client)throw new Error('Accounts are not connected yet.');const {error}=await client.auth.signInWithOtp({email:email.trim().toLowerCase(),options:{emailRedirectTo:location.origin+'/'}});if(error)throw error;}
 export async function signOut(){const {error}=await client!.auth.signOut({scope:'local'});if(error)throw error;}
