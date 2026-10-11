@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write a Personal Edition"
+  short_description: "Turn original memories into a faithful newspaper"
+  default_prompt: "Use $write-personal-edition to draft a newspaper from these memories."

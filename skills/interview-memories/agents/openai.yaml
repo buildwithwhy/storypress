@@ -1,0 +1,4 @@
+interface:
+  display_name: "Interview Memories"
+  short_description: "Ask patient, grounded oral-history questions"
+  default_prompt: "Use $interview-memories to ask the next question about this memory."

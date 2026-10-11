@@ -35,7 +35,7 @@ Without keys, guided writing preserves the person's exact input. The clearly lab
 - Photograph upload, local draft persistence, original-text export and full-story JSON export.
 - Candidate historical discoveries with citations, recognition feedback and explicit selection.
 - Editable newspaper; narrator review enables browser Print / Save as PDF.
-- Four specialized editorial workflow prompts in `lib/editorial.ts`, with source notes in `docs/EDITORIAL-SKILLS.md`.
+- Private Agent Skills packages in `skills/`, with canonical model instructions imported by `lib/editorial.ts` and source notes in `docs/EDITORIAL-SKILLS.md`. The application selects each step explicitly.
 
 ## Boundaries and next steps
 

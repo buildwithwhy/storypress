@@ -1,6 +1,8 @@
-# Storypress editorial workflow prompts
+# Storypress editorial skills
 
-Specialized system prompts are compiled in `lib/editorial.ts`. Each has a narrow role and JSON output contract. These are prompt-based stages in a fixed application workflow, not autonomous agents, installable Skills, or fine-tuned models. The older filename is retained for existing references. The application routes tasks, validates responses, retains original words and keeps historical context separate.
+Four private packages under `skills/` follow the Agent Skills folder format: `interview-memories`, `research-story-context`, `write-personal-edition`, and `review-and-share-edition`. Each has a SKILL.md, concise reference material and agent metadata. They can be loaded by a compatible assistant using the package path; this does not install them into a user's global Skills catalog.
+
+The app explicitly selects interview, search planning, context editing and writing instructions from the packages' canonical reference files through `lib/editorial.ts`. These are the same runtime instructions used before packaging. The build bundles them into the server; they are not served as public assets. The review/sharing skill documents a workflow enforced by application code and does not add a model call. The system remains a fixed workflow with no autonomous agent loop or model fine-tuning.
 
 ## Interviewing
 One open question at a time. Follow concrete details, allow uncertainty, ask about firsthand experience, avoid leading prompts, and let the narrator skip, correct or stop. Respond in their preferred language. Example: “You mentioned the back room. What do you remember about being there?”

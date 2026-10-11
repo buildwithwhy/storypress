@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review and Share an Edition"
+  short_description: "Review a personal edition and prepare safe sharing"
+  default_prompt: "Use $review-and-share-edition to check this edition before I share it."

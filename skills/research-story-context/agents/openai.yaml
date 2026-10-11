@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Story Context"
+  short_description: "Find historical context without rewriting memories"
+  default_prompt: "Use $research-story-context to find relevant context for this memory."
