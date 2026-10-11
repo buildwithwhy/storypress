@@ -63,3 +63,5 @@ next-env.d.ts
 storypress-story*.json
 storypress-original-words*.txt
 my-memory.*
+
+/dist-public/

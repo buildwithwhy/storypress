@@ -9,6 +9,7 @@ Select the requested stage. Read [search-planner instructions](references/search
 
 1. Extract a public place, event, object or approximate period from the supplied memory. Do not search private names, contact details or intimate facts. If the request would disclose those details, propose a less identifying query first.
 2. When asked only for a query, return the planner's JSON contract. Do not claim that a search has happened.
+   For photo-derived clues, use only the exact query reviewed and chosen by the narrator. Do not send a photo, private identifiers or unreviewed observations to search. A result does not authenticate a photograph or establish its location or date.
 3. When authorized search tools are available, retrieve evidence and preserve the exact returned URLs. Prefer archives, libraries, museums, primary publications and institutional histories. If tools are unavailable, state that research has not been performed.
 4. When reviewing supplied results, use only their content and URLs. Reject irrelevant matches. Distinguish contemporary records from modern retrospectives. Keep an unknown date unknown.
 5. Return up to three candidates in the context editor's JSON contract. A candidate invites recognition; it does not prove that the narrator experienced an event. Leave each candidate unselected until the storyteller chooses it.

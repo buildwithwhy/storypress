@@ -2,6 +2,8 @@
 // The app selects the step explicitly; no autonomous agent loop is introduced.
 import interviewerInstructions from "../skills/interview-memories/references/interviewer.txt";
 export const interviewer = interviewerInstructions.trim();
+import photoReaderInstructions from "../skills/interview-memories/references/photo-reader.txt";
+export const photoReader = photoReaderInstructions.trim();
 import researcherInstructions from "../skills/research-story-context/references/search-planner.txt";
 export const researcher = researcherInstructions.trim();
 import contextualEditorInstructions from "../skills/research-story-context/references/context-editor.txt";

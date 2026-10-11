@@ -1,5 +1,5 @@
 import { z } from "zod";
-type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio"; data: string; mime_type: string }>;
+type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
 export function createProviders(env: Record<string, string | undefined>) {
 function setting(key: string): string { return env[key] || ""; }
 function backend(): string { return setting("GEMINI_BACKEND") || "ai-studio"; }

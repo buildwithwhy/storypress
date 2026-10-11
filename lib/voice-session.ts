@@ -68,7 +68,7 @@ export function createVoiceSession(events: Events) {
       if (id !== generation) { acquired.getTracks().forEach(t => t.stop()); return; }
       stream = acquired;
       const mime = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm", "audio/ogg"].find(m => MediaRecorder.isTypeSupported(m));
-      const recorder = new MediaRecorder(acquired, mime ? { mimeType: mime } : undefined);
+      const recorder = new MediaRecorder(acquired, { audioBitsPerSecond: 48000, ...(mime ? { mimeType: mime } : {}) });
       rec = recorder;
       const chunks: Blob[] = [];
       recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
@@ -79,7 +79,7 @@ export function createVoiceSession(events: Events) {
         const blob = new Blob(chunks, { type: recorder.mimeType || mime || "audio/webm" });
         if (!blob.size) { state("idle"); events.problem("empty"); return; }
         events.clip(blob);
-        if (blob.size > 7000000) { state("idle"); events.problem("tooLarge"); return; }
+        if (blob.size > 3000000) { state("idle"); events.problem("tooLarge"); return; }
         state("transcribing"); request = new AbortController();
         try {
           const text = (await events.transcribe(blob, request.signal)).trim();
