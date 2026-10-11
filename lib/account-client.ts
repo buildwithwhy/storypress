@@ -19,4 +19,9 @@ export async function accountRequest(body?:unknown,id?:string){
  const data=await response.json();if(!response.ok)throw new Error(data.error||'That change could not be saved.');return data;
 }
 export async function signIn(email:string){if(!client)throw new Error('Accounts are not connected yet.');const {error}=await client.auth.signInWithOtp({email:email.trim().toLowerCase(),options:{emailRedirectTo:location.origin+'/'}});if(error)throw error;}
+export async function signInWithGoogle(){
+ if(!client)throw new Error('Accounts are not connected yet.');
+ const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/'}});
+ if(error)throw error;
+}
 export async function signOut(){const {error}=await client!.auth.signOut({scope:'local'});if(error)throw error;}

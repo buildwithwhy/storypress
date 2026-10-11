@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 const bundled=await build({stdin:{contents:"export * from './lib/draft-handoff.ts'",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm'});
-const {DRAFT_PREFIX,GUEST_DRAFT_KEY,HANDOFF_KEY,HANDOFF_TTL,accountDraftKey,readDraft,writeDraft,writeChangedDraft,prepareGuestHandoff,resumeGuestHandoff,restoreAccountDraft}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+const {DRAFT_PREFIX,GUEST_DRAFT_KEY,HANDOFF_KEY,HANDOFF_TTL,GOOGLE_HANDOFF_KEY,GOOGLE_HANDOFF_TTL,accountDraftKey,readDraft,writeDraft,writeChangedDraft,prepareGuestHandoff,prepareGoogleHandoff,resumeGuestHandoff,restoreAccountDraft}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
 class Store{
  values=new Map();failKey=null;
  getItem(key){return this.values.get(key)||null;}
@@ -65,3 +65,25 @@ for(const failure of ['draft','pointer','consume']){
  const cancel=prepareGuestHandoff(store,user.email,guest,now,'cancelled');cancel();assert.equal(store.getItem(HANDOFF_KEY),null);assert.deepEqual(readDraft(store,GUEST_DRAFT_KEY),guest);
 }
 console.log('Passed: guest sign-in, unsent/newer text, photo/language, separate account draft, email binding, expiry, one-time resume, and storage/crash recovery.');
+
+{
+ const store=new Store(),tab=new Store(),otherTab=new Store();
+ writeDraft(store,accountDraftKey(user.id),earlier);
+ prepareGoogleHandoff(store,tab,guest,now,'google-one');
+ assert.equal(resumeGuestHandoff(store,user,now+1,otherTab).resumed,false,'Another tab cannot claim a pending Google draft');
+ const result=resumeGuestHandoff(store,user,now+1,tab);
+ assert.equal(result.resumed,true);assert.deepEqual(result.snapshot,guest);
+ assert.deepEqual(readDraft(store,accountDraftKey(user.id)),earlier,'Google sign-in preserves an earlier account draft');
+ assert.equal(resumeGuestHandoff(store,{id:'other-account',email:'other@example.test'},now+2,tab).resumed,false,'A consumed OAuth draft is bound to one account');
+ writeDraft(store,result.key,newer,user.id);
+ assert.deepEqual(resumeGuestHandoff(store,user,now+3,tab).snapshot,newer,'OAuth resume cannot replay stale guest text');
+}
+{
+ const store=new Store(),tab=new Store();
+ const cancel=prepareGoogleHandoff(store,tab,guest,now,'google-cancel');cancel();
+ assert.equal(store.getItem(HANDOFF_KEY),null);assert.equal(tab.getItem(GOOGLE_HANDOFF_KEY),null);
+ assert.deepEqual(readDraft(store,GUEST_DRAFT_KEY),guest,'An OAuth failure keeps the guest backup');
+ prepareGoogleHandoff(store,tab,guest,now,'google-expire');
+ assert.equal(resumeGuestHandoff(store,user,now+GOOGLE_HANDOFF_TTL+1,tab).resumed,false,'An abandoned OAuth attempt expires');
+}
+console.log('Passed: Google draft handoff, tab binding, account binding, cancellation, expiry and preservation of earlier drafts.');

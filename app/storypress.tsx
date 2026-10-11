@@ -21,7 +21,7 @@ import {photoCopy} from '../lib/photo-copy';
 import {flowCopy} from '../lib/flow-copy';
 import {ArtworkPicker} from './artwork-picker';
 import {artworkPath,artworkCopy,chosenArtwork,artworkCaption,artworkAlt} from '../lib/artwork';
-import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft,prepareGuestHandoff,resumeGuestHandoff,restoreAccountDraft,type DraftSnapshot} from '../lib/draft-handoff';
+import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft,prepareGuestHandoff,prepareGoogleHandoff,resumeGuestHandoff,restoreAccountDraft,type DraftSnapshot} from '../lib/draft-handoff';
 
 type InterviewMode = "type" | "dictate" | "voice";
 type Stage = "home" | "tell" | "discover" | "paper";
@@ -117,7 +117,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  useEffect(()=>{const flush=()=>persistDraft();flushDraft.current=flush;window.addEventListener('pagehide',flush);return()=>{window.removeEventListener('pagehide',flush);if(flushDraft.current===flush)flushDraft.current=()=>{};};},[flushDraft]);
  useEffect(() => {
   try{
-   const loaded=account.user?resumeGuestHandoff(localStorage,account.user):{key:GUEST_DRAFT_KEY,snapshot:readDraft(localStorage,GUEST_DRAFT_KEY)||(!account.supabase?readDraft(localStorage,STORAGE):null),resumed:false,failed:false};
+   const loaded=account.user?resumeGuestHandoff(localStorage,account.user,Date.now(),sessionStorage):{key:GUEST_DRAFT_KEY,snapshot:readDraft(localStorage,GUEST_DRAFT_KEY)||(!account.supabase?readDraft(localStorage,STORAGE):null),resumed:false,failed:false};
    setStorageKey(loaded.key);setSaveError(loaded.failed);
    if(account.user)saver.current?.replace(loaded.snapshot?.story||initialStory,loaded.snapshot?.saved||null);
    if(loaded.snapshot){setStory(loaded.snapshot.story);setInput(loaded.snapshot.story.draft||'');setSaved(loaded.snapshot.saved);}
@@ -130,7 +130,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
  useEffect(()=>{if(!ready||!saver.current)return;saver.current.update({...story,draft:input});const timer=setTimeout(()=>{void saver.current?.flush().catch(()=>{});},700);return()=>clearTimeout(timer);},[story,input,ready]);
  useEffect(()=>()=>saver.current?.dispose(),[]);
- function prepareSignIn(email:string){try{return prepareGuestHandoff(localStorage,email,currentDraft());}catch{setSaveError(true);throw new Error(sharingCopy[story.language].handoffFailure);}}
+ function prepareSignIn(email?:string){try{return email===undefined?prepareGoogleHandoff(localStorage,sessionStorage,currentDraft()):prepareGuestHandoff(localStorage,email,currentDraft());}catch{setSaveError(true);throw new Error(sharingCopy[story.language].handoffFailure);}}
  async function restoreEarlierDraft(){if(!account.user)return;setSwitching(true);try{await saveCurrent();const previous=restoreAccountDraft(localStorage,account.user.id);if(!previous)return;saver.current?.replace(previous.story,previous.saved);setStorageKey(accountDraftKey(account.user.id));setStory(previous.story);setInput(previous.story.draft||'');setSaved(previous.saved);setStage(previous.story.paper?'paper':'tell');setEarlierDraft(false);setResumedDraft(false);setShowAccount(false);}catch(problem){setError((problem as Error).message);}finally{setSwitching(false);}}
  useEffect(()=>{setSetupName(story.name);setSetupOccasion(story.occasion);},[story.name,story.occasion]);
  useEffect(() => { document.documentElement.lang = story.language; }, [story.language]);
