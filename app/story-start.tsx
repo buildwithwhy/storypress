@@ -10,12 +10,12 @@ export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,on
  const c=startCopy[language];
  const [showPrompts,setShowPrompts]=useState(false);
  return <div className="start-card story-start">
-  {hasDraft&&<div className="resume-story"><div><strong>{c.resume}</strong><p>{c.resumeHelp}</p></div><button className="secondary wide" disabled={disabled} onClick={onContinue}>{language==='zh'?'继续我的故事':language==='es'?'Continuar mi historia':'Continue my story'}<ArrowRight size={18}/></button></div>}
+  {hasDraft&&<div className="resume-story"><div><strong>{c.resume}</strong><p>{c.resumeHelp}</p></div><button className="secondary wide" disabled={disabled} onClick={onContinue}>{c.continueLast}<ArrowRight size={18}/></button></div>}
   <h2>{c.title}</h2><p className="start-time">{c.time}</p>
-  <button className="primary wide" disabled={disabled} onClick={()=>onStart()}><BookOpen size={18}/>{c.memory}<ArrowRight size={18}/></button>
-  <div className="start-alternatives">
-   <button className="secondary" disabled={disabled} onClick={()=>onStart(true)}><ImagePlus size={18}/>{c.photo}</button>
-   <button className="secondary" disabled={disabled} aria-expanded={showPrompts} aria-controls="story-prompts" onClick={()=>setShowPrompts(!showPrompts)}><Sparkles size={18}/>{c.help}</button>
+  <div className="start-choices">
+   <button className="secondary wide" disabled={disabled} onClick={()=>onStart()}><BookOpen size={20}/><span>{c.memory}</span><ArrowRight size={18}/></button>
+   <button className="secondary wide" disabled={disabled} onClick={()=>onStart(true)}><ImagePlus size={20}/><span>{c.photo}</span><ArrowRight size={18}/></button>
+   <button className="secondary wide" disabled={disabled} aria-expanded={showPrompts} aria-controls="story-prompts" onClick={()=>setShowPrompts(!showPrompts)}><Sparkles size={20}/><span>{c.help}</span><ArrowRight size={18}/></button>
   </div>
   {showPrompts&&<div id="story-prompts" className="story-prompts"><p>{c.promptTitle}</p>{c.prompts.map(prompt=><button key={prompt.label} disabled={disabled} onClick={()=>onStart(false,prompt.question)}><span>{prompt.label}</span><ArrowRight size={16}/></button>)}</div>}
   <details className="start-details"><summary>{c.details}</summary>{children}</details>
