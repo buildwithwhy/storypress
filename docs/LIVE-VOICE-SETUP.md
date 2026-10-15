@@ -1,5 +1,11 @@
 # Enable the Gemini Live pilot
 
+## Preview connection
+
+Checked October 15: the nine existing Storypress environment variables are scoped to Production only. The preview therefore opens in sample mode, with AI, login and cloud saving unavailable. To test real stories, Preview needs the existing Supabase settings and text/search provider settings. Reusing production credentials would give the preview access to the same database and paid AI services; this has not been enabled. There is no Gemini AI Studio key in the current variable list.
+
+## Live voice settings
+
 Use Vercel → storypress-app → Settings → Environment Variables. Apply these to the **Preview** environment first, then redeploy the preview branch. Production does not need to change for this test.
 
 | Variable | Kind | Value |

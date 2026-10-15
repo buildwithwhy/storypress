@@ -29,6 +29,8 @@ This replaces the earlier implementation defaults after interactive product disc
 - Opt-in Gemini Live prototype: short-lived single-use constrained credentials, tester allowlist, existing server quota reservation, PCM input/output, interruption playback cancellation, typed turns, transcript capture, hidden-tab microphone stop and temporary original microphone recording.
 - Live measurements download contains duration, time to first audio from connection start, and raw provider usage events, not story text. It is a prototype instrument, not verified dollar accounting or a completed benchmark.
 
+- An unconfigured Vercel preview exposes only a sample-mode account capability; the format explorer remains usable while AI and storage endpoints still fail closed. Existing Vercel variables are currently Production-only.
+
 ## Activation, verification and remaining work
 
 See LIVE-VOICE-SETUP.md. Live voice is off unless configured and the signed-in account is allowlisted. The implementation is behind a pilot gate because no real paid provider/microphone call has been made. Provider and account boundaries have mocked tests. Token protocol, model access, billing, actual interruptions and multilingual quality still require a hosted microphone trial.
