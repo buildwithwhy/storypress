@@ -9,6 +9,7 @@ This replaces the earlier implementation defaults after interactive product disc
 - Live conversation is the primary voice experience, with recorded messages and typing sharing the story history.
 - The first result is a beautiful editable keepsake draft. No mandatory plain-text approval screen before the reveal.
 - A small format family: newspaper, mini booklet, letter/card. Letters may preserve a memory or directly address someone. Keep story content separate from presentation.
+- New keepsakes start without a stock illustration. Text-only is the default; adding a photo selects it, and story-specific AI artwork remains optional. Existing saved artwork choices retain their rendering. Removing a photo or generated illustration does not introduce a stock stand-in.
 - Mobile reading links and readable social/message images; the reading page also offers download and print.
 - Ask at the end whether the narrator wants to retain the full original recording. Sharing selected clips is a distinct action.
 - Measure quality and actual cost before choosing a cost target or permanent provider. English, Mandarin and Spanish need separate evaluation.

@@ -1,8 +1,8 @@
 import {type Story} from './story';
-export const artworkKeys=['memories','together','journey','none'] as const;
+export const artworkKeys=['none','memories','together','journey'] as const;
 export type Artwork=typeof artworkKeys[number]|'generated';
 export function chosenArtwork(story:Story):Artwork{
- if(story.artwork==='generated'&&!story.generatedArt)return 'memories';
+ if(story.artwork==='generated'&&!story.generatedArt)return story.photo?'memories':'none';
  return story.artwork??(story.occasion==='wedding'?'together':story.occasion==='graduation'?'journey':'memories');
 }
 export function artworkPath(story:Story){const art=chosenArtwork(story);if(art==='generated')return story.generatedArt?.data;return story.photo||art==='none'?undefined:`/artwork/${art}.jpg`;}
