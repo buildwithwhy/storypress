@@ -2,7 +2,11 @@
 
 ## Preview connection
 
-Checked October 15: the nine existing Storypress environment variables are scoped to Production only. The preview therefore opens in sample mode, with AI, login and cloud saving unavailable. To test real stories, Preview needs the existing Supabase settings and text/search provider settings. Reusing production credentials would give the preview access to the same database and paid AI services; this has not been enabled. There is no Gemini AI Studio key in the current variable list.
+Updated October 15: with owner approval, the nine existing Storypress variables now apply to both Production and Preview. Existing values were reused, not revealed or replaced. The preview was redeployed and its account configuration and Gemini/Vertex + Nimble configuration indicators were verified. Its exact branch URL was also added to Supabase's allowed authentication redirects. Production code and its existing redirect settings were unchanged.
+
+Google sign-in reached the existing test account's passkey verification, which needs the owner's interaction; a complete authenticated provider call is not yet verified. No paid benchmark or test story was created. The preview remains protected by Vercel authentication, so it is for owner testing rather than public sharing.
+
+The current variable list has no `GEMINI_API_KEY` for Google AI Studio. This is the only additional provider secret needed by the live-voice adapter already built. Add it directly to Vercel as a Secret in Preview. The three other Live settings below are configuration, not additional provider credentials. ElevenLabs and OpenRouter are not integrated yet.
 
 ## Live voice settings
 

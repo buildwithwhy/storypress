@@ -29,7 +29,7 @@ This replaces the earlier implementation defaults after interactive product disc
 - Opt-in Gemini Live prototype: short-lived single-use constrained credentials, tester allowlist, existing server quota reservation, PCM input/output, interruption playback cancellation, typed turns, transcript capture, hidden-tab microphone stop and temporary original microphone recording.
 - Live measurements download contains duration, time to first audio from connection start, and raw provider usage events, not story text. It is a prototype instrument, not verified dollar accounting or a completed benchmark.
 
-- An unconfigured Vercel preview exposes only a sample-mode account capability; the format explorer remains usable while AI and storage endpoints still fail closed. Existing Vercel variables are currently Production-only.
+- An unconfigured Vercel preview exposes only a sample-mode account capability; the format explorer remains usable while AI and storage endpoints still fail closed. The existing variables were subsequently enabled for both Production and Preview with owner approval. The exact preview URL is allowlisted for Supabase login; production code remains unchanged.
 
 ## Activation, verification and remaining work
 
@@ -42,3 +42,5 @@ Private recording cloud backup, selected published clips, transcription streamin
 ## Validation
 
 TypeScript, Worker build, Vercel build, keepsake/escaping/private-snapshot tests, recording lifecycle tests, account draft handoff, autosave, model routing, historical research, artwork and Vercel boundary checks. Provider calls are mocked. Browser QA uses an isolated local fixture with no credentials: mobile sample format switching, first draft, format changes and approval, PNG generation/download, Chinese shared reader, and reader-to-creator link. Real authentication and audio are not exercised by that fixture.
+
+Hosted verification: Preview redeployed with the existing service settings; account setup loads and Gemini/Vertex and Nimble report configured. Google sign-in reaches a passkey verification that the owner must complete. Actual authenticated AI calls, saved-story access and Live audio still need a session test. Vercel protection remains on, so outside recipients cannot yet test preview sharing anonymously.
