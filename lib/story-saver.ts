@@ -19,6 +19,15 @@ export function createStorySaver(options:{save:(story:Story,saved:SavedStory|nul
  return {
   update,replace,
   flush:()=>enqueue(drain),
+  saveAsNew:()=>enqueue(async()=>{
+   if(!current||!hasStoryContent(current))throw new Error('Tell a little of your story before saving a copy.');
+   const serialized=JSON.stringify(current);status('saving');
+   // Preserve both versions when a stale revision cannot update the original.
+   // Adopt the new identity only after creation succeeds; later edits drain there.
+   const saved=await options.save(JSON.parse(serialized),null);
+   identity=saved;clean=serialized;if(!closed)options.onSaved(identity);
+   return drain();
+  }),
   switchTo:(story:Story,saved:SavedStory|null,alreadySaved=false)=>enqueue(async()=>{await drain();replace(story,saved,alreadySaved);}),
   changeSharing:(action:'share'|'private')=>enqueue(async()=>{const saved=await drain();if(!saved)throw new Error('Tell a little of your story before sharing.');const next=await options.changeSharing(action,saved);identity=next;if(!closed)options.onSaved(next);return next;}),
   remove:(id:string)=>enqueue(async()=>{await drain();await options.remove(id);const wasCurrent=identity?.id===id;if(wasCurrent){current=null;identity=null;clean=null;if(!closed)options.onSaved(null);status('idle');}return wasCurrent;}),

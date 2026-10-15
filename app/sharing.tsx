@@ -8,12 +8,12 @@ import {shareFlowCopy} from '../lib/share-flow-copy';
 import {clearAccountDraft} from '../lib/draft-handoff';
 import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
-export function Sharing({story,config,saved,onSave,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void}){
+export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void}){
  const c={...sharingCopy[story.language],...shareFlowCopy[story.language]},sc=saveCopy[story.language];const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[email,setEmail]=useState(''),[rows,setRows]=useState<{id:string;title:string}[]>([]);
  const user=config.supabase?config.user:null;
  const url=saved?.share_token?`${location.origin}/s/${saved.share_token}`:'';
  async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){if((e as Error).name!=='AbortError')setError((e as Error).message);}finally{setPending(false);}}
- async function refresh(){if(user){await onSave();const data=await accountRequest();setRows(data.stories);}}
+ async function refresh(){if(user){const data=await accountRequest();setRows(data.stories);}}
  useEffect(()=>{if(accountOnly)void run(refresh);},[user?.id,accountOnly]);
  async function save(){const next=await onSave();if(!next)throw new Error(sc.empty);return next;}
  async function newspaperFile(){return new File([await downloadableEdition(story)],'storypress-newspaper.html',{type:'text/html'});}
@@ -33,7 +33,7 @@ export function Sharing({story,config,saved,onSave,onChangeSharing,onLoad,onNew,
  {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
  <div className="sharing-actions">{onRestoreEarlier&&<button className="text-button" disabled={pending} onClick={onRestoreEarlier}>{c.earlierDraft}</button>}<button className="text-button" disabled={pending} onClick={()=>void run(async()=>{if(!confirm(c.importConfirm))return;const raw=localStorage.getItem('storypress-draft-v1:guest')||localStorage.getItem('storypress-draft-v1');if(!raw)return;const parsed=JSON.parse(raw);await onLoad(storySchema.parse(parsed.story||parsed),null);onClose?.();})}>{c.import}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmLogout))return;void run(async()=>{await onSave();await signOut();clearAccountDraft(localStorage,storageKey,user.id);});}}>{c.logout}</button></div></>}
  </>}
- {accountError&&<p role="alert" className="error">{sc.error} {accountError}</p>}
+ {accountError&&<div><p role="alert" className="error">{sc.error} {accountError}</p>{user&&<><p>{sc.separateHelp}</p><button className="secondary" disabled={pending} onClick={()=>void run(async()=>{await onSaveSeparate();await refresh();setNotice(c.saved);})}>{sc.saveSeparate}</button></>}</div>}
  {notice&&<p role="status" className="sharing-notice"><Check size={16}/>{notice}</p>}{error&&<p role="alert" className="error">{error}</p>}
  </section>;
 }
