@@ -12,6 +12,7 @@ This replaces the earlier implementation defaults after interactive product disc
 - Mobile reading links and readable social/message images; the reading page also offers download and print.
 - Ask at the end whether the narrator wants to retain the full original recording. Sharing selected clips is a distinct action.
 - Measure quality and actual cost before choosing a cost target or permanent provider. English, Mandarin and Spanish need separate evaluation.
+- October 15 follow-up: build with Google first; compare the interviewing itself as well as speech, writing and cost. Detailed scenarios and separate scoring dimensions are in INTERVIEW-EVALUATION.md.
 - Experience value before sign-in is the desired direction. A full first draft before sign-in is the recommendation; a shorter trial remains an acceptable fallback. Neither trial limit nor billing offer is finalized.
 
 ## Implemented in this branch
@@ -27,6 +28,7 @@ This replaces the earlier implementation defaults after interactive product disc
 - Historical discovery is independently cancellable background work. Appended answers and source selections survive results; corrected testimony, changed language or another story invalidates stale results. Public query review remains.
 - Original recordings can be kept in IndexedDB on the current device, downloaded, or discarded. UI explicitly says device-only, not cloud backup. Retention IDs and audio never enter the approved snapshot.
 - Opt-in Gemini Live prototype: short-lived single-use constrained credentials, tester allowlist, existing server quota reservation, PCM input/output, interruption playback cancellation, typed turns, transcript capture, hidden-tab microphone stop and temporary original microphone recording.
+- Chat and Live share adaptive interview guidance and context preparation, including story focus, message intention, corrections, selected historical references and clearly separated unverified photo clues. Live context is a session-start snapshot; new research is not streamed into the active connection. Live cannot itself search or produce a draft.
 - Live measurements download contains duration, time to first audio from connection start, and raw provider usage events, not story text. It is a prototype instrument, not verified dollar accounting or a completed benchmark.
 
 - An unconfigured Vercel preview exposes only a sample-mode account capability; the format explorer remains usable while AI and storage endpoints still fail closed. The existing variables were subsequently enabled for both Production and Preview with owner approval. The exact preview URL is allowlisted for Supabase login; production code remains unchanged.

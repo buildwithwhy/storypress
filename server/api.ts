@@ -7,6 +7,7 @@ import { createProviders, ServiceError } from "../lib/providers";
 import {owner,reserveAi,type Bindings} from './storage';
 import {photoPart} from '../lib/photo';
 import {storyFocus} from '../lib/story-modes';
+import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
 export async function handleApi(request: Request, env: Bindings) {
  const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson}=createProviders(env as Record<string,string|undefined>);
  if(request.method !== "POST"&&request.method !== "GET") return new Response("Method not allowed",{status:405});
@@ -29,7 +30,7 @@ export async function handleApi(request: Request, env: Bindings) {
     const action = z.enum(["interview", "discover", "write", "photo", "illustrate"]).parse(body.action);
     const story = storySchema.parse(body.story);
     // Assistant questions can contain visual guesses. Only narrator turns reach research/writing.
-    const context = JSON.stringify({ name: story.name, language: story.language, occasion: story.occasion, intention:story.intention, ...(action==='interview'||action==='write'?{storyFocus:storyFocus[story.occasion]}:{}), transcript: action==='interview'||action==='photo'?story.turns:story.turns.filter(t=>t.role==='user'), historicalContext: story.sources.filter(s => s.selected), ...(action==='interview'?{previousResearchSuggestions:story.researchQueries||[]}:{}) , ...(action==='interview'&&story.photoAnalysis?{unverifiedPhotoClues:{visibleDetails:story.photoAnalysis.visibleDetails,possibleContext:story.photoAnalysis.possibleContext}}:{}) });
+    const context = JSON.stringify(action==='interview' ? interviewContext(story) : { name: story.name, language: story.language, occasion: story.occasion, intention:story.intention, ...(action==='write'?{storyFocus:storyFocus[story.occasion]}:{}), transcript: action==='photo'?story.turns:story.turns.filter(t=>t.role==='user'), historicalContext: story.sources.filter(s => s.selected) });
     if(context.length>60000)throw new ServiceError("This interview is getting long. Save it and begin a new chapter before another AI step.",400);
     if(!modelConfigured())throw new ServiceError("The story editor is not connected yet. Your words are kept.",503);
     if(action==='discover'&&!setting('NIMBLE_API_KEY'))throw new ServiceError("Historical search is not connected yet. You can continue with your own memories.",503);
@@ -57,7 +58,7 @@ export async function handleApi(request: Request, env: Bindings) {
       return Response.json({image:{...image,style}},{headers:{'Cache-Control':'no-store'}});
     }
     await reserveAi(userId,env,action);
-    if (action === "interview") return Response.json(parseJson(await gemini(interviewer+'\nBegin gently. Adapt to how much the narrator offers. Let rich answers stand; use one concrete prompt when they need help. If intention.kind is message, explore what they want to say to the recipient and the memories behind it. Do not assume affection or a relationship.', context,true,modelFor('interview')), z.object({ question: z.string().min(1).max(600), acknowledgement: z.string().max(200).optional(), readyToWrite:z.boolean().default(false),researchSuggestion:z.object({query:z.string().trim().min(1).max(220),reason:z.string().trim().min(1).max(200)}).nullable().optional() })));
+    if (action === "interview") return Response.json(parseJson(await gemini(interviewer+'\n'+interviewBehavior, context,true,modelFor('interview')), z.object({ question: z.string().min(1).max(600), acknowledgement: z.string().max(200).optional(), readyToWrite:z.boolean().default(false),researchSuggestion:z.object({query:z.string().trim().min(1).max(220),reason:z.string().trim().min(1).max(200)}).nullable().optional() })));
     if (action === "discover") {
       if (!setting("NIMBLE_API_KEY")) throw new ServiceError("Historical search is not connected yet. You can continue making your newspaper from your own memories.", 503);
       const { query } = photoSearch||researchSearch||parseJson(await gemini(researcher, context,true,modelFor('research')), z.object({ query: z.string().min(1).max(260) }));

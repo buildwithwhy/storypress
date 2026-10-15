@@ -6,7 +6,9 @@ Updated October 15: with owner approval, the nine existing Storypress variables 
 
 Google sign-in reached the existing test account's passkey verification, which needs the owner's interaction; a complete authenticated provider call is not yet verified. No paid benchmark or test story was created. The preview remains protected by Vercel authentication, so it is for owner testing rather than public sharing.
 
-The current variable list has no `GEMINI_API_KEY` for Google AI Studio. This is the only additional provider secret needed by the live-voice adapter already built. Add it directly to Vercel as a Secret in Preview. The three other Live settings below are configuration, not additional provider credentials. ElevenLabs and OpenRouter are not integrated yet.
+The last verified variable list has no `GEMINI_API_KEY` for the Gemini Developer API. This is the only additional provider secret needed by the live-voice adapter already built. AI Studio can create that key in the existing Google Cloud project; a new Google account or project is not required. Google also documents creating Gemini API keys through Cloud Console. Add the appropriate key directly to Vercel as a Secret in Preview. The three other Live settings below are configuration, not additional provider credentials. ElevenLabs and OpenRouter are not integrated yet.
+
+This is an implementation choice, not a requirement to leave Google Cloud. Vertex supports Live API too; Google's documented web approach uses an authenticated backend WebSocket relay. That route would need a different connection adapter and deployment setup. The existing Vertex credential is not a drop-in replacement in this Developer API adapter. Credit eligibility and billing have not been verified for either live route. October 15 owner decision: establish Google first, then compare providers, including interview behavior (see INTERVIEW-EVALUATION.md).
 
 ## Live voice settings
 
@@ -37,5 +39,7 @@ The backend verifies the signed-in email, reserves three existing pilot quota un
 Google references checked October 15, 2026:
 - https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
 - https://ai.google.dev/api/live
+- https://ai.google.dev/gemini-api/docs/api-key
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/live-api/get-started-websocket
 
 No model-quality or price winner has been established. No paid benchmark was run during implementation.
