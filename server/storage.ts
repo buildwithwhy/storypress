@@ -47,7 +47,7 @@ export async function storiesApi(request:Request,env:Bindings){
    let rows;
    if(body.id){const revision=z.number().int().positive().parse(body.revision);rows=await db(env,`storypress_stories?id=eq.${id}&${own}&revision=eq.${revision}`,'PATCH',{title,data:story,revision:revision+1,updated_at:now});}
    else rows=await db(env,'storypress_stories','POST',{id,owner_id:userId,title,data:story});
-   if(!rows.length)return json({error:'This saved copy has changed. Open it before saving again; your device draft is kept.'},409);
+   if(!rows.length)return json({error:'This story has a newer saved version. In My stories, save your draft as a new story to keep both versions.'},409);
    return json({id:rows[0].id,revision:rows[0].revision,share_token:rows[0].share_token,updated_at:rows[0].updated_at});
   }
   const id=uuid.parse(body.id);
