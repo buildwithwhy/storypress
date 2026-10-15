@@ -10,7 +10,6 @@ export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,on
  const c=startCopy[language];
  const [showPrompts,setShowPrompts]=useState(false);
  return <div className="start-card story-start">
-  {fromShared&&<p className="reader-welcome">{c.welcome}</p>}
   {hasDraft&&<div className="resume-story"><div><strong>{c.resume}</strong><p>{c.resumeHelp}</p></div><button className="secondary wide" disabled={disabled} onClick={onContinue}>{language==='zh'?'继续我的故事':language==='es'?'Continuar mi historia':'Continue my story'}<ArrowRight size={18}/></button></div>}
   <h2>{c.title}</h2><p className="start-time">{c.time}</p>
   <button className="primary wide" disabled={disabled} onClick={()=>onStart()}><BookOpen size={18}/>{c.memory}<ArrowRight size={18}/></button>

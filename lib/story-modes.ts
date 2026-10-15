@@ -38,7 +38,8 @@ const openings = {
  },
 } satisfies Record<Story['language'], Record<Story['occasion'], string>>;
 
-export function openingQuestion(story: Pick<Story, 'language' | 'occasion'>) {
+export function openingQuestion(story: Pick<Story, 'language' | 'occasion' | 'intention'>) {
+ if(story.intention?.kind==='message')return {en:'Who is this for, and what would you like them to know?',zh:'你想写给谁？有什么想让对方知道的？',es:'¿Para quién es y qué te gustaría decirle?'}[story.language];
  return openings[story.language][story.occasion];
 }
 

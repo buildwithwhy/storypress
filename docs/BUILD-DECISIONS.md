@@ -1,65 +1,42 @@
-# Independent creation and sharing: build decisions
+# Storypress: October 15 build
 
-October 15, 2026. Recommended defaults for the first implementation; they do not replace the confirmed requirements in PRODUCT-BRIEF.md. No hosting migration, new paid service, or public deployment is included.
+This replaces the earlier implementation defaults after interactive product discovery. The work is on `codex/independent-sharing-flow` (draft PR #2), not production main. Existing Supabase/Vercel hosting remains.
 
-## The experience we are building
+## Confirmed product direction
 
-The first useful unit is one memory made into one keepsake. Someone should not need to plan a book, invite a relative, or pick a model to get there. Completing something privately is a valid success.
+- One independent creation path, whether arriving organically or through a friend's shared work. Optional collaboration comes later.
+- A patient interviewer: begin gently, adapt to how much the storyteller says, and allow time to remember.
+- Live conversation is the primary voice experience, with recorded messages and typing sharing the story history.
+- The first result is a beautiful editable keepsake draft. No mandatory plain-text approval screen before the reveal.
+- A small format family: newspaper, mini booklet, letter/card. Letters may preserve a memory or directly address someone. Keep story content separate from presentation.
+- Mobile reading links and readable social/message images; the reading page also offers download and print.
+- Ask at the end whether the narrator wants to retain the full original recording. Sharing selected clips is a distinct action.
+- Measure quality and actual cost before choosing a cost target or permanent provider. English, Mandarin and Spanish need separate evaluation.
+- Experience value before sign-in is the desired direction. A full first draft before sign-in is the recommendation; a shorter trial remains an acceptable fallback. Neither trial limit nor billing offer is finalized.
 
-| Screen | Main action | Design and recovery behavior |
-| --- | --- | --- |
-| Discover / return | Start a memory | Show a real example, a 5–10 minute expectation, and three starts: a memory, a photo, or a suggested question. Show an existing draft prominently. Name and occasion are optional details. |
-| Tell | Speak or type an answer | One conversational focus; allow mode changes, corrections and pauses. Preserve an unfinished answer through Google sign-in. Useful historical context belongs here, with its source and an easy dismissal. |
-| Shape | Review my story | Offer a draft when there is enough substance, without a compulsory number of questions. Preserve first-person voice and uncertainty. Ask for missing facts; never manufacture them to fill a layout. |
-| Keep | Finish the keepsake | Start with the existing newspaper; add a short memoir booklet next. Choose visual treatment after content exists. Reviewing text and approving an edition are distinct actions. |
-| Share | Create a reading link | Private by default. Explain that anyone with the link can read and forward it. Publish an approved snapshot; later private edits do not silently alter it. Permit explicit update and link revocation. Keep download/print available. |
-| Read | Enjoy the story | No login, editing controls or collaborator permissions. A restrained “Make your own story” opens the independent start screen, in the edition's language, without transferring its contents. Preserve any reader's existing draft. |
+## Implemented in this branch
 
-Sample viewing must never replace, save over, or become the user's story. A sample opens as a separate read-only preview. Returning to a draft and deliberately starting another story remain separate actions.
+- Existing independent start, safe sample dialog and approved-snapshot sharing retained.
+- Three localized layout selectors in optional setup, sample preview and draft editing. Setup controls do not overwrite an existing draft's intention or layout.
+- Memory/message intention and optional addressee inform opening questions and editorial prompts.
+- Versioned `presentation` and `intention` fields in the existing story JSON; legacy stories default to newspaper. No database migration for these fields.
+- Shared renderer for the actual draft, downloaded document and public reading page. Layout changes preserve text exactly and invalidate publication approval.
+- Booklet cover and story leaves, letter layout, responsive newspaper; printable styles for all three.
+- PNG cards generated locally from approved content, including CJK wrapping and multiple cards for long stories. Download individual cards; native file sharing where supported. These are readable story cards, not screenshots of the selected print layout. Context/source sections remain in the full edition.
+- The public reading page has save-copy and print/PDF controls. Downloaded HTML is self-contained and includes no acquisition CTA or private interview/audio.
+- Historical discovery is independently cancellable background work. Appended answers and source selections survive results; corrected testimony, changed language or another story invalidates stale results. Public query review remains.
+- Original recordings can be kept in IndexedDB on the current device, downloaded, or discarded. UI explicitly says device-only, not cloud backup. Retention IDs and audio never enter the approved snapshot.
+- Opt-in Gemini Live prototype: short-lived single-use constrained credentials, tester allowlist, existing server quota reservation, PCM input/output, interruption playback cancellation, typed turns, transcript capture, hidden-tab microphone stop and temporary original microphone recording.
+- Live measurements download contains duration, time to first audio from connection start, and raw provider usage events, not story text. It is a prototype instrument, not verified dollar accounting or a completed benchmark.
 
-For the initial build, keep Google's existing authentication before the first paid AI operation. Let a visitor explore a sample, pick a starting question and write an answer beforehand. Explain that boundary before starting, rather than surprising them with a login after promising unrestricted guest AI. A genuinely anonymous AI trial needs a server-owned session, recovery and abuse budget; it is a later change, not a client-side bypass.
+## Activation, verification and remaining work
 
-Public social posting is later. Today sharing means an unlisted reading link, the device's native share sheet when supported, copying a link, and existing printable/downloadable output. No recipient address is required. A shared link is not access restricted to named recipients. Turning it off cannot recall downloaded files or screenshots. Generic social metadata avoids deliberately adding story excerpts to link previews, but is not a confidentiality guarantee.
+See LIVE-VOICE-SETUP.md. Live voice is off unless configured and the signed-in account is allowlisted. The implementation is behind a pilot gate because no real paid provider/microphone call has been made. Provider and account boundaries have mocked tests. Token protocol, model access, billing, actual interruptions and multilingual quality still require a hosted microphone trial.
 
-## Technical choices
+The existing account-before-AI boundary remains until we implement a durable anonymous trial with server-owned budgets and recovery. Do not advertise an anonymous full-draft trial yet. Existing quota checks are not bypassed.
 
-| Area | Decision for this build | Reason / later boundary |
-| --- | --- | --- |
-| Hosting and app | Keep React, TypeScript, Vercel and existing build scripts | Production already works. No framework or hosting migration is necessary for this flow. |
-| Identity and storage | Keep Supabase Google auth, owner-filtered storage and revision checks | Preserve OAuth draft handoff and conflict handling. Never expose the server secret to the browser. |
-| Story representation | Keep the existing story JSON for this slice | Entry and sharing changes need no database migration. Transcript, editable draft and approved edition remain distinct concepts. |
-| Publication | Keep the approved edition snapshot and revocable random token | A read-only token grants access to the edition only, never the interview or account. Public readers must query only the edition. |
-| Formats | Add a versioned presentation field to an edition when implementing the booklet | Newspaper and booklet should render the same approved content. Use deliberate page layouts and print CSS, not one image of text. A single-story booklet precedes multi-story books. |
-| Conversation | Add a streaming interview adapter next | Stream useful text early, retain cancellation and persist accepted turns. Track time to first response and completion separately. |
-| Voice | Use a direct real-time voice provider behind a session adapter | First prototype the already-used Gemini ecosystem; compare ElevenLabs on actual English, Mandarin and Spanish recordings before committing. The browser receives short-lived session credentials, never provider secrets. A Vercel function should not proxy a long-lived audio connection. Verify each provider's session/auth API before implementation. |
-| Text models | Keep the existing Gemini path for this UI slice; make task-specific adapters next | Compare interview and editorial writing independently. OpenRouter is an optional text transport; it need not carry real-time voice. Do not choose language routes on price alone or switch providers silently mid-conversation. |
-| Research | Separate cancellable background work from conversation busy state in the next conversation slice | Track story identity, transcript revision and request ID. Merge results only into the originating story, ignore stale responses, and never overwrite a later answer. User approval is required before sending a public search query containing memory details. |
-| Audio / media | Keep current behavior until private media storage is implemented | The latest temporary recording is not a durable clip library. Future selected clips require private originals, consent, timestamps, explicit publication derivatives and revocation-aware access. |
-| Future collaboration | Add contributions and memberships later, enforced server-side | Do not prematurely give a share token editing rights or add collaboration tables to the independent flow. Keep authorship and publication authority distinct. |
-| Cost and offers | Retain existing server allowance for now | Do not display “five free” before its unit and budget are agreed. Record task/model usage and cost before deciding a permanent offer. No paid benchmark is part of this slice. |
+Private recording cloud backup, selected published clips, transcription streaming, ElevenLabs comparison, per-task text-provider benchmarks, guest trials, multi-story books and collaboration remain subsequent slices. This build does not claim to deliver them.
 
-## Implementation order
+## Validation
 
-1. **This slice:** independent entry, local question starters, optional setup details, safe sample preview, clearer approved-link sharing, native link sending, localized reader-to-creator action and language continuity. Preserve guest/account draft boundaries. No schema changes.
-2. **Conversation:** streaming text, cancellable research, recoverable voice session prototype, mobile interruption and silence handling. Benchmark real conversations before choosing a new default voice provider. Define a capped test budget first.
-3. **Keepsake:** one-story memoir booklet, photo placement, honest page-length choices, print/PDF quality; later selected original voice clips.
-4. **Return and expansion:** collections and ordering stories into a book, then scoped collaborators and invitation handoff.
-
-## Verification and acceptance
-
-- Starting with a suggested question changes the actual opening question, in the chosen language.
-- A sample can be opened and closed without changing the active draft, its approval, saved identity or unsent answer.
-- The first AI login preserves the draft through existing OAuth handoff.
-- Creating/updating a link still requires server-verified ownership, current revision and an approved edition. Disabling a link invalidates future requests.
-- Shared HTML contains no private interview or unfinished answer; user text is escaped. Reader acquisition parameters contain only source and language, never a story token or copied memory.
-- Downloads remain self-contained. The online reader's acquisition controls do not print and do not appear as broken root-relative links in an offline file.
-- Check desktop and narrow-screen entry, sample dialog and reader page; run type/build checks and the existing sharing, saving, OAuth-handoff and Vercel contract checks with mocked providers.
-- Production authentication, real provider latency, native mobile share-sheet behavior and hosted deployment require their own live checks; local tests do not establish them.
-
-## First slice implemented locally
-
-The independent start card, localized question starters, optional details, separate sample dialog, primary approved-link action, native link sending with copy fallback, publication explanation, generic social metadata and localized reader-to-creator link are implemented. Existing draft restoration takes precedence over an incoming language parameter so following a shared story cannot change another story's language or content.
-
-Verification completed: TypeScript, both builds, sharing contracts (including EN/ZH/ES reader links), Vercel adapter contracts, draft/OAuth handoff and serialized story saving. Provider and database responses were mocked. Browser checks covered the desktop entry, 390px entry and reader, a starter opening the matching question, retaining an unsent answer through sample viewing, and the reader action returning to the creation screen. No paid provider requests or live database writes were made.
-
-The first slice intentionally retains the current newspaper format, voice implementation and authentication policy. Live hosted sign-in, actual native share sheets, streaming text, real-time voice, booklet output and retained voice clips are not verified or implemented by these changes. The build regenerates `worker/index.js`; source is authoritative for Vercel's `build:vercel` command.
+TypeScript, Worker build, Vercel build, keepsake/escaping/private-snapshot tests, recording lifecycle tests, account draft handoff, autosave, model routing, historical research, artwork and Vercel boundary checks. Provider calls are mocked. Browser QA uses an isolated local fixture with no credentials: mobile sample format switching, first draft, format changes and approval, PNG generation/download, Chinese shared reader, and reader-to-creator link. Real authentication and audio are not exercised by that fixture.

@@ -1,0 +1,31 @@
+# Enable the Gemini Live pilot
+
+Use Vercel → storypress-app → Settings → Environment Variables. Apply these to the **Preview** environment first, then redeploy the preview branch. Production does not need to change for this test.
+
+| Variable | Kind | Value |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | Secret | An existing Google AI Studio Gemini API key with Live API access and billing. Reuse it if already present in Preview. A Vertex API key is a different credential and cannot be substituted here. |
+| `GEMINI_LIVE_MODEL` | Config | A Live API model available to that key. Google's current ephemeral-token guide uses `gemini-3.8-live`; verify availability in the account. |
+| `STORYPRESS_LIVE_VOICE` | Config | `gemini` |
+| `STORYPRESS_LIVE_TEST_EMAILS` | Secret / private config | Comma-separated Google sign-in email addresses allowed to test. Add your actual sign-in address here; do not put it in source control. |
+
+The existing Supabase URL, publishable key, server secret, story tables and quota RPC remain required. Do not send any keys through chat. No ElevenLabs account is needed to try this first adapter.
+
+The backend verifies the signed-in email, reserves three existing pilot quota units, then provisions a one-use token valid for a ten-minute session with a sixty-second connection window. The provider setup/model/instructions are locked into the token. The browser never receives the Google API key. Live sessions cannot refresh their own credentials.
+
+`GEMINI_BACKEND=vertex` may remain for existing text calls; Live uses `GEMINI_API_KEY` directly. Text-provider selection does not silently change. The live model has no fallback: a connection failure preserves the story and offers voice messages/typing.
+
+## First real test
+
+1. Sign in on the preview with an allowlisted account. Talk live becomes the first conversation mode.
+2. Use a fictional memory for the initial connectivity test. Allow the microphone only when intentionally starting a call.
+3. Tell a longer answer, pause, interrupt the assistant, correct a fact, and type one sentence during the same call.
+4. Finish and confirm both the transcript and the keep/discard recording choice. Recordings are device-only in this build; download a backup if wanted.
+5. Download session measurements. Compare with provider billing/usage; the app does not yet calculate a dollar total.
+6. Repeat with English, Mandarin and Spanish, then compare an ElevenLabs implementation using the same scenarios before choosing a permanent voice provider.
+
+Google references checked October 15, 2026:
+- https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
+- https://ai.google.dev/api/live
+
+No model-quality or price winner has been established. No paid benchmark was run during implementation.

@@ -1,6 +1,6 @@
 # Storypress: first experience design brief
 
-Discovery draft, October 15, 2026. Product choices recorded from Yuyu's answers. Proposed design and engineering decisions are identified separately. No implementation or deployment is implied.
+Discovery draft, October 15, 2026. Product choices recorded from Yuyu's answers. Proposed design and engineering decisions are identified separately. Implementation status is tracked separately in BUILD-DECISIONS.md.
 
 ## Product promise
 
@@ -25,7 +25,13 @@ Yuyu clarified this priority on October 15 after the initial discovery questions
 | Writing | Polished first-person narrative, with stronger structure and flow |
 | Finishing | Independent creators finish their own keepsake; invited relatives may finish it themselves or hand it to the inviter |
 | Handoff authority | Storyteller chooses permissions, including whether edits need approval before sharing |
-| Outputs | Short booklet with designed pages; illustrated newspaper page or keepsake card |
+| Outputs | Newspaper, mini booklet, and letter/card; message intention may address a recipient directly or preserve a memory |
+| First reveal | A beautiful editable keepsake draft |
+| Voice | Live conversation primary, with voice messages and typing sharing the same story |
+| Interview pace | Begin gently and adapt to how much the narrator says |
+| Distribution | Mobile reading page, readable share images, save-copy and print controls |
+| Recording retention | Narrator chooses at the end whether to keep the full recording |
+| Cost target | Measure quality and total cost before choosing the target |
 | Visual directions | Warm illustrated memoir; playful vintage newspaper; scrapbook with photographs and handwritten touches |
 | Original audio | Selected voice clips are an optional part of the keepsake |
 | Historical research | Useful context appears during the conversation when it can prompt another memory |
@@ -37,7 +43,7 @@ Visual directions are candidates within the preferred formats, not three separat
 
 ## Proposed primary journey: independent creator
 
-1. **Discover the possibility.** Show an example of a finished booklet or newspaper and a clear primary action to start a story. A person arriving from a shared keepsake has already seen the output and can go directly to starting their own. Explain the first-visit commitment and included offer clearly.
+1. **Discover the possibility.** Show an example of a finished booklet or newspaper and a clear primary action to start a story. Organic and shared-keepsake discovery use the same creation and sign-in path. Explain the first-visit commitment and included offer clearly.
 2. **Find a starting point.** Offer talking/typing about a memory, starting from a photo, or getting help choosing a topic. Do not require a project, invitation, collaborator, book outline, or visual-template choice before the first answer. Exact onboarding choices remain a design proposal.
 3. **Tell one memory.** Use what the person supplies to ask specific follow-ups. Permit pauses, corrections, topic changes, and returning later. Save accepted content incrementally. Aim for a useful small story from a 5–10 minute first visit.
 4. **Use context when it helps.** Research public clues in the background. Offer a concise sourced observation at a natural break if it could lead to another recollection. Acknowledge uncertainty and let the storyteller reject the connection.
@@ -55,7 +61,7 @@ Preserve these requirements for the collaboration phase. The first design and im
 
 ## Proposed access and pilot offer
 
-The confirmed commercial direction is a founder-funded pilot and a test of payment at finishing/export. Invitation-first access and later sign-in for management are confirmed for invited relatives. The sign-in point for a person arriving independently remains to be settled; a proposed default is to let them begin and see value before asking them to sign in for durable management. The following mechanics are recommendations to evaluate, not a finalized price or allowance:
+The confirmed commercial direction is a founder-funded pilot and a test of payment at finishing/export. Invitation-first access and later sign-in for management are confirmed for invited relatives. The desired account boundary is after a first keepsake or after a short conversation trial, identically for organic and shared-link discovery; a proposed default is to let them begin and see value before asking them to sign in for durable management. The following mechanics are recommendations to evaluate, not a finalized price or allowance:
 
 - An invitation grants limited access to its own contribution. Save accepted turns before sign-in. Later sign-in links the existing contribution to the verified account and preserves text, audio choices, edits, and permissions. Define recovery, expiry, and account-conflict behavior before implementation.
 - Treat "first five free" as a candidate allowance of five completed story keepsakes per creator account. Later, a story can have a designated paying account when collaboration is added. Independent creation requires no organizer or sponsoring-relative concept. Confirm the counted unit and scope before displaying a promise to users.
@@ -111,7 +117,7 @@ Later extensions include optional collaborators, the family invitation/handoff f
 - The sign-in point and any limited guest allowance for independent arrivals; content must survive authentication. Invitation recovery, expiry and account linking are decisions for the later collaboration branch.
 - Exact free-allowance unit and account scope, the payer for invited stories, the paid offer and price, and the pilot spend limit.
 - The default handoff permissions and whether full transcripts or source recordings are shared with an editor.
-- Storage duration and deletion controls for full source recordings versus approved clips.
+- Retention is chosen at session end; storage lifetime, abandoned-session cleanup and cloud recording deletion mechanics still need implementation choices.
 - Exact visual templates, illustration controls, and layout behavior when photos are absent.
 - Public versus link-only sharing defaults and what appears in social previews.
 

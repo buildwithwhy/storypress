@@ -21,7 +21,7 @@ queue=[{data:[{edition:{...story,turns:[],draft:undefined}}]}];const edition=awa
 assert.match(html,/href="\/\?from=shared&amp;lang=en"/,'The reader can start an independent story without receiving the share token');
 assert.ok(!html.includes(token),'The share token must not be embedded in the acquisition link');
 assert.ok(!html.split('</head>')[0].includes('A family story.'),'Social metadata should not quote the story');
-assert.match(html,/\.print,\.reader-next\{display:none\}/,'Reader acquisition controls should not print');
+assert.match(html,/\.print,\.download,\.reader-actions,\.reader-next\{display:none\}/,'Reader acquisition controls should not print');
 assert.equal(edition.headers.get('Referrer-Policy'),'no-referrer');
 for(const [language,action] of [['zh','讲讲我自己的故事'],['es','Crear mi propia historia']]){
  queue=[{data:[{edition:{...story,language,turns:[],draft:undefined}}]}];
