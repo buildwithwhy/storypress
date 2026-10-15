@@ -27,11 +27,13 @@ The backend verifies the signed-in email, reserves three existing pilot quota un
 
 `GEMINI_BACKEND=vertex` may remain for existing text calls; Live uses `GEMINI_API_KEY` directly. Text-provider selection does not silently change. The live model has no fallback: a connection failure preserves the story and offers voice messages/typing.
 
+Chat interview streaming also uses the existing Vertex connection and needs no additional credential. It is separate from native Live voice activation. A streamed preview is not saved until the provider completes and the result validates.
+
 ## First real test
 
 1. Sign in on the preview with an allowlisted account. Talk live becomes the first conversation mode.
 2. Use a fictional memory for the initial connectivity test. Allow the microphone only when intentionally starting a call.
-3. Tell a longer answer, pause, interrupt the assistant, correct a fact, and type one sentence during the same call.
+3. Tell a longer answer, use Pause and Resume, interrupt the assistant, correct a fact, and type one sentence during the same call. Pause should mute both microphone transmission and the optional recording; typed replies remain possible.
 4. Finish and confirm both the transcript and the keep/discard recording choice. Recordings are device-only in this build; download a backup if wanted.
 5. Download session measurements. Compare with provider billing/usage; the app does not yet calculate a dollar total.
 6. Repeat with English, Mandarin and Spanish, then compare an ElevenLabs implementation using the same scenarios before choosing a permanent voice provider.

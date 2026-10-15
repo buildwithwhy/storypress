@@ -1,5 +1,5 @@
 import type {Turn} from './story';
-export type LivePhase='idle'|'connecting'|'listening'|'speaking';
+export type LivePhase='idle'|'connecting'|'listening'|'speaking'|'paused';
 export type LiveGrant={token:string;model:string;expiresAt:string;maxSeconds:number};
 export type LiveMetrics={provider:'gemini';model:string;durationSeconds:number;firstAudioMs:number|null;usage:Record<string,unknown>[]};
 type Events={phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
@@ -12,13 +12,13 @@ function encoded(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=819
 export function createLiveVoice(events:Events){
  let generation=0,ws:WebSocket|undefined,stream:MediaStream|undefined,context:AudioContext|undefined,processor:AudioWorkletNode|undefined,recorder:MediaRecorder|undefined;
  let limit:ReturnType<typeof setTimeout>|undefined,connectingTimer:ReturnType<typeof setTimeout>|undefined;
- let playing:AudioBufferSourceNode[]=[],playAt=0,userText='',assistantText='',started=0,firstAudioMs:number|null=null,model='',usage:Record<string,unknown>[]=[],active=false;
+ let playing:AudioBufferSourceNode[]=[],playAt=0,userText='',assistantText='',started=0,firstAudioMs:number|null=null,model='',usage:Record<string,unknown>[]=[],active=false,paused=false;
  function emitTurns(){if(userText.trim())events.turn({role:'user',text:userText.trim().slice(0,12000)});if(assistantText.trim())events.turn({role:'assistant',text:assistantText.trim().slice(0,12000)});userText='';assistantText='';events.caption('');}
  function silence(){for(const source of playing){try{source.stop();}catch{}}playing=[];playAt=0;}
  async function stop(){
   generation++;clearTimeout(limit);clearTimeout(connectingTimer);emitTurns();silence();
   ws?.close();ws=undefined;processor?.disconnect();processor=undefined;
-  if(recorder?.state==='recording')recorder.stop();recorder=undefined;
+  if(recorder&&recorder.state!=='inactive')recorder.stop();recorder=undefined;paused=false;
   stream?.getTracks().forEach(t=>t.stop());stream=undefined;
   const old=context;context=undefined;if(old&&old.state!=='closed')await old.close().catch(()=>{});
   if(active){events.metrics({provider:'gemini',model,durationSeconds:Math.round((performance.now()-started)/1000),firstAudioMs,usage});active=false;}
@@ -51,7 +51,7 @@ export function createLiveVoice(events:Events){
      if(data.setupComplete){
       clearTimeout(connectingTimer);active=true;rec.start(1000);
       processor=new AudioWorkletNode(audio,'storypress-capture');const source=audio.createMediaStreamSource(acquired),mute=audio.createGain();mute.gain.value=0;source.connect(processor);processor.connect(mute);mute.connect(audio.destination);
-      processor.port.onmessage=e=>{if(id!==generation||socket.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>256000){events.problem(new Error('The connection cannot keep up with live audio. Your words are kept.'));void stop();return;}const pcm=pcm16(e.data,audio.sampleRate);socket.send(JSON.stringify({realtimeInput:{audio:{data:encoded(new Uint8Array(pcm.buffer)),mimeType:'audio/pcm;rate=16000'}}}));};
+      processor.port.onmessage=e=>{if(id!==generation||paused||socket.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>256000){events.problem(new Error('The connection cannot keep up with live audio. Your words are kept.'));void stop();return;}const pcm=pcm16(e.data,audio.sampleRate);socket.send(JSON.stringify({realtimeInput:{audio:{data:encoded(new Uint8Array(pcm.buffer)),mimeType:'audio/pcm;rate=16000'}}}));};
       events.phase('listening');
       socket.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Please begin with one gentle question, or continue the latest thread in our saved conversation.'}]}],turnComplete:true}}));
       limit=setTimeout(()=>{if(id===generation){events.problem(new Error('This live session has finished. You can continue in another session; your story is kept.'));void stop();}},Math.max(0,Math.min(permission.maxSeconds*1000,Date.parse(permission.expiresAt)-Date.now())));
@@ -62,12 +62,13 @@ export function createLiveVoice(events:Events){
       if(content.inputTranscription?.text)userText+=content.inputTranscription.text;
       if(content.outputTranscription?.text)assistantText+=content.outputTranscription.text;
       events.caption(userText||assistantText);
-      if(content.interrupted){silence();emitTurns();events.phase('listening');}
+      if(content.interrupted){silence();emitTurns();events.phase(paused?'paused':'listening');}
       else for(const part of content.modelTurn?.parts||[]){const inline=part.inlineData;if(!inline?.data||!inline.mimeType?.startsWith('audio/pcm'))continue;
+       if(paused)continue;
        if(firstAudioMs===null)firstAudioMs=Math.round(performance.now()-started);
        const bytes=Uint8Array.from(atob(inline.data),(c:string)=>c.charCodeAt(0)),view=new DataView(bytes.buffer),rate=Number(/rate=(\d+)/.exec(inline.mimeType)?.[1]||24000);
        const buffer=audio.createBuffer(1,Math.floor(bytes.length/2),rate),channel=buffer.getChannelData(0);for(let i=0;i<channel.length;i++)channel[i]=view.getInt16(i*2,true)/32768;
-       const source=audio.createBufferSource();source.buffer=buffer;source.connect(audio.destination);playAt=Math.max(audio.currentTime,playAt);source.start(playAt);playAt+=buffer.duration;playing.push(source);events.phase('speaking');source.onended=()=>{playing=playing.filter(s=>s!==source);if(!playing.length&&id===generation)events.phase('listening');};
+       const source=audio.createBufferSource();source.buffer=buffer;source.connect(audio.destination);playAt=Math.max(audio.currentTime,playAt);source.start(playAt);playAt+=buffer.duration;playing.push(source);events.phase('speaking');source.onended=()=>{playing=playing.filter(s=>s!==source);if(!playing.length&&id===generation)events.phase(paused?'paused':'listening');};
       }
       if(content.turnComplete)emitTurns();
      }
@@ -79,5 +80,7 @@ export function createLiveVoice(events:Events){
   }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}
  }
  function text(value:string){if(!active||ws?.readyState!==WebSocket.OPEN||!value.trim())return false;silence();emitTurns();events.turn({role:'user',text:value.trim()});ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:value.trim()}]}],turnComplete:true}}));return true;}
- return {start,stop,text};
+ function pause(){if(!active||paused||ws?.readyState!==WebSocket.OPEN)return;paused=true;silence();stream?.getAudioTracks().forEach(track=>{track.enabled=false;});if(recorder?.state==='recording')recorder.pause();ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));events.phase('paused');}
+ function resume(){if(!active||!paused)return;paused=false;stream?.getAudioTracks().forEach(track=>{track.enabled=true;});if(recorder?.state==='paused')recorder.resume();events.phase('listening');}
+ return {start,stop,text,pause,resume};
 }

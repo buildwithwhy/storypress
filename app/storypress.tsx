@@ -5,6 +5,7 @@ import type {SavedRecording} from "../lib/recording-vault";
 import {KeepsakeView,FormatPicker,IntentionPicker,ShareImages} from "./keepsake-studio";
 import {keepsakeCopy,type KeepsakeFormat} from "../lib/keepsake";
 import {mergeResearch} from "../lib/research-state";
+import {readInterviewResponse} from '../lib/interview-client';
 import {StoryArt} from "./story-art";
 import {StoryStart,SamplePreview} from "./story-start";
 import {sharedEntryLanguage,startCopy} from "../lib/start-copy";
@@ -71,6 +72,8 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  const [ready, setReady] = useState(false);
  const [input, setInput] = useState("");
  const [busy, setBusy] = useState("");
+ const [streamingQuestion,setStreamingQuestion]=useState('');
+ const interviewRequest=useRef<AbortController|null>(null);
  const [error, setError] = useState("");
  const [editing, setEditing] = useState(false);
  const [searched, setSearched] = useState(false);
@@ -106,7 +109,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
  const file = useRef<HTMLInputElement>(null);
  const textArea = useRef<HTMLTextAreaElement>(null);
- const question = [...story.turns].reverse().find(t => t.role === "assistant")?.text || openingQuestion(story);
+ const question = streamingQuestion || [...story.turns].reverse().find(t => t.role === "assistant")?.text || openingQuestion(story);
  const k=keepsakeCopy[story.language];
  const c = {...copy[story.language],create:k.create,edit:k.edit,paper:({en:"Your keepsake",zh:"你的纪念作品",es:"Tu recuerdo"}[story.language])};
  const v = interviewCopy[story.language];
@@ -177,7 +180,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   const leave = () => { voice.current?.cancel(); setVoicePaused(true); };
   const hidden = () => { if (document.hidden) leave(); };
   document.addEventListener("visibilitychange", hidden); window.addEventListener("pagehide", leave);
-  return () => { researchRequest.current?.abort(); voice.current?.cancel(); requestId.current++; document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", leave); };
+  return () => { interviewRequest.current?.abort(); researchRequest.current?.abort(); voice.current?.cancel(); requestId.current++; document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", leave); };
  }, []);
  function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); setStage(next); setError(""); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
  function changeMode(next: InterviewMode) { voice.current?.cancel(); setMode(next); setError(""); setVoicePaused(false); setShowText(false); if (!services.liveVoice && next === "voice" && stage === "tell") voice.current?.speak(question, story.language); }
@@ -196,9 +199,15 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  function canUseAi(){if(account.sampleOnly){setShowSample(true);return false;}if(story.sample){setError(f.sample);return false;}if(account.supabase&&!account.user){setShowAccount(true);setError(f.signin);return false;}return true;}
  async function nextQuestion(next:Story){
   if(next.sample)throw new Error(flowCopy[next.language].sample);
-  const result=await callApi('interview',next);setReadyToWrite(result.readyToWrite===true);
-  const suggestion=result.readyToWrite?null:result.researchSuggestion||null;
-  return {text:[result.acknowledgement,result.question].filter(Boolean).join(' '),researchSuggestion:suggestion,researchQueries:[...new Set([...(next.researchQueries||[]),...(suggestion?[suggestion.query]:[])])].slice(-60)};
+  interviewRequest.current?.abort();const controller=new AbortController();interviewRequest.current=controller;setStreamingQuestion('');
+  try{
+   const response=await fetch('/api/story',{method:'POST',headers:{'Content-Type':'application/json',...await accountHeaders()},body:JSON.stringify({action:'interview',stream:true,story:{...next,photo:undefined,generatedArt:undefined}}),signal:controller.signal});
+   const result=await readInterviewResponse(response,text=>{if(!controller.signal.aborted)setStreamingQuestion(text);});
+   if(controller.signal.aborted)throw new DOMException('Cancelled','AbortError');
+   setReadyToWrite(result.readyToWrite===true);
+   const suggestion=result.readyToWrite?null:result.researchSuggestion||null;
+   return {text:[result.acknowledgement,result.question].filter(Boolean).join(' '),researchSuggestion:suggestion,researchQueries:[...new Set([...(next.researchQueries||[]),...(suggestion?[suggestion.query]:[])])].slice(-60)};
+  }finally{if(interviewRequest.current===controller){interviewRequest.current=null;setStreamingQuestion('');}}
  }
  function speakFollowup(q: string, language: Story["language"]) { const current = latest.current; if (!services.liveVoice && current.mode === "voice" && !current.voicePaused && current.stage === "tell") voice.current?.speak(q, language); }
  async function send(value = input.trim()) {
@@ -214,6 +223,13 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   finally { if (id === requestId.current) { setBusy(""); submitting.current = false; } }
  }
  sendRef.current = send;
+ async function retryInterview(){
+  if(interactionBusy||correcting||!canUseAi())return;
+  const current=latest.current.story;if(current.turns.length>58){setError(v.maxTurns);return;}
+  setBusy(v.thinking);setError('');
+  try{const q=await nextQuestion(current);setStory(s=>({...s,researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...current.turns,{role:'assistant',text:q.text}]}));speakFollowup(q.text,current.language);}
+  catch(e){setError((e as Error).message);}finally{setBusy('');}
+ }
  async function skip() {
   if (interactionBusy || correcting || !canUseAi()) return;
   if (story.turns.length > 57) { setError(v.maxTurns); return; }
@@ -359,7 +375,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
    {mode === "type" && busy && <p className="working" role="status">{busy}</p>}
    <ResearchThread story={story} disabled={interactionBusy||correcting} canSearch={services.nimble} searching={researching} searched={searched} onSearch={query=>void discover(undefined,query)} onDismiss={()=>patch({researchSuggestion:null})} onExplore={exploreSource} onUpdateSource={updateSource}/>
    {(words.length>0||!!input.trim())&&!story.sample&&<section className="finish-interview" aria-label={f.ready}><div><h2>{f.ready}</h2><p>{readyToWrite?f.readyNote:f.finish}</p></div><button className="primary" onClick={()=>void makePaper()} disabled={interactionBusy||correcting}><Newspaper size={18}/>{c.create}</button></section>}
-   {error&&words.length>0&&!story.sample&&<button className="text-button" disabled={interactionBusy||correcting} onClick={()=>void skip()}>{f.retry}</button>}
+   {error&&words.length>0&&!story.sample&&<button className="text-button" disabled={interactionBusy||correcting} onClick={()=>void retryInterview()}>{f.retry}</button>}
    {words.length > 0 && <section className="latest-transcript"><div><h2>{v.transcript}</h2>{!correcting && <button className="text-button" onClick={editLastWords} disabled={interactionBusy || !!input}><Pencil size={15}/>{v.edit}</button>}</div>{correcting ? <><textarea aria-label={v.edit} value={correction} maxLength={12000} onChange={e => setCorrection(e.target.value)}/><div className="correction-actions"><button className="primary" onClick={saveCorrection} disabled={!correction.trim() || interactionBusy}>{v.save}</button><button className="text-button" onClick={() => setCorrecting(false)}>{v.discard}</button></div></> : <p>{words.at(-1)}</p>}</section>}
    <button className="text-button skip-question" onClick={skip} disabled={interactionBusy || correcting || story.sample}>{readyToWrite?f.continue:c.skip}<ArrowRight size={15}/></button>
    {!services.gemini && !story.sample && <p className="offline-note">{f.offline}</p>}

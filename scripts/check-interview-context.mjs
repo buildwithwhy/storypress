@@ -14,17 +14,19 @@ globalThis.fetch=async(url,init)=>{
  const body=JSON.parse(init.body);providerCalls++;
  if(target.includes('aiplatform.googleapis.com')){
   textContext=JSON.parse(body.contents[0].parts[0].text);
-  return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({question:'What would you like them to know?'})}]}}]});
+  const result={candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({question:'What would you like them to know?'})}]}}]};
+  return target.includes(':streamGenerateContent')?new Response('data: '+JSON.stringify(result)+'\n\n',{headers:{'Content-Type':'text/event-stream'}}):Response.json(result);
  }
  assert.equal(target,'https://generativelanguage.googleapis.com/v1beta/auth_tokens');
  livePrompt=body.bidiGenerateContentSetup.systemInstruction.parts[0].text;
  return Response.json({name:'ephemeral-fixture'});
 };
-const request=(action,story)=>new Request('https://story.test/api/story',{method:'POST',headers:{Authorization:'Bearer fixture',Origin:'https://story.test','Content-Type':'application/json'},body:JSON.stringify({action,story})});
+const request=(action,story,stream=false)=>new Request('https://story.test/api/story',{method:'POST',headers:{Authorization:'Bearer fixture',Origin:'https://story.test','Content-Type':'application/json'},body:JSON.stringify({action,story,stream})});
 try{
  for(const [language,correction] of [['en','It was my aunt, not my mother.'],['zh','不是妈妈，是阿姨。'],['es','Era mi tía, no mi madre.']]){
   const story={name:'Alex',language,occasion:'graduation',intention:{kind:'message',recipient:'Sam'},turns:[{role:'user',text:correction}],sources:[reference,{...reference,id:'unselected',title:'DO NOT SEND UNSELECTED',selected:false}],photo:'PRIVATE IMAGE BYTES',draft:'UNSENT DRAFT',photoAnalysis:{visibleDetails:['A red bag'],possibleContext:['Possibly a station'],question:'Unused question',searchQueries:['Unused search']},paper:{headline:'OLD GENERATED TITLE',standfirst:'Old draft',paragraphs:['Old words'],quote:''},sample:false,approved:false};
   assert.equal((await handleApi(request('interview',story),env)).status,200);
+  const streamed=await handleApi(request('interview',story,true),env);assert.equal(streamed.status,200);assert.match(streamed.headers.get('Content-Type'),/text\/event-stream/);assert.match(await streamed.text(),/"type":"complete"/);
   assert.equal((await handleApi(request('live',story),env)).status,200);
   const liveContext=JSON.parse(livePrompt.slice(livePrompt.lastIndexOf('\n')+1));
   assert.deepEqual(liveContext,textContext,'Both interview modes receive the same evidence at session start');

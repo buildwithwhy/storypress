@@ -15,6 +15,6 @@ export async function serveVercel(request, pathname, env = process.env) {
   const headers = new Headers(request.headers);
   headers.delete('oai-authenticated-user-id');
   headers.delete('oai-sites-authorization');
-  return worker.fetch(new Request(url, {method:request.method, headers,
+  return worker.fetch(new Request(url, {method:request.method, headers, signal:request.signal,
     ...(!['GET','HEAD'].includes(request.method) ? {body:request.body, duplex:'half'} : {})}), env);
 }

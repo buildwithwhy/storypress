@@ -8,8 +8,10 @@ import {owner,reserveAi,type Bindings} from './storage';
 import {photoPart} from '../lib/photo';
 import {storyFocus} from '../lib/story-modes';
 import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
+import {interviewResult} from '../lib/interview-result';
+import {streamInterview} from './interview-stream';
 export async function handleApi(request: Request, env: Bindings) {
- const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson}=createProviders(env as Record<string,string|undefined>);
+ const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson,interviewStream}=createProviders(env as Record<string,string|undefined>);
  if(request.method !== "POST"&&request.method !== "GET") return new Response("Method not allowed",{status:405});
   try {
     if(request.method === "GET") return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)}},{headers:{"Cache-Control":"no-store"}});
@@ -58,7 +60,11 @@ export async function handleApi(request: Request, env: Bindings) {
       return Response.json({image:{...image,style}},{headers:{'Cache-Control':'no-store'}});
     }
     await reserveAi(userId,env,action);
-    if (action === "interview") return Response.json(parseJson(await gemini(interviewer+'\n'+interviewBehavior, context,true,modelFor('interview')), z.object({ question: z.string().min(1).max(600), acknowledgement: z.string().max(200).optional(), readyToWrite:z.boolean().default(false),researchSuggestion:z.object({query:z.string().trim().min(1).max(220),reason:z.string().trim().min(1).max(200)}).nullable().optional() })));
+    if (action === "interview") {
+      const instructions=interviewer+'\n'+interviewBehavior+'\nPut the question field first in the JSON response.';
+      if(body.stream===true)return streamInterview(signal=>interviewStream(instructions,context,modelFor('interview'),signal),request.signal);
+      return Response.json(parseJson(await gemini(instructions,context,true,modelFor('interview')),interviewResult));
+    }
     if (action === "discover") {
       if (!setting("NIMBLE_API_KEY")) throw new ServiceError("Historical search is not connected yet. You can continue making your newspaper from your own memories.", 503);
       const { query } = photoSearch||researchSearch||parseJson(await gemini(researcher, context,true,modelFor('research')), z.object({ query: z.string().min(1).max(260) }));
