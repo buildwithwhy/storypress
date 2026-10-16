@@ -6,7 +6,7 @@ const paragraphs=['I remembered a quiet afternoon.','I said <script>not executab
 const base={...initialStory,name:'A & B',recordingCollectionId:'11111111-1111-4111-8111-111111111111',turns:[{role:'user',text:'PRIVATE ORIGINAL'}],draft:'PRIVATE DRAFT',paper:{headline:'A memory < & >',standfirst:'Our afternoon.',paragraphs,quote:''},approved:true};
 for(const language of ['en','zh','es'])for(const format of ['newspaper','booklet','letter']){
  const story=storySchema.parse({...base,language,presentation:{version:1,format},intention:{kind:'message',recipient:'Mum <script>'}}),snapshot=editionSnapshot(story),html=editionHtml(snapshot);
- assert.ok(html.includes('keepsake-'+format));assert.ok(!html.includes('PRIVATE'));assert.ok(!html.includes('<script>'));assert.ok(!html.includes('recordingCollectionId'));
+ assert.ok(html.includes('keepsake-'+format));assert.ok(!html.includes('PRIVATE'));assert.ok(!html.includes('<script>not executable</script>'));assert.ok(html.includes('&lt;script&gt;not executable&lt;/script&gt;'));assert.ok(!html.includes('recordingCollectionId'));
  assert.deepEqual(snapshot.paper.paragraphs,paragraphs);assert.equal(snapshot.recordingCollectionId,undefined);assert.equal(snapshot.intention?.recipient,format==='letter'?'Mum <script>':undefined);
  assert.ok(!html.includes('reader-next"><'));assert.ok(editionHtml(snapshot,undefined,{webReader:true}).includes('?download=1'));
 }

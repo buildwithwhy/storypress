@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Libre+Caslon+Display&display=swap');
 @import 'tailwindcss';
 /* Give Chinese editions their own newspaper typography and natural spacing. */
 .app-shell:lang(zh),.newspaper:lang(zh){--serif:'Songti SC','STSong','Noto Serif CJK SC',serif}
