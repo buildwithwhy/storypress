@@ -22,6 +22,10 @@ The backend verifies a Supabase session and reserves three existing AI allowance
 
 Text and image requests continue to use the existing Google Cloud/Vertex connection. This Live adapter uses `GEMINI_API_KEY` directly and does not silently fall back to another provider. Failed connections preserve the transcript; voice messages and typing remain available.
 
+## Clear session endings
+
+The live panel shows the remaining session time and a one-minute warning. Pausing the microphone does not pause credential expiry. Provider advance-disconnect notices shorten that countdown instead of stopping immediately. At expiry or disconnection, the transcript is retained and an explicit Continue conversation action starts another quota-checked session. There is no automatic renewal or notification beep. Daily allowance exhaustion, temporary provider congestion and chapter limits have separate translated messages.
+
 ## Testing with another person
 
 1. Open https://storypress-app.vercel.app/ and choose English, 中文 or Español from the visible language buttons.

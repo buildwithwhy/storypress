@@ -77,5 +77,5 @@ export async function reserveAi(userId:string,env:Bindings,action:string){
  // Never enable public hosting until Supabase and its durable quota RPC are verified.
  if(!env.SUPABASE_URL)return;
  const allowed=await db(env,'rpc/storypress_reserve_ai','POST',{p_user:userId,p_action:action});
- if(allowed!==true)throw new ServiceError('The daily AI preview allowance has been reached. You can still edit, download and print. Please try again tomorrow.',429);
+ if(allowed!==true)throw new ServiceError('The daily AI preview allowance has been reached. You can still edit, download and print. Please try again tomorrow.',429,'daily_allowance');
 }

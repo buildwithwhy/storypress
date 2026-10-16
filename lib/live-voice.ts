@@ -1,13 +1,16 @@
 import type {Turn} from './story';
 import {createPcm16Encoder,createLivePlayback,type PlaybackMetrics} from './live-audio';
 export type LivePhase='idle'|'connecting'|'listening'|'speaking'|'paused';
+export type LiveEndReason='time-limit'|'provider-ending'|'disconnected';
+export type LiveTiming={endsAt:number;reason:'time-limit'|'provider-ending'};
 export type LiveGrant={token:string;model:string;expiresAt:string;maxSeconds:number};
 export type LiveMetrics={provider:'gemini';model:string;durationSeconds:number;firstAudioMs:number|null;usage:Record<string,unknown>[];playback:PlaybackMetrics};
-type Events={phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
+type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
 export function pcm16(samples:Float32Array,rate:number){return createPcm16Encoder(rate).encode(samples);}
 function encoded(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
 export function createLiveVoice(events:Events){
  let generation=0,ws:WebSocket|undefined,stream:MediaStream|undefined,context:AudioContext|undefined,processor:AudioWorkletNode|undefined,recorder:MediaRecorder|undefined;
+ let deadline=0,endReason:LiveTiming['reason']='time-limit';
  let limit:ReturnType<typeof setTimeout>|undefined,connectingTimer:ReturnType<typeof setTimeout>|undefined;
  let playback:ReturnType<typeof createLivePlayback>|undefined,encoder:ReturnType<typeof createPcm16Encoder>|undefined;
  let userText='',assistantText='',started=0,firstAudioMs:number|null=null,model='',usage:Record<string,unknown>[]=[],active=false,paused=false;
@@ -24,7 +27,11 @@ export function createLiveVoice(events:Events){
   events.phase('idle');
  }
  async function start(grant:()=>Promise<LiveGrant>){
-  await stop();const id=generation;events.phase('connecting');started=performance.now();firstAudioMs=null;usage=[];
+  await stop();const id=generation;deadline=0;endReason='time-limit';events.phase('connecting');started=performance.now();firstAudioMs=null;usage=[];
+  function scheduleEnd(endsAt:number,reason:LiveTiming['reason']){
+   if(deadline&&endsAt>=deadline)return;deadline=endsAt;endReason=reason;clearTimeout(limit);events.timing?.({endsAt,reason});
+   limit=setTimeout(()=>{if(id===generation){events.ended?.(endReason);void stop();}},Math.max(0,endsAt-Date.now()));
+  }
   try{
    if(!navigator.mediaDevices?.getUserMedia||typeof AudioContext==='undefined'||typeof MediaRecorder==='undefined')throw new Error('Live voice is unavailable in this browser. Use a voice message or type.');
    // Resume from the initiating click; acquire permission before spending a session token.
@@ -60,7 +67,7 @@ export function createLiveVoice(events:Events){
       processor.port.onmessage=e=>{if(id!==generation||paused||socket.readyState!==WebSocket.OPEN)return;if(socket.bufferedAmount>256000){events.problem(new Error('The connection cannot keep up with live audio. Your words are kept.'));void stop();return;}const pcm=encoder!.encode(e.data);if(!pcm.length)return;socket.send(JSON.stringify({realtimeInput:{audio:{data:encoded(new Uint8Array(pcm.buffer)),mimeType:'audio/pcm;rate=16000'}}}));};
       events.phase('listening');
       socket.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:'Please begin with one gentle question, or continue the latest thread in our saved conversation.'}]}],turnComplete:true}}));
-      limit=setTimeout(()=>{if(id===generation){events.problem(new Error('This live session has finished. You can continue in another session; your story is kept.'));void stop();}},Math.max(0,Math.min(permission.maxSeconds*1000,Date.parse(permission.expiresAt)-Date.now())));
+      scheduleEnd(Math.min(Date.now()+permission.maxSeconds*1000,Date.parse(permission.expiresAt)),'time-limit');
      }
      if(data.usageMetadata&&usage.length<100)usage.push(data.usageMetadata);
      const content=data.serverContent;
@@ -77,11 +84,15 @@ export function createLiveVoice(events:Events){
       }
       if(content.turnComplete){playback?.endTurn();emitTurns();}
      }
-     if(data.goAway){events.problem(new Error('The voice connection is ending. Your transcript is kept; reconnect to continue.'));void stop();}
+     if(data.goAway){
+      const seconds=typeof data.goAway.timeLeft==='string'&&/^\d+(?:\.\d+)?s$/.test(data.goAway.timeLeft)?parseFloat(data.goAway.timeLeft):0;
+      if(seconds>0)scheduleEnd(Date.now()+seconds*1000,'provider-ending');
+      else{events.ended?.('provider-ending');void stop();}
+     }
     }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}}
    });
-   socket.onerror=()=>{if(id===generation){events.problem(new Error('Live voice could not connect. You can still record a message or type.'));void stop();}};
-   socket.onclose=()=>{if(id===generation){events.problem(new Error('The voice connection closed. Your transcript is kept.'));void stop();}};
+   socket.onerror=()=>{if(id===generation){if(active)events.ended?.('disconnected');else events.problem(new Error('Live voice could not connect. You can still record a message or type.'));void stop();}};
+   socket.onclose=()=>{if(id===generation){if(active)events.ended?.(endReason==='provider-ending'||deadline&&Date.now()>=deadline-1000?endReason:'disconnected');else events.problem(new Error('Live voice could not connect. Please try again.'));void stop();}};
   }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}
  }
  function text(value:string){if(!active||ws?.readyState!==WebSocket.OPEN||!value.trim())return false;silence();emitTurns();events.turn({role:'user',text:value.trim()});ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:value.trim()}]}],turnComplete:true}}));return true;}

@@ -10,7 +10,7 @@ class Worklet{port={};constructor(){worklets.push(this);}connect(){}disconnect()
 class Recorder{static isTypeSupported(){return true;}state='inactive';mimeType='audio/webm';constructor(){recorders.push(this);}start(){this.state='recording';}pause(){this.state='paused';}resume(){this.state='recording';}stop(){this.state='inactive';queueMicrotask(()=>{this.ondataavailable?.({data:new Blob(['audio'])});this.onstop?.();});}}
 class Socket{static OPEN=1;readyState=1;bufferedAmount=0;sent=[];constructor(url){this.url=url;sockets.push(this);}send(text){this.sent.push(JSON.parse(text));}close(){this.readyState=3;}async event(data){await this.onmessage({data:JSON.stringify(data)});}}
 Object.assign(globalThis,{AudioContext:Context,AudioWorkletNode:Worklet,MediaRecorder:Recorder,WebSocket:Socket});
-function fixture(){const events={phases:[],turns:[],recordings:[],metrics:[],errors:[]};return {events,session:createLiveVoice({phase:x=>events.phases.push(x),caption:()=>{},turn:x=>events.turns.push(x),recording:x=>events.recordings.push(x),metrics:x=>events.metrics.push(x),problem:x=>events.errors.push(x)})};}
+function fixture(){const events={phases:[],turns:[],recordings:[],metrics:[],errors:[],timings:[],ended:[]};return {events,session:createLiveVoice({timing:x=>events.timings.push(x),ended:x=>events.ended.push(x),phase:x=>events.phases.push(x),caption:()=>{},turn:x=>events.turns.push(x),recording:x=>events.recordings.push(x),metrics:x=>events.metrics.push(x),problem:x=>events.errors.push(x)})};}
 let release,calls=0;const mic=microphone();getMedia=()=>new Promise(resolve=>release=resolve);let f=fixture();const pending=f.session.start(async()=>{calls++;});await tick();await f.session.stop();release(mic);await pending;assert.equal(mic.stopped,1);assert.equal(calls,0,'Cancelling before permission must not spend a token');
 getMedia=async()=>microphone();f=fixture();await f.session.start(async()=>({token:'short-lived',model:'live-test',expiresAt:new Date(Date.now()+600000).toISOString(),maxSeconds:600}));let socket=sockets.at(-1);socket.onopen();assert.equal(socket.sent[0].setup.model,'models/live-test');await socket.event({setupComplete:{}});
 assert.equal(socket.binaryType,'arraybuffer');assert.equal(f.events.phases.at(-1),'listening');await socket.event({serverContent:{inputTranscription:{text:'My mother made tea.'},outputTranscription:{text:'What did you talk about?'}}});assert.equal(f.events.turns.length,0);await socket.event({serverContent:{turnComplete:true}});assert.deepEqual(f.events.turns,[{role:'user',text:'My mother made tea.'},{role:'assistant',text:'What did you talk about?'}]);
@@ -30,4 +30,24 @@ resolveFrame(JSON.stringify({serverContent:{inputTranscription:{text:'First, '}}
 assert.equal(f.events.turns.at(-1).text,'First, second.');
 f.session.pause();await f.session.stop();await tick();assert.equal(pauseMic.stopped,1);assert.equal(f.events.recordings.length,1,'Finishing while paused must keep the optional recording');
 f=fixture();await f.session.start(async()=>{throw new Error('Provider unavailable');});assert.equal(f.events.phases.at(-1),'idle');assert.equal(f.events.errors.length,1);assert.equal(f.events.recordings.length,0);
-console.log('Passed live voice permission cancellation, transcript capture, typed correction, microphone/recording/playback pause, resume, finishing while paused, usage privacy, late-message rejection and failed-connection recovery. Browser/provider mocked.');
+// Deterministic timers verify graceful expiry without spending real session time.
+const realSetTimeout=globalThis.setTimeout,realClearTimeout=globalThis.clearTimeout;
+const timers=new Map();let timerId=0;
+globalThis.setTimeout=(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;};
+globalThis.clearTimeout=id=>timers.delete(id);
+try{
+ f=fixture();await f.session.start(async()=>({token:'fixture',model:'live-test',expiresAt:new Date(Date.now()+600000).toISOString(),maxSeconds:600}));socket=sockets.at(-1);await socket.event({setupComplete:{}});
+ assert.equal(f.events.timings.length,1);assert.equal(f.events.timings[0].reason,'time-limit');assert.ok(f.events.timings[0].endsAt<=Date.now()+600000);
+ await socket.event({serverContent:{inputTranscription:{text:'My unfinished thought.'}}});
+ f.session.pause();assert.equal(timers.size,1,'Pausing the microphone does not extend the grant');
+ [...timers.values()][0].fn();await Promise.resolve();await Promise.resolve();
+ assert.equal(f.events.ended.at(-1),'time-limit');assert.equal(f.events.errors.length,0,'A normal session limit is not an unexplained error');assert.equal(f.events.turns.at(-1).text,'My unfinished thought.');assert.equal(f.events.phases.at(-1),'idle');
+ const previous=sockets.length;await Promise.resolve();assert.equal(sockets.length,previous,'Expiry must never reconnect or spend more units automatically');
+ await f.session.start(async()=>({token:'new-fixture',model:'live-test',expiresAt:new Date(Date.now()+600000).toISOString(),maxSeconds:600}));socket=sockets.at(-1);await socket.event({setupComplete:{}});
+ assert.equal(sockets.length,previous+1,'An explicit start creates the next session');
+ await socket.event({goAway:{timeLeft:'45.5s'}});assert.equal(socket.readyState,1,'An advance provider notice must not terminate the remaining conversation early');assert.equal(f.events.timings.at(-1).reason,'provider-ending');assert.ok([...timers.values()][0].ms<=45500);
+ await socket.event({serverContent:{inputTranscription:{text:'One last detail.'}}});[...timers.values()][0].fn();await Promise.resolve();await Promise.resolve();
+ assert.equal(f.events.ended.at(-1),'provider-ending');assert.equal(f.events.turns.at(-1).text,'One last detail.');assert.equal(f.events.errors.length,0);assert.equal(socket.readyState,3);
+ await f.session.start(async()=>({token:'fixture-3',model:'live-test',expiresAt:new Date(Date.now()+600000).toISOString(),maxSeconds:600}));socket=sockets.at(-1);await socket.event({setupComplete:{}});socket.onclose();await Promise.resolve();await Promise.resolve();assert.equal(f.events.ended.at(-1),'disconnected');
+}finally{await f.session.stop();globalThis.setTimeout=realSetTimeout;globalThis.clearTimeout=realClearTimeout;}
+console.log('Passed live voice permission cancellation, transcript capture, typed correction, microphone/recording/playback pause, resume, finishing while paused, usage privacy, late-message rejection failed-connection recovery, visible deadlines, gentle expiry, provider warnings, transcript retention and explicit-only reconnection. Browser/provider mocked.');

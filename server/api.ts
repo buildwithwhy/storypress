@@ -79,7 +79,7 @@ export async function handleApi(request: Request, env: Bindings) {
     const quote=paper.quote; if (quote && !originalWords(story).some(t => t.includes(quote))) paper.quote = "";
     return Response.json({ paper });
   } catch (error) {
-    if (error instanceof ServiceError) return Response.json({ error: error.message }, { status: error.status });
+    if (error instanceof ServiceError) return Response.json({ error: error.message, code:error.code }, { status: error.status });
     if (error instanceof z.ZodError || error instanceof SyntaxError) return Response.json({ error: "Some story details could not be read. Please check your entry and try again." }, { status: 400 });
     return Response.json({ error: "That step did not finish. Your story is still on this device. Please try again." }, { status: 500 });
   }

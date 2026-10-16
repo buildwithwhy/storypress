@@ -105,4 +105,4 @@ async function nimble(query: string, locale: string) {
 
 return { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson, interviewStream };
 }
-export class ServiceError extends Error { constructor(message: string, public status = 502) { super(message); } }
+export class ServiceError extends Error { constructor(message: string, public status = 502, public code?:string) { super(message); } }

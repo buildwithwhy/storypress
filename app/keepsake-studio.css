@@ -3,3 +3,5 @@
 @media print{.keepsake-colophon{break-before:avoid}.keepsake .keepsake-leaf{visibility:visible}}
 
 .app-shell>.recording-choice{max-width:850px;margin:24px auto;padding:26px}.start-details .format-studio h2{font-size:20px}.start-details .format-studio{margin:16px 0}.recording-choice .recording-choice{border:0;padding:0}.recording-choice details{margin-top:14px}
+
+.live-time{margin:14px 0;color:#52674c}.live-time p{display:flex;align-items:center;gap:8px}.live-time strong{font-variant-numeric:tabular-nums}.live-time small{font-size:12px}.live-notice{margin:16px 0;padding:15px 17px;background:#fff8e6;border:1px solid #d9c59a;border-radius:10px;color:#4f492e}.live-notice>strong{display:block;font-size:15px;margin-bottom:5px}.live-notice p{margin:0}.live-panel>.primary,.live-panel>.secondary{margin-top:12px;margin-right:8px}
