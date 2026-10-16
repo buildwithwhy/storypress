@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 
 const bundle=await build({stdin:{contents:"export {handleApi} from './server/api.ts';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',loader:{'.txt':'text','.jpg':'dataurl'}});
 const {handleApi}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
-const env={SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_PUBLISHABLE_KEY:'mock-public',SUPABASE_SECRET_KEY:'mock-private',GEMINI_BACKEND:'vertex',GOOGLE_CLOUD_PROJECT:'fixture',VERTEX_API_KEY:'mock-vertex',GEMINI_API_KEY:'mock-studio',GEMINI_LIVE_MODEL:'gemini-test-live',STORYPRESS_LIVE_VOICE:'gemini',STORYPRESS_LIVE_TEST_EMAILS:'test@example.invalid'};
+const env={SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_PUBLISHABLE_KEY:'mock-public',SUPABASE_SECRET_KEY:'mock-private',GEMINI_BACKEND:'vertex',GOOGLE_CLOUD_PROJECT:'fixture',VERTEX_API_KEY:'mock-vertex',GEMINI_API_KEY:'mock-studio',GEMINI_LIVE_MODEL:'gemini-test-live',STORYPRESS_LIVE_VOICE:'gemini'};
 const reference={id:'selected',title:'Public archive',url:'https://example.org/archive',publisher:'Archive',date:'1982',description:'Public context, not a personal memory.',connection:'Possible connection',question:'Does this look familiar?',selected:true,reaction:'unsure'};
 const originalFetch=globalThis.fetch;
 let textContext,livePrompt,quotaReservations=0,providerCalls=0;

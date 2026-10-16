@@ -1,47 +1,37 @@
-# Enable the Gemini Live pilot
+# Gemini Live voice
 
-## Preview connection
+## Production access
 
-Updated October 15: with owner approval, the nine existing Storypress variables now apply to both Production and Preview. Existing values were reused, not revealed or replaced. The preview was redeployed and its account configuration and Gemini/Vertex + Nimble configuration indicators were verified. Its exact branch URL was also added to Supabase's allowed authentication redirects. Production code and its existing redirect settings were unchanged.
+As of October 16, 2026, live voice is enabled on the main Vercel site for any signed-in Storypress account. Google sign-in and email sign-in use the same access check. The former `STORYPRESS_LIVE_TEST_EMAILS` setting is ignored; it is no longer an access restriction.
 
-Google sign-in subsequently succeeded. A fictional test story completed a real Vertex chat interview, Vertex keepsake writing, Supabase saving and reload, and an approved mobile reading link. Its title begins `[Test]`; its temporary sharing link was turned off afterward and the story remains private. This was a connectivity test, not a paid quality/cost comparison. The preview remains protected by Vercel authentication, so it is for owner testing rather than public sharing. A branch-specific `STORYPRESS_PUBLIC_SHARING=true` override enables approved-link testing on `codex/independent-sharing-flow`; Production and other Preview branches retain the existing setting.
+The owner completed a real microphone conversation on production. Playback continuity, buffering and cleanup were subsequently improved after reports of beeping and delay. Regression checks cover audio handling, but a further real multi-turn conversation is needed to assess those symptoms.
 
-On October 15 the owner added `GEMINI_API_KEY` as a Secret for Preview. The three Live settings below were then configured only for `codex/independent-sharing-flow`, with the existing owner test account allowlisted, and the protected preview was redeployed. Key presence and deployment readiness were verified; an actual microphone call and token provisioning have not yet been exercised. No additional provider key is currently requested. AI Studio can create that key in the existing Google Cloud project; a new Google account or project is not required. Google also documents creating Gemini API keys through Cloud Console. Add the appropriate key directly to Vercel as a Secret in Preview. The three other Live settings below are configuration, not additional provider credentials. ElevenLabs and OpenRouter are not integrated yet.
+## Required configuration
 
-This is an implementation choice, not a requirement to leave Google Cloud. Vertex supports Live API too; Google's documented web approach uses an authenticated backend WebSocket relay. That route would need a different connection adapter and deployment setup. The existing Vertex credential is not a drop-in replacement in this Developer API adapter. Credit eligibility and billing have not been verified for either live route. October 15 owner decision: establish Google first, then compare providers, including interview behavior (see INTERVIEW-EVALUATION.md).
-
-## Live voice settings
-
-Use Vercel → storypress-app → Settings → Environment Variables. Apply these to the **Preview** environment first, then redeploy the preview branch. Production does not need to change for this test.
+Vercel → storypress-app → Settings → Environment Variables. These are already configured for Production and Preview. Redeploy after changing a value.
 
 | Variable | Kind | Value |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | Secret | An existing Google AI Studio Gemini API key with Live API access and billing. Reuse it if already present in Preview. A Vertex API key is a different credential and cannot be substituted here. |
-| `GEMINI_LIVE_MODEL` | Config | A Live API model available to that key. Google's current ephemeral-token guide uses `gemini-3.8-live`; verify availability in the account. |
-| `STORYPRESS_LIVE_VOICE` | Config | `gemini` |
-| `STORYPRESS_LIVE_TEST_EMAILS` | Secret / private config | Comma-separated Google sign-in email addresses allowed to test. Add your actual sign-in address here; do not put it in source control. |
+| `GEMINI_API_KEY` | Secret | Existing Gemini Developer API credential. Keep it on the server. |
+| `GEMINI_LIVE_MODEL` | Config | `gemini-3.8-live`, currently configured for this app. |
+| `STORYPRESS_LIVE_VOICE` | Config | `gemini`; clear this value to disable live voice. |
 
-The existing Supabase URL, publishable key, server secret, story tables and quota RPC remain required. Do not send any keys through chat. No ElevenLabs account is needed to try this first adapter.
+Supabase URL, publishable key, server secret, story tables and the durable quota RPC remain required. Missing account configuration disables live voice. No additional provider key is needed for this rollout.
 
-The backend verifies the signed-in email, reserves three existing pilot quota units, then provisions a one-use token valid for a ten-minute session with a sixty-second connection window. The provider setup/model/instructions are locked into the token. The browser never receives the Google API key. Live sessions cannot refresh their own credentials.
+The backend verifies a Supabase session and reserves three existing AI allowance units before provisioning a one-use token. Each token allows up to ten minutes with a sixty-second connection window; the model and instructions are locked into it. Existing account and site daily limits remain in force. The browser never receives the Google API key and cannot renew its own token.
 
-`GEMINI_BACKEND=vertex` may remain for existing text calls; Live uses `GEMINI_API_KEY` directly. Text-provider selection does not silently change. The live model has no fallback: a connection failure preserves the story and offers voice messages/typing.
+Text and image requests continue to use the existing Google Cloud/Vertex connection. This Live adapter uses `GEMINI_API_KEY` directly and does not silently fall back to another provider. Failed connections preserve the transcript; voice messages and typing remain available.
 
-Chat interview streaming also uses the existing Vertex connection and needs no additional credential. It is separate from native Live voice activation. A streamed preview is not saved until the provider completes and the result validates.
+## Testing with another person
 
-## First real test
+1. Open https://storypress-app.vercel.app/ and choose English, 中文 or Español from the visible language buttons.
+2. Start a story and sign in. Talk live is the default conversation mode for signed-in users with live voice available.
+3. Intentionally start the call and allow the microphone. Give a longer answer, pause/resume, interrupt a reply, correct a fact and type during the same conversation.
+4. Finish and check the transcript and the keep/discard recording choice. Recordings are device-only in this build; download a backup before refreshing if wanted.
+5. If audio degrades, download session measurements. They include queue/underrun/interruption measurements, timing and usage, without transcript or audio. No dollar estimate is calculated yet.
+6. Try the same scenarios in English, Mandarin and Spanish. Provider quality and cost comparisons, including ElevenLabs, remain separate work.
 
-1. Sign in on the preview with an allowlisted account. Talk live becomes the first conversation mode.
-2. Use a fictional memory for the initial connectivity test. Allow the microphone only when intentionally starting a call.
-3. Tell a longer answer, use Pause and Resume, interrupt the assistant, correct a fact, and type one sentence during the same call. Pause should mute both microphone transmission and the optional recording; typed replies remain possible.
-4. Finish and confirm both the transcript and the keep/discard recording choice. Recordings are device-only in this build; download a backup if wanted.
-5. Download session measurements. Compare with provider billing/usage; the app does not yet calculate a dollar total.
-6. Repeat with English, Mandarin and Spanish, then compare an ElevenLabs implementation using the same scenarios before choosing a permanent voice provider.
-
-Google references checked October 15, 2026:
+Implementation references:
 - https://ai.google.dev/gemini-api/docs/live-api/ephemeral-tokens
 - https://ai.google.dev/api/live
 - https://ai.google.dev/gemini-api/docs/api-key
-- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/live-api/get-started-websocket
-
-No model-quality or price winner has been established. No paid benchmark was run during implementation.
