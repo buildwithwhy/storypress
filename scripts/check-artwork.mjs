@@ -1,19 +1,15 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
 import {build} from 'esbuild';
-import worker from '../dist/server/index.js';
-const bundled=await build({entryPoints:['lib/edition.ts'],bundle:true,write:false,platform:'node',format:'esm'});
-const {editionHtml,editionSnapshot}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
-const story={name:'Fictional narrator',language:'en',occasion:'life',turns:[{role:'user',text:'PRIVATE_WORDS'}],draft:'PRIVATE_DRAFT',researchSuggestion:{query:'PRIVATE_QUERY',reason:'PRIVATE_REASON'},researchQueries:['PRIVATE_HISTORY'],sources:[],sample:false,approved:true,paper:{headline:'A small memory',standfirst:'A keepsake.',paragraphs:['We made tea.'],quote:''}};
-for(const key of ['memories','together','journey']){
- const response=await worker.fetch(new Request('https://example.test/artwork/'+key+'.jpg'),{});
- assert.equal(response.status,200);assert.equal(response.headers.get('Content-Type'),'image/jpeg');
- const bytes=Buffer.from(await response.arrayBuffer());assert.equal(bytes[0],255);assert.equal(bytes[1],216);
- assert.deepEqual(bytes,await fs.readFile('public/artwork/'+key+'.jpg'));
- const snapshot=editionSnapshot({...story,artwork:key});assert.ok(!JSON.stringify(snapshot).includes('PRIVATE_'));
- const html=editionHtml(snapshot,'data:image/jpeg;base64,'+bytes.toString('base64'));
- assert.ok(html.includes('data:image/jpeg;base64,'));assert.ok(!html.includes('src="/artwork/'));
- assert.match(html,/not a photograph of this memory/);
+const bundled=await build({stdin:{contents:"export * from './lib/edition.ts';export * from './lib/artwork-data.ts';export * from './lib/artwork.ts';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm'});
+const {editionHtml,editionSnapshot,editionArtwork,chosenArtwork}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+const story={name:'Fictional narrator',language:'en',occasion:'life',turns:[{role:'user',text:'PRIVATE_WORDS'}],artInstructions:'PRIVATE_ART_DIRECTION',draft:'PRIVATE_DRAFT',researchSuggestion:{query:'PRIVATE_QUERY',reason:'PRIVATE_REASON'},researchQueries:['PRIVATE_HISTORY'],sources:[],sample:false,approved:true,paper:{headline:'A small memory',standfirst:'A keepsake.',paragraphs:['We made tea.'],quote:''}};
+for(const key of [undefined,'memories','together','journey','none','generated'])for(const format of ['newspaper','booklet','letter']){
+ const old={...story,artwork:key,presentation:{version:1,format}};
+ assert.equal(chosenArtwork(old),'none');assert.equal(editionArtwork(old),undefined);
+ const snapshot=editionSnapshot(old);assert.ok(!JSON.stringify(snapshot).includes('PRIVATE_'));
+ assert.equal(snapshot.artwork,'none');
+ const html=editionHtml(snapshot,'data:image/jpeg;base64,OLD_STOCK_FALLBACK');
+ assert.ok(!html.includes('<figure'));assert.ok(!html.includes('OLD_STOCK'));assert.ok(!html.includes('/artwork/'));assert.ok(!html.includes('not a photograph of this memory'));
 }
 assert.ok(!editionHtml({...story,artwork:'none'}).includes('<figure'));
 assert.ok(!editionHtml({...story,photo:'data:image/jpeg;base64,/9j/'}).includes('class="editorial-art"'));
@@ -22,5 +18,6 @@ const illustrated=editionSnapshot({...story,artwork:'generated',generatedArt:gen
 assert.equal(illustrated.photo,undefined);assert.equal(illustrated.generatedArt.data,generated.data);assert.match(editionHtml(illustrated),/story-generated-art/);assert.match(editionHtml(illustrated),/AI illustration inspired by your story/);
 assert.equal(editionSnapshot({...story,generatedArt:generated}).generatedArt,undefined,'Unselected generated artwork must stay private');
 assert.throws(()=>editionSnapshot({...story,approved:false}));
-assert.equal((await worker.fetch(new Request('https://example.test/artwork/unknown.jpg'),{})).status,404);
-console.log('Passed: served artwork matches files, self-contained illustrated edition, text-only/photo precedence, approval gate and private interview/research exclusion.');
+for(const key of [undefined,'memories','together','journey']){const photo={...story,artwork:key,photo:'data:image/jpeg;base64,/9j/'};assert.equal(chosenArtwork(photo),'memories');assert.ok(editionHtml(photo).includes('<img src="'+photo.photo+'"')); }
+assert.equal(editionArtwork({...story,artwork:'generated',generatedArt:generated}),generated.data);
+console.log('Passed: legacy stock-art removal in every format and export, private art directions, generated artwork, text-only/photo precedence, approval gate and private interview/research exclusion.');

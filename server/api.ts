@@ -56,7 +56,7 @@ export async function handleApi(request: Request, env: Bindings) {
       // Images use the existing three-unit reservation, atomically bounded by
       // the account and site daily caps. No second quota migration is needed.
       await reserveAi(userId,env,'discover');
-      const image=await generateStoryImage(env,{language:story.language,style,words:originalWords(story)});
+      const image=await generateStoryImage(env,{language:story.language,style,words:originalWords(story),instructions:story.artInstructions});
       return Response.json({image:{...image,style}},{headers:{'Cache-Control':'no-store'}});
     }
     await reserveAi(userId,env,action);

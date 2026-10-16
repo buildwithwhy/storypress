@@ -6,7 +6,7 @@ const userId = 'c60a25ef-f588-4df5-a89f-dcb1ea1a6470';
 const env = { GEMINI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'image-fixture', VERTEX_API_KEY: 'mock-cloud', GEMINI_IMAGE_MODEL: 'gemini-test-image', SUPABASE_URL: 'https://storage-fixture.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'mock-publishable', SUPABASE_SECRET_KEY: 'mock-secret', NIMBLE_API_KEY: 'mock-search' };
 const jpeg = '/9j/4AAQSkZJRgABAQ==';
 const story = {
-  name: 'PRIVATE_PROFILE_NAME', language: 'en', occasion: 'life', sample: false, approved: false,
+  artInstructions:'I am a woman. Make it cozy.',name: 'PRIVATE_PROFILE_NAME', language: 'en', occasion: 'life', sample: false, approved: false,
   turns: [{ role: 'assistant', text: 'PRIVATE_ASSISTANT_GUESS' }, { role: 'user', text: 'I made pancakes with my father in a small kitchen.' }],
   sources: [{ id: 'fixture', title: 'PRIVATE_SOURCE_TEXT', url: 'https://example.org/history', publisher: 'Archive', date: '1960', description: 'PRIVATE_RESEARCH_DESCRIPTION', connection: 'PRIVATE_RESEARCH_CONNECTION', question: 'PRIVATE_RESEARCH_QUESTION', selected: true }],
   photo: `data:image/jpeg;base64,${jpeg}`, photoCaption: 'PRIVATE_PHOTO_CAPTION',
@@ -34,6 +34,7 @@ const imageCall = () => ({
     assert.equal(call.options.headers['x-goog-api-key'], env.VERTEX_API_KEY);
     const brief = JSON.parse(call.body.contents[0].parts[0].text);
     assert.deepEqual(brief.originalWords, [story.turns[1].text]);
+    assert.equal(brief.artDirection,story.artInstructions);
     assert.ok(!JSON.stringify(call.body).includes('PRIVATE_'), 'No assistant guesses, photo data, sources, generated prose, or profile name in image brief');
     assert.ok(!JSON.stringify(call.body).includes('base64'));
     assert.equal(call.body.generationConfig.candidateCount, 1);
@@ -44,7 +45,7 @@ const imageCall = () => ({
 try {
   assert.equal((await handleApi(request({}, false), env)).status, 401);
   assert.equal(calls.length, 0, 'Unsigned requests cannot spend quota or call models');
-  for (const extra of [{ story: { ...story, sample: true } }, { story: { ...story, turns: [{ role: 'assistant', text: 'Only an assistant question.' }] } }, { story: { ...story, paper: undefined } }, { imageStyle: 'unknown' }]) {
+  for (const extra of [{ story: { ...story, sample: true } }, { story: { ...story, turns: [{ role: 'assistant', text: 'Only an assistant question.' }] } }, { story: { ...story, paper: undefined } }, { imageStyle: 'unknown' }, {story:{...story,artInstructions:'x'.repeat(601)}}]) {
     queue = [auth()]; const before = calls.length;
     assert.equal((await handleApi(request(extra), env)).status, 400);
     assert.equal(calls.length, before + 1, 'Invalid illustration requests stop after identity verification');
