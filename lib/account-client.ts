@@ -1,6 +1,6 @@
 import {createClient,type SupabaseClient} from '@supabase/supabase-js';
 export type Account={id:string;email?:string};
-export type AccountConfig={user:Account|null;supabase:{url:string;key:string}|null;storage:boolean;linkSharing:boolean;dailyUnits:number|null};
+export type AccountConfig={user:Account|null;supabase:{url:string;key:string}|null;storage:boolean;linkSharing:boolean;dailyUnits:number|null;sampleOnly?:boolean};
 let client:SupabaseClient|null=null;
 export async function setupAccount(onUser:(user:Account|null)=>void){
  const response=await fetch('/api/account');if(!response.ok)throw new Error('Account connection unavailable. Reload to try again.');
@@ -19,6 +19,14 @@ export async function accountRequest(body?:unknown,id?:string){
  const data=await response.json();if(!response.ok)throw new Error(data.error||'That change could not be saved.');return data;
 }
 export async function signIn(email:string){if(!client)throw new Error('Accounts are not connected yet.');const {error}=await client.auth.signInWithOtp({email:email.trim().toLowerCase(),options:{emailRedirectTo:location.origin+'/'}});if(error)throw error;}
+export async function verifyEmailCode(email:string,code:string){
+ if(!client)throw new Error('Accounts are not connected yet.');
+ const token=code.replace(/\s/g,'');
+ if(!/^\d{6,10}$/.test(token))throw Object.assign(new Error('Enter the code from your email.'),{code:'invalid_code'});
+ const {data,error}=await client.auth.verifyOtp({email:email.trim().toLowerCase(),token,type:'email'});
+ if(error)throw error;
+ if(!data.session)throw new Error('Sign-in could not be completed. Please try again.');
+}
 export async function signInWithGoogle(){
  if(!client)throw new Error('Accounts are not connected yet.');
  const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/'}});

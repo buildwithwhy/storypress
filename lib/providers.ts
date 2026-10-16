@@ -1,4 +1,5 @@
 import { z } from "zod";
+import {eventData} from './event-stream';
 type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
 export type ModelTask = "interview" | "write" | "photo" | "transcribe" | "research";
 const DEFAULT_MODEL = "gemini-3.8-flash";
@@ -37,7 +38,7 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
 }
-async function vertex(system: string, input: ModelInput, json: boolean, model: string): Promise<string> {
+async function vertexRequest(system: string, input: ModelInput, json: boolean, model: string,stream=false,signal?:AbortSignal): Promise<Response> {
   const key = setting("VERTEX_API_KEY");
   const project = setting("GOOGLE_CLOUD_PROJECT");
   const location = setting("GOOGLE_CLOUD_LOCATION") || "global";
@@ -45,7 +46,7 @@ async function vertex(system: string, input: ModelInput, json: boolean, model: s
   if (!/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9-]+$/.test(location)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
   const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
   const parts = typeof input === "string" ? [{ text: input }] : input.map(part => part.type === "text" ? { text: part.text } : { inlineData: { mimeType: part.mime_type, data: part.data } });
-  const res = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`, {
+  const res = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:${stream?'streamGenerateContent?alt=sse':'generateContent'}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
@@ -54,15 +55,36 @@ async function vertex(system: string, input: ModelInput, json: boolean, model: s
       generationConfig: { maxOutputTokens: 8192, ...(json ? { responseMimeType: "application/json" } : {}), ...(model === "gemini-3.8-flash" ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}) },
       labels: { app: "storypress" },
     }),
-    signal: AbortSignal.timeout(55000),
+    signal: signal?AbortSignal.any([signal,AbortSignal.timeout(55000)]):AbortSignal.timeout(55000),
   });
   if (!res.ok) throw providerError(res.status);
+  return res;
+}
+async function vertex(system: string, input: ModelInput, json: boolean, model: string): Promise<string> {
+  const res=await vertexRequest(system,input,json,model);
   const data = await res.json() as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }> };
   const candidate = data.candidates?.[0];
   if (candidate?.finishReason && candidate.finishReason !== "STOP") throw new ServiceError("The story editor did not return a complete draft. Your original words are kept; please try a shorter section.");
   const output = candidate?.content?.parts?.filter(part => !part.thought).map(part => part.text || "").join("");
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
+}
+async function* interviewStream(system:string,input:string,model:string,signal:AbortSignal){
+ validateModel(model);
+ // The existing Google Cloud route streams; other configured backends retain
+ // their normal request contract without switching credentials or providers.
+ if(backend()!=='vertex'){yield await gemini(system,input,true,model);return;}
+ const res=await vertexRequest(system,input,true,model,true,signal);
+ if(!res.body)throw new ServiceError('The interview returned no reply. Your words are kept.',502);
+ let finished=false;
+ for await(const raw of eventData(res.body)){
+  if(raw==='[DONE]')continue;
+  const data=JSON.parse(raw);if(data.error)throw new ServiceError('The interview could not finish. Your words are kept.',502);
+  const candidate=data.candidates?.[0];
+  if(candidate?.finishReason){if(candidate.finishReason!=='STOP')throw new ServiceError('The reply did not finish. Your words are kept; try again.',502);finished=true;}
+  for(const part of candidate?.content?.parts||[])if(typeof part.text==='string'&&!part.thought)yield part.text;
+ }
+ if(!finished)throw new ServiceError('The reply was interrupted. Your words are kept; try again.',502);
 }
 function providerError(status: number): ServiceError {
   if (status === 429) return new ServiceError("The story editor is busy. Please try again in a moment.", 429);
@@ -81,6 +103,6 @@ async function nimble(query: string, locale: string) {
   return parsed.data.results.map(r => ({ ...r, content: (r.content || r.description || "").slice(0, 9000) }));
 }
 
-return { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson };
+return { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson, interviewStream };
 }
 export class ServiceError extends Error { constructor(message: string, public status = 502) { super(message); } }

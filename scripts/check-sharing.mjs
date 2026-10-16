@@ -18,6 +18,17 @@ queue=[authenticated(),{data:[{data:{...story,approved:false}}]}];assert.equal((
 queue=[authenticated(),{data:[{data:story,share_token:token}]},{data:[{id}],check:(url,init)=>{assert.ok(url.includes('owner_id=eq.'+user));const change=JSON.parse(init.body);assert.equal(change.edition,null);assert.equal(change.share_token,null);}}];assert.equal((await worker.fetch(req('/api/stories',{action:'private',id,revision:1}),env)).status,200);
 queue=[{data:[],check:url=>{assert.ok(url.includes('select=edition'));assert.ok(!url.includes('select=data'));}}];assert.equal((await worker.fetch(req('/s/'+token,undefined,false),env)).status,404);
 queue=[{data:[{edition:{...story,turns:[],draft:undefined}}]}];const edition=await worker.fetch(req('/s/'+token,undefined,false),env);assert.equal(edition.status,200);assert.equal(edition.headers.get('Cache-Control'),'no-store');const html=await edition.text();assert.ok(!html.includes('PRIVATE_'));assert.ok(!html.includes('<script>alert(1)</script>'));assert.ok(html.includes('&lt;script&gt;'));
+assert.match(html,/href="\/\?from=shared&amp;lang=en"/,'The reader can start an independent story without receiving the share token');
+assert.ok(!html.includes(token),'The share token must not be embedded in the acquisition link');
+assert.ok(!html.split('</head>')[0].includes('A family story.'),'Social metadata should not quote the story');
+assert.match(html,/\.print,\.download,\.reader-actions,\.reader-next\{display:none\}/,'Reader acquisition controls should not print');
+assert.equal(edition.headers.get('Referrer-Policy'),'no-referrer');
+for(const [language,action] of [['zh','讲讲我自己的故事'],['es','Crear mi propia historia']]){
+ queue=[{data:[{edition:{...story,language,turns:[],draft:undefined}}]}];
+ const localized=await(await worker.fetch(req('/s/'+token,undefined,false),env)).text();
+ assert.ok(localized.includes(`href="/?from=shared&amp;lang=${language}"`));
+ assert.ok(localized.includes(action));
+}
 assert.equal((await worker.fetch(req('/s/'+token),{...env,STORYPRESS_PUBLIC_SHARING:'false'})).status,404);
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
 queue=[authenticated()];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));

@@ -36,4 +36,17 @@ assert.equal(hasStoryContent(base),false);assert.equal(hasStoryContent({...base,
  const f=fixture();f.saver.replace({...first,sample:true},null);await f.saver.flush();f.saver.replace(base,null);await f.saver.flush();assert.equal(f.calls.length,0,'Empty and sample stories do not reach account storage');
  f.saver.replace(second,null);await f.saver.flush();assert.equal(f.rows.size,1,'A recovered local newspaper autosaves without another AI request');
 }
+{
+ const f=fixture();f.saver.replace(first,null);await f.saver.flush();
+ const original=f.rows.get('row-1');f.rows.set('row-1',{...original,revision:2,story:{...first,draft:'Newer version from another tab'}});
+ f.saver.update(second);await assert.rejects(f.saver.flush());
+ const release=f.hold(),copying=f.saver.saveAsNew();await tick();f.saver.update({...second,draft:'Latest edits during recovery'});release();await copying;
+ assert.equal(f.rows.size,2,'Recovery keeps both versions');assert.equal(f.rows.get('row-1').story.draft,'Newer version from another tab','Recovery never overwrites the newer cloud version');
+ assert.equal(f.rows.get('row-2').story.draft,'Latest edits during recovery','Edits arriving during recovery use the new identity');assert.equal(f.identities.at(-1).id,'row-2');assert.equal(f.rows.get('row-2').share_token,null,'The recovered copy is private');
+}
+{
+ const f=fixture();f.saver.replace(first,null);await f.saver.flush();f.saver.update(second);f.fail();await assert.rejects(f.saver.saveAsNew(),/Offline/);
+ assert.equal(f.identities.at(-1).id,'row-1','Failed recovery retains the original identity');assert.equal(f.rows.size,1);
+ await f.saver.flush();assert.equal(f.rows.get('row-1').story.draft,second.draft,'Failed recovery keeps the unsaved draft for retry');
+}
 console.log('Passed: serialized autosave/manual/share, newest unsent text and paper, identity/revision ordering, safe new-story switch, failure retention, loaded drafts, deletion, and sample exclusion.');

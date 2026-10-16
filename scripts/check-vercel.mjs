@@ -15,6 +15,13 @@ try{
   assert.ok((await fs.stat('dist-public/app.js')).size>10000);
   for(const key of ['memories','together','journey'])assert.deepEqual(await fs.readFile('dist-public/artwork/'+key+'.jpg'),await fs.readFile('public/artwork/'+key+'.jpg'));
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',{})).status,503);
+  for(const missing of [{}, {...env,SUPABASE_SECRET_KEY:undefined}]){
+    const sample=await serveVercel(request('/api/account'),'/api/account',missing);
+    assert.equal(sample.status,200);
+    assert.deepEqual(await sample.json(),{user:null,supabase:null,storage:false,linkSharing:false,dailyUnits:null,sampleOnly:true});
+    assert.equal((await serveVercel(request('/api/account',{}),'/api/account',missing)).status,503);
+    assert.equal((await serveVercel(request('/api/stories'),'/api/stories',missing)).status,503);
+  }
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',env)).status,401);
   assert.equal((await serveVercel(request('/api/stories'),'/api/stories',env)).status,401);
   const account=await(await serveVercel(request('/api/account'),'/api/account',env)).json();
