@@ -1,6 +1,6 @@
 import type {Story} from './story';
 import {artworkPath,artworkAlt,artworkCaption,chosenArtwork} from './artwork';
-import {safeSourceUrl} from './story';
+import {safeSourceUrl,artifactLanguage} from './story';
 export type KeepsakeFormat='newspaper'|'booklet'|'letter';
 export const keepsakeCopy={
  en:{title:'Make it yours',help:'One story, three ways to keep it. Changing the layout keeps your words.',newspaper:'Newspaper',booklet:'Mini booklet',letter:'Letter / card',descriptions:['A little front-page moment','A story to turn through','Something personal to send'],intent:'What would you like to make?',memory:'Preserve a memory',message:'Say something to someone',recipient:'Who is it for? (optional)',recipientPlaceholder:'Mum, a friend, your future self…',create:'Make my keepsake',edit:'Edit my keepsake',draft:'Your first keepsake',draftHelp:'A first draft, ready for your personal touches. Nothing is shared until you choose.',images:'Create share images',imageHelp:'Readable cards for messages and social posts. Your full story stays in the reading link.',saveImage:'Save this image',shareImages:'Share images',page:'Page',by:'A story by',context:'Around this memory',dear:'To',credit:'A memory, kept.',download:'Save a copy',print:'Print / save PDF',choose:'Choose a format',sampleHelp:'Try a format. Your own draft stays untouched.',back:'Back',next:'Next'},
@@ -20,6 +20,7 @@ export function storyPages(paragraphs:string[],limit=1100){
  if(page.length)pages.push(page);return pages;
 }
 export function keepsakeMarkup(story:Story,illustrationSrc?:string){
+ story={...story,language:artifactLanguage(story)};
  const paper=story.paper;if(!paper)return '';
  const e=escapeHtml,c=keepsakeCopy[story.language],format=formatOf(story),key=chosenArtwork(story);
  const photo=key!=='generated'&&key!=='none'&&story.photo;

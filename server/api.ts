@@ -1,3 +1,4 @@
+import {translationInputSchema,translationResultSchema,translationInstructions,validateTranslation} from '../lib/translation';
 import {liveAccess,liveToken} from './live';
 import { z } from "zod";
 import {generateStoryImage,imageModel} from "../lib/image-provider";
@@ -21,6 +22,16 @@ export async function handleApi(request: Request, env: Bindings) {
     const raw = await request.text();
     if (raw.length > 11000000) return Response.json({ error: "This recording is too large. Please record a shorter memory." }, { status: 413 });
     const body = JSON.parse(raw);
+    if(body.action==='translate'){
+      const input=translationInputSchema.parse(body.translation);
+      if(input.sourceLanguage===input.targetLanguage)throw new ServiceError('Choose a different language for the translation.',400);
+      if(!modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
+      // One writing-model call, using the existing durable writing allowance.
+      await reserveAi(userId,env,'write');
+      const result=parseJson(await gemini(translationInstructions,JSON.stringify(input),true,modelFor('write')),translationResultSchema);
+      try{return Response.json({translation:validateTranslation(input,result)},{headers:{'Cache-Control':'no-store'}});}
+      catch{throw new ServiceError('The translation was incomplete. Your original is kept. Please try again.',502);}
+    }
     if(body.action==='live')return await liveToken(request,env,userId,storySchema.parse(body.story));
     if (body.action === "transcribe") {
       const audio = z.object({ data: z.string().min(1).max(10000000).regex(/^[A-Za-z0-9+/=]+$/), mime: z.enum(["audio/webm", "audio/mp4", "audio/ogg", "audio/wav", "audio/mpeg"]) }).parse(body.audio);

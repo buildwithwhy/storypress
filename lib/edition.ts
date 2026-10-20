@@ -1,4 +1,4 @@
-import {type Story, safeSourceUrl} from './story';
+import {type Story, safeSourceUrl, artifactLanguage} from './story';
 import {keepsakeMarkup,keepsakeStyles,keepsakeCopy} from './keepsake';
 import {shareFlowCopy} from './share-flow-copy';
 import {artworkPath,artworkCopy,chosenArtwork,artworkCaption,artworkAlt} from './artwork';
@@ -6,9 +6,10 @@ import {readerTools,readerScript,readerStyles} from './reader';
 const escape = (s: string) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 export function editionSnapshot(story: Story): Story {
  if (!story.paper || !story.approved) throw new Error('Please review and approve your newspaper first.');
- return {name:story.name,presentation:story.presentation,intention:story.presentation?.format==='letter'?story.intention:undefined,language:story.language,occasion:story.occasion,turns:[],sources:story.sources.filter(s=>s.selected).map(s=>({...s,connection:"",question:"",reaction:undefined})),paper:story.paper,photo:chosenArtwork(story)==='generated'||chosenArtwork(story)==='none'?undefined:story.photo,photoCaption:chosenArtwork(story)==='generated'||chosenArtwork(story)==='none'?undefined:story.photoCaption,generatedArt:chosenArtwork(story)==='generated'?story.generatedArt:undefined,artwork:chosenArtwork(story),approved:true,sample:story.sample};
+ return {name:story.name,presentation:story.presentation,intention:story.presentation?.format==='letter'?story.intention:undefined,language:artifactLanguage(story),occasion:story.occasion,turns:[],sources:story.sources.filter(s=>s.selected).map(s=>({...s,connection:"",question:"",reaction:undefined})),paper:story.paper,photo:chosenArtwork(story)==='generated'||chosenArtwork(story)==='none'?undefined:story.photo,photoCaption:chosenArtwork(story)==='generated'||chosenArtwork(story)==='none'?undefined:story.photoCaption,generatedArt:chosenArtwork(story)==='generated'?story.generatedArt:undefined,artwork:chosenArtwork(story),approved:true,sample:story.sample};
 }
 export function editionHtml(story: Story, illustrationSrc?:string, options:{webReader?:boolean}={}) {
+ story={...story,language:artifactLanguage(story)};
  const shared=shareFlowCopy[story.language],c=keepsakeCopy[story.language];
  if(!story.paper)throw new Error('No keepsake yet.');
  const reader=options.webReader?`<section class="reader-next"><p>ONCE &amp; OURS</p><h2>${shared.readerTitle}</h2><p>${shared.readerDescription}</p><a href="/?from=shared&amp;lang=${story.language}" rel="noreferrer">${shared.readerAction} →</a></section>`:'';

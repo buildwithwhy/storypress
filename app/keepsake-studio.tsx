@@ -15,7 +15,7 @@ export function IntentionPicker({story,disabled,onChange}:{story:Story;disabled:
 export function ShareImages({story}:{story:Story}){
  const c=keepsakeCopy[story.language];const [cards,setCards]=useState<{url:string;blob:Blob}[]>([]),[working,setWorking]=useState(false),[error,setError]=useState(''),[index,setIndex]=useState(0);
  const generation=useRef(0);
- const signature=JSON.stringify([story.paper,story.photo,story.generatedArt,story.artwork,story.approved,story.name,story.language]);
+ const signature=JSON.stringify([story.paper,story.photo,story.generatedArt,story.artwork,story.approved,story.name,story.language,story.paperLanguage,story.photoCaption]);
  useEffect(()=>{generation.current++;setCards([]);setIndex(0);setError('');setWorking(false);},[signature]);
  useEffect(()=>()=>cards.forEach(card=>URL.revokeObjectURL(card.url)),[cards]);
  async function prepare(){const id=++generation.current;setWorking(true);setError('');try{const blobs=await shareImages(story);if(id!==generation.current)return;setCards(blobs.map(blob=>({blob,url:URL.createObjectURL(blob)})));}catch(e){if(id===generation.current)setError((e as Error).message);}finally{if(id===generation.current)setWorking(false);}}
