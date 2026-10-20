@@ -24,7 +24,6 @@ export async function handleApi(request: Request, env: Bindings) {
     const body = JSON.parse(raw);
     if(body.action==='translate'){
       const input=translationInputSchema.parse(body.translation);
-      if(input.sourceLanguage===input.targetLanguage)throw new ServiceError('Choose a different language for the translation.',400);
       if(!modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
       // One writing-model call, using the existing durable writing allowance.
       await reserveAi(userId,env,'write');
