@@ -21,7 +21,7 @@ async function db(env:Bindings,path:string,method='GET',body?:unknown){
  if(!response.ok)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
  return response.status===204?null:response.json();
 }
-function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Storypress directly.',403);}
+function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Once & Ours directly.',403);}
 const uuid=z.string().uuid();
 export async function accountApi(request:Request,env:Bindings){
  if(request.method!=='GET')return json({error:'Method not allowed'},405);

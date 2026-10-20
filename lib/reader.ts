@@ -9,7 +9,7 @@ export const readerCopy={
 
 export function readerTools(story:Story,webReader:boolean,printLabel:string){
  const c=readerCopy[story.language],e=escapeHtml;
- return `<header class="reader-header"><span class="reader-brand">STORYPRESS</span><p>${webReader?c.noLogin:c.offlineLabel}</p></header>
+ return `<header class="reader-header"><span class="reader-brand">ONCE &amp; OURS</span><p>${webReader?c.noLogin:c.offlineLabel}</p></header>
  <nav class="reader-actions" aria-label="${c.tools}">${webReader?`<button type="button" class="reader-primary reader-enhanced" id="reader-share" hidden>${c.share}</button><button type="button" class="reader-enhanced" id="reader-copy" hidden>${c.copy}</button><a class="download" href="?download=1" download="storypress-keepsake.html">${c.save}</a>`:''}<button type="button" class="print reader-enhanced" id="reader-print" hidden>${e(printLabel)}</button></nav>
  ${webReader?`<div class="reader-link" id="reader-link" hidden><label for="reader-address">${c.link}</label><input id="reader-address" type="url" readonly spellcheck="false" dir="ltr"><p id="reader-manual">${c.manual}</p></div><p class="reader-status" id="reader-status" role="status" aria-live="polite"></p>`:''}
  <details class="reader-help"><summary>${c.help}</summary><p>${c.helpText}</p><p>${c.pdf}</p>${webReader?`<p>${c.offline}</p>`:''}</details>`;

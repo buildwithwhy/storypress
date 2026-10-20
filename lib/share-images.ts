@@ -30,7 +30,7 @@ export async function shareImages(story:Story):Promise<Blob[]>{
  const blobs:Blob[]=[];
  for(const [index,lines]of pages.entries()){
   ctx.fillStyle='#fffaf0';ctx.fillRect(0,0,1080,1350);ctx.fillStyle='#294b3b';ctx.fillRect(0,0,1080,12);
-  ctx.font='22px system-ui';ctx.fillText('STORYPRESS  /  '+c.page+' '+(index+1)+' · '+pages.length,90,75);
+  ctx.font='22px system-ui';ctx.fillText('ONCE & OURS  /  '+c.page+' '+(index+1)+' · '+pages.length,90,75);
   ctx.font='54px Georgia, "Songti SC", serif';
   let title=wrapLines(p.headline,900,measure);let size=54;
   while(title.length>3&&size>28){size-=2;ctx.font=`${size}px Georgia, "Songti SC", serif`;title=wrapLines(p.headline,900,measure);}

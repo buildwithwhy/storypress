@@ -87,3 +87,8 @@
 .language-picker{display:flex;align-items:center;gap:7px;margin-left:auto}.language-picker-label{display:flex;align-items:center;color:#667761}.language-picker-label span{display:none}.language-picker-options{display:flex;gap:2px}.language-picker-options button{min-height:36px;padding:5px 8px;font-size:13px;border-radius:5px;color:#5a6c54;white-space:nowrap}.language-picker-options button[aria-pressed=true]{font-weight:650;color:#224d3e;text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:5px}.language-picker-options button:hover:not(:disabled){background:#e8eddf}
 @media(max-width:800px){.site-header{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;padding:12px 18px}.site-header .language-picker{justify-self:end;margin:0;gap:0}.language-picker-label{display:none}.language-picker-options button{padding:5px 7px}.site-header .header-right{grid-column:1/-1;display:flex;gap:8px}.site-header .header-right .text-button{flex:1;justify-content:center;padding:8px 12px}.site-header .header-right .icon-button{flex:none;width:40px}}
 @media(max-width:360px){.site-header{padding:10px 12px;column-gap:6px}.site-header .brand{font-size:21px}.site-header .brand-mark{width:28px;height:28px;margin-right:5px}.language-picker-options button{font-size:12px;padding:5px 6px}}
+
+/* Once & Ours wordmark fits beside the compact language choices. */
+.site-header .brand{white-space:nowrap;font-family:var(--serif);font-size:30px;font-weight:400;letter-spacing:-.035em}.site-header .brand-mark{flex-shrink:0}
+@media(max-width:800px){.site-header .brand{font-size:24px}}
+@media(max-width:360px){.site-header .brand{font-size:20px}}

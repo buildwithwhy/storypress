@@ -17,7 +17,7 @@ export async function handleApi(request: Request, env: Bindings) {
     if(request.method === "GET") return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)}},{headers:{"Cache-Control":"no-store"}});
     const userId = await owner(request,env);
     const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Please open Storypress directly." }, { status: 403 });
+    if (origin && origin !== new URL(request.url).origin) return Response.json({ error: "Please open Once & Ours directly." }, { status: 403 });
     const raw = await request.text();
     if (raw.length > 11000000) return Response.json({ error: "This recording is too large. Please record a shorter memory." }, { status: 413 });
     const body = JSON.parse(raw);
