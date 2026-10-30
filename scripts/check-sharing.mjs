@@ -32,10 +32,66 @@ for(const [language,action] of [['zh','讲讲我自己的故事'],['es','Crear m
 }
 assert.equal((await worker.fetch(req('/s/'+token),{...env,STORYPRESS_PUBLIC_SHARING:'false'})).status,404);
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
-queue=[authenticated()];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));
+queue=[authenticated(),{data:[]},{data:[]}];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));assert.ok(!config.includes('sk_test'),'Billing config must not leak into the account payload');
 assert.equal(queue.length,0);
+// ---- Paywall metering (§2): with Stripe configured, the save-without-id seam
+// reserves against the monotonic story counter before inserting a self-started
+// original. The strict queue proves the reserve RPC fires exactly once per
+// self-started create — and never for derivatives, revisions, or deletes.
+const meteredEnv={...env,STRIPE_SECRET_KEY:'sk_test_mock'},insertedAt='2026-10-30T00:00:00.000Z',copyId='33333333-3333-4333-8333-333333333333';
+const reserve=(ok,reason)=>({data:[{ok,reason}],check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_story'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_limit:3},'The reserve RPC receives the owner and the default allowance');}});
+const inserted=id=>({data:[{id,revision:1,share_token:null,updated_at:insertedAt}]});
+queue=[authenticated(),reserve(false,'limit')];
+const refused=await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv);
+assert.equal(refused.status,402,'A free account at the cap cannot start a fourth story');
+assert.equal((await refused.json()).code,'story_limit','The refusal carries the story_limit code for the client');
+assert.equal(queue.length,0,'A refused save must not insert a story row');
+queue=[authenticated(),reserve(true,'free'),inserted(id)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv)).status,200,'A free account under the cap saves normally');
+queue=[authenticated(),reserve(true,'entitled'),inserted(id)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv)).status,200,'An entitled owner keeps creating past the free allowance');
+queue=[authenticated(),inserted(id)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',id,revision:1,story}),meteredEnv)).status,200,'Revising an existing story is never metered');
+queue=[authenticated(),{data:null}];assert.equal((await worker.fetch(req('/api/stories',{action:'delete',id}),meteredEnv)).status,200,'Deleting an existing story is never metered');
+queue=[authenticated(),inserted(copyId)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',story:zhTranslation}),meteredEnv)).status,200,'A translated keepsake inserts without consuming the counter');
+assert.equal(queue.length,0,'originStoryId-linked keepsakes must skip the reserve RPC');
+queue=[authenticated(),inserted(copyId)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',story,derivative:true}),meteredEnv)).status,200,'A save-as-copy inserts without consuming the counter');
+assert.equal(queue.length,0,'The derivative marker must skip the reserve RPC');
+// Monotonicity: the counter lives in the RPC, so the seam test replays a
+// counting mock — two creations, a delete (which never touches the counter),
+// a recreate, and only then the refusal.
+let reservations=0;
+const countingReserve=()=>({get data(){reservations+=1;return reservations>=4?[{ok:false,reason:'limit'}]:[{ok:true,reason:'free'}];},check:url=>{assert.ok(url.endsWith('/rpc/storypress_reserve_story'));}});
+reservations=0;
+queue=[authenticated(),countingReserve(),inserted(id),authenticated(),countingReserve(),inserted(id)];
+assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv)).status,200);
+assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv)).status,200,'Second self-started story is inside the free allowance');
+queue=[authenticated(),{data:null}];assert.equal((await worker.fetch(req('/api/stories',{action:'delete',id}),meteredEnv)).status,200,'Deleting never refunds the counter');
+queue=[authenticated(),countingReserve(),inserted(id)];assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv)).status,200,'Recreating after delete still reserves — the counter never reset');
+queue=[authenticated(),countingReserve()];
+const afterDelete=await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv);
+assert.equal(afterDelete.status,402,'Delete-then-recreate cannot reset the cap');
+assert.equal((await afterDelete.json()).code,'story_limit');
+// ---- Dormancy (§2): with Stripe env absent, enforcement is skipped entirely —
+// a founder setup step must never block a writer.
+queue=[authenticated(),inserted(id)];
+assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),env)).status,200,'Without Stripe env, story creation is never blocked');
+assert.equal(queue.length,0,'The reserve RPC must not even be called while billing is dormant');
+queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]}];
+const paid=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
+assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3},'The account payload reports the entitlement and monotonic counter');
+queue=[authenticated(),{data:[]},{data:[]}];
+const freeAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
+assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3},'Missing billing rows read as a free account');
+queue=[authenticated(),{status:503,data:{error:'relation does not exist'}}];
+const degraded=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
+assert.deepEqual(degraded.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3},'A broken billing table must not take down the account payload');
+queue=[authenticated(),{data:[]},{data:[]}];
+const generous=await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'5'})).json();
+assert.equal(generous.billing.freeStoryLimit,5,'STORYPRESS_FREE_STORIES raises the reported allowance');
+queue=[authenticated(),{data:[]},{data:[]}];
+assert.equal((await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'not-a-number'})).json()).billing.freeStoryLimit,3,'A malformed allowance env falls back to 3');
+assert.equal(queue.length,0);
+
 const incomplete={...env,SUPABASE_SECRET_KEY:''};
 const account=await(await worker.fetch(req('/api/account',undefined,false),incomplete)).json();assert.equal(account.storage,false);assert.equal(account.supabase,null);
 assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),incomplete)).status,503,'Missing server key must fail closed before paid model calls');
 assert.equal(queue.length,0);globalThis.fetch=original;
-console.log('Passed: verified account identity, owner filters, stale-save rejection, approval gating, private-note exclusion, escaped HTML, link revocation, no-store responses, server-only keys and quota refusal. Supabase responses mocked; live database activation still required.');
+console.log('Passed: verified account identity, owner filters, stale-save rejection, approval gating, private-note exclusion, escaped HTML, link revocation, no-store responses, server-only keys, quota refusal, story metering with derivative exemptions, and billing dormancy. Supabase responses mocked; live database activation still required.');
