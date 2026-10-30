@@ -170,6 +170,22 @@ PostgreSQL cluster, the webhook signature/idempotency path, and the rendered
 client gates. They do not prove a live Stripe round-trip; run the test-mode
 checklist above after connecting.
 
+### Final gate run on the merged stack
+
+Full suite recorded October 30, 2026 at the code state of `0ba57d5` on
+`feat/paywall-operator-docs` (merged stack through PR #20; this commit adds
+documentation only; sandbox Node 20.20.2, PostgreSQL 17):
+`npm run typecheck`, `npm run build` (no worker-bundle drift), **every**
+`scripts/check-*.mjs`, and `npm run check:vercel` after
+`npm run build:vercel`. All green except:
+
+- `check-email-auth` — known environmental failure, identical on clean
+  main: supabase-js needs Node 22 native WebSocket and the sandbox runs
+  Node 20. Environmental, not a regression; document and move on.
+- `check-reader` — one transient failure on its very first invocation,
+  then 22 consecutive passes including a full ordered re-run of the suite.
+  Not reproducible; treated as a one-off on a reused sandbox.
+
 Official references checked October 30, 2026:
 - https://docs.stripe.com/webhooks
 - https://docs.stripe.com/checkout
