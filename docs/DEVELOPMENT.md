@@ -65,6 +65,7 @@ node scripts/check-worker.mjs
 node scripts/check-voice.mjs
 node scripts/check-photo.mjs
 node scripts/check-sharing.mjs
+node scripts/check-social-share.mjs
 node scripts/check-draft-handoff.mjs
 node scripts/check-model-routing.mjs
 ```

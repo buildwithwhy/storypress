@@ -13,6 +13,7 @@ import {type BillingStatus} from '../lib/billing';
 import {paywallCopy} from '../lib/paywall-copy';
 import {EmailSignIn} from './email-sign-in';
 import {readerCopy} from '../lib/reader';
+import {artifactSharePayload,shareSheetAvailable} from '../lib/share-payload';
 export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void}){
  const c={...sharingCopy[story.language],...shareFlowCopy[story.language]},sc=saveCopy[story.language];const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[emailPending,setEmailPending]=useState(false),[rows,setRows]=useState<{id:string;title:string}[]>([]);
  const user=config.supabase?config.user:null,linkField=useRef<HTMLInputElement>(null);
@@ -23,7 +24,7 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
  async function save(){const next=await onSave();if(!next)throw new Error(sc.empty);return next;}
  async function newspaperFile(){return new File([await downloadableEdition(story)],'storypress-keepsake.html',{type:'text/html'});}
  async function download(){const file=await newspaperFile(),href=URL.createObjectURL(file),a=document.createElement('a');a.href=href;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),1000);setNotice(c.fileSaved);}
- async function send(){const file=await newspaperFile();if(navigator.canShare?.({files:[file]}))await navigator.share({files:[file],title:story.paper!.headline});else await download();}
+ async function send(){const file=await newspaperFile();if(shareSheetAvailable([file]))await navigator.share(artifactSharePayload([file],story.paper!.headline));else await download();}
  async function copyLink(){try{await navigator.clipboard.writeText(url);setNotice(c.copied);}catch{linkField.current?.focus();linkField.current?.select();setNotice(c.copyManual);}}
  async function sendLink(){try{if(navigator.share)await navigator.share({url,title:story.paper?.headline||c.sharedTitle});else await copyLink();}catch(e){if((e as Error).name!=='AbortError')await copyLink();}}
  return <section className="sharing-panel no-print" aria-label={c.account}>
