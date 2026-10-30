@@ -4,6 +4,15 @@
 // touched — this module exists to keep the paywall's strings disjoint from
 // concurrent work there. Placeholders ({limit}, {used}) are interpolated by
 // the caller and asserted by scripts/check-paywall.mjs.
+//
+// Video add-on honesty (paywall §6): a future video add-on grants
+// addons:["video"] on the entitlement row — no schema change — but pure
+// client-side video rendering is UI-gated only: a bypassed gate costs
+// nothing but the user's own render time. Enforceable video gating arrives
+// with narration/generated motion (server AI steps and any storage), and the
+// entitlement check belongs exactly there when a video delivery PR lands.
+// See docs/video.md for the hidden rollout and docs/STRIPE-SETUP.md for the
+// operator runbook.
 export type PaywallLanguage='en'|'zh'|'es';
 export interface PaywallCopy{
  // StoryStart limitReached state — the gate before content exists.
