@@ -1,6 +1,7 @@
 import type {Story} from './story';
 import {artworkPath,artworkAlt,artworkCaption,chosenArtwork} from './artwork';
 import {safeSourceUrl,artifactLanguage} from './story';
+import {withContributors,contributorsJoined} from './invite-copy';
 export type KeepsakeFormat='newspaper'|'booklet'|'letter';
 export const keepsakeCopy={
  en:{title:'Make it yours',help:'One story, three ways to keep it. Changing the layout keeps your words.',newspaper:'Newspaper',booklet:'Mini booklet',letter:'Letter / card',descriptions:['A little front-page moment','A story to turn through','Something personal to send'],intent:'What would you like to make?',memory:'Preserve a memory',message:'Say something to someone',recipient:'Who is it for? (optional)',recipientPlaceholder:'Mum, a friend, your future self…',create:'Make my keepsake',edit:'Edit my keepsake',draft:'Your first keepsake',draftHelp:'A first draft, ready for your personal touches. Nothing is shared until you choose.',images:'Create share images',imageHelp:'Readable cards for messages and social posts. Your full story stays in the reading link.',saveImage:'Save this image',shareImages:'Share images',page:'Page',by:'A story by',context:'Around this memory',dear:'To',credit:'A memory, kept.',download:'Save a copy',print:'Print / save PDF',choose:'Choose a format',sampleHelp:'Try a format. Your own draft stays untouched.',back:'Back',next:'Next'},
@@ -27,7 +28,10 @@ export function keepsakeMarkup(story:Story,illustrationSrc?:string){
  const validPhoto=photo&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)?photo:undefined;
  const src=key==='none'?undefined:validPhoto||illustrationSrc||artworkPath(story);
  const figure=src?`<figure class="keepsake-art${key==='generated'?' story-generated-art':''}"><img src="${e(src)}" alt="${e(validPhoto?story.photoCaption||'':artworkAlt(story))}"><figcaption>${e(validPhoto?story.photoCaption||'':artworkCaption(story))}</figcaption></figure>`:'';
- const by=story.name?`<p class="keepsake-by">${c.by} ${e(story.name)}</p>`:'';
+ // Approved contributors are credited in the byline: "A story by Wei, with Mei (aunt)".
+ const contributorNames=[...new Set(story.turns.flatMap(t=>t.role==='user'&&t.author?[t.author.label]:[]))];
+ const withNames=contributorNames.length?withContributors(story.language,contributorNames):'';
+ const by=story.name?`<p class="keepsake-by">${c.by} ${e(story.name)}${e(withNames)}</p>`:contributorNames.length?`<p class="keepsake-by">${c.by} ${e(contributorsJoined(story.language,contributorNames))}</p>`:'';
  const title=`<h2 class="keepsake-title">${e(paper.headline)}</h2>${paper.standfirst?`<p class="keepsake-intro">${e(paper.standfirst)}</p>`:''}`;
  const recipient=format==='letter'&&story.intention?.kind==='message'&&story.intention.recipient?`<p class="keepsake-salutation">${c.dear} ${e(story.intention.recipient)},</p>`:'';
  const prose=(paragraphs:string[])=>`<div class="keepsake-prose">${paragraphs.map(p=>`<p>${e(p)}</p>`).join('')}</div>`;

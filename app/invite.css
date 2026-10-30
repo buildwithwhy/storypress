@@ -1,0 +1,31 @@
+/* Contributor invitations: owner panel, review threads, and the guest page. */
+.invite-list{border-top:1px solid #d4d8c8;margin:20px 0 0}
+.invite-row{display:flex;gap:12px;align-items:baseline;padding:14px 0;border-bottom:1px solid #d4d8c8}
+.invite-row strong{flex:1;overflow-wrap:anywhere;font-weight:550}
+.invite-row>small{color:#757a70;white-space:nowrap}
+.invite-status{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#5c7263;border:1px solid #b9c6b4;border-radius:999px;padding:2px 9px}
+.invite-status.closed{color:#8b4a38;border-color:#cbb3a6}
+.invite-question-input{min-height:84px}
+.invite-review .turn{border-bottom:1px solid #d9dccd;padding:10px 0}
+.invite-review .turn>p{font-size:15px;line-height:1.7}
+.invite-review{border:1px solid #d9dccd;border-radius:7px;background:#fbfcf7;padding:16px;margin-top:13px}
+.invite-review-from{font-size:12px;margin-bottom:9px}
+.invite-review .sharing-actions{margin-top:13px}
+.invite-review .turn>small,.guest-turns .turn>small{font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#737358;font-weight:650}
+.guest-page{max-width:640px;margin:0 auto;padding:38px 22px 60px}
+.guest-page .question-block h1{min-height:0;font-size:37px}
+.guest-note{display:flex;align-items:center;gap:7px;font-size:11px;color:#8a957b;margin-top:13px}
+.guest-turns{margin:24px 0}
+.guest-turns .turn{padding:12px 0;border-bottom:1px solid #d9dccd}
+.guest-turns .turn>p{font-size:15px;line-height:1.75}
+.guest-lede{font-size:14px;line-height:1.75;color:#637267;margin-top:14px}
+.guest-field{display:block;font-size:12px;font-weight:550;margin-top:20px}
+.guest-field input,.guest-field textarea{margin-top:7px;font-weight:400}
+.guest-actions{display:flex;gap:12px;align-items:center;margin-top:16px}
+.guest-actions .secondary,.guest-actions .primary{font-size:12px;min-height:44px;padding:10px 16px}
+.guest-sign-in{margin-top:26px;border-top:1px solid #d9dccd;padding-top:20px;display:grid;gap:12px}
+.guest-sign-in>p{font-size:13px}
+.question-block .icon-button{position:absolute;right:0;top:4px}
+@media(max-width:600px){.guest-page{padding:28px 20px 46px}.guest-page .question-block h1{font-size:31px}.guest-actions{flex-direction:column;align-items:stretch}.guest-actions button{width:100%;justify-content:center}}
+
+@media(max-width:600px){.invite-row{flex-wrap:wrap}.invite-row strong{flex-basis:100%}}
