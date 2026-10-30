@@ -5,7 +5,7 @@ export type LiveEndReason='time-limit'|'provider-ending'|'disconnected';
 export type LiveTiming={endsAt:number;reason:'time-limit'|'provider-ending'};
 export type LiveGrant={token:string;model:string;expiresAt:string;maxSeconds:number};
 export type LiveMetrics={provider:'gemini';model:string;durationSeconds:number;firstAudioMs:number|null;usage:Record<string,unknown>[];playback:PlaybackMetrics};
-type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
+type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void;pacing?:(quickTurns:number)=>void};
 export function pcm16(samples:Float32Array,rate:number){return createPcm16Encoder(rate).encode(samples);}
 function encoded(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
 
@@ -40,7 +40,23 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
  let limit:ReturnType<typeof setTimeout>|undefined,connectingTimer:ReturnType<typeof setTimeout>|undefined;
  let playback:ReturnType<typeof createLivePlayback>|undefined,encoder:ReturnType<typeof createPcm16Encoder>|undefined;
  let userText='',assistantText='',started=0,firstAudioMs:number|null=null,model='',usage:Record<string,unknown>[]=[],active=false,paused=false;
- function emitTurns(){if(userText.trim())events.turn({role:'user',text:userText.trim().slice(0,12000)});if(assistantText.trim())events.turn({role:'assistant',text:assistantText.trim().slice(0,12000)});userText='';assistantText='';events.caption('');}
+ // Narrator pacing, measured client-side from live input-transcription
+ // timing: a turn whose transcription deltas never gapped more than 700 ms
+ // is brisk. Two consecutive brisk turns let the server tighten its
+ // end-of-speech window; a long gap (or a pause, or a typed turn) resets
+ // toward the patient default. The count is only a hint — the server owns
+ // the mapping and the bounds (600–1500 ms).
+ let quickTurns=0,lastDelta=0,turnGap=0;
+ function emitTurns(){if(userText.trim())events.turn({role:'user',text:userText.trim().slice(0,12000)});if(assistantText.trim())events.turn({role:'assistant',text:assistantText.trim().slice(0,12000)});userText='';assistantText='';lastDelta=0;turnGap=0;events.caption('');}
+ // Evaluated when the agent starts replying: the widest gap between the
+ // user turn's transcription deltas decides whether it was brisk or hesitant.
+ function evaluatePacing(){
+  if(!lastDelta)return;
+  if(turnGap<=700)quickTurns++;
+  else if(turnGap>=1200)quickTurns=0;
+  events.pacing?.(quickTurns);
+  lastDelta=0;turnGap=0;
+ }
  function silence(){playback?.clear();}
  async function stop(){
   generation++;clearTimeout(limit);clearTimeout(connectingTimer);emitTurns();playback?.clear(false);
@@ -79,12 +95,16 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
    rec.onerror=()=>{if(id===generation){events.problem(new Error('The recording stopped unexpectedly. Your transcript is kept.'));void stop();}};
    connectingTimer=setTimeout(()=>{if(id===generation){events.problem(new LiveVoiceProblem('Live voice took too long to connect. Try again, or use a voice message.','connect_timeout'));void stop();}},20000);
    socket.onopen=()=>{if(id===generation)socket.send(JSON.stringify({setup:{model:`models/${permission.model}`}}));};
-   // Serialize decoding as well as processing, including Blob frames on older browsers.
-   let messages=Promise.resolve();
-   socket.onmessage=event=>messages=messages.then(async()=>{
+   // Frames apply strictly in server order, but decoding never queues behind
+   // the previous frame: string and binary frames decode inline on arrival,
+   // and a slow legacy Blob decode parks later frames briefly (order still
+   // preserved) instead of serializing the whole pipeline behind one await.
+   const decoder=new TextDecoder();
+   let arrival=0,appliedSeq=0;const parked=new Map<number,string>(),reporters=new Map<number,()=>void>();
+   const apply=(raw:string,seq:number,report:()=>void)=>{
+    if(seq!==appliedSeq+1){parked.set(seq,raw);reporters.set(seq,report);return;}
+    appliedSeq=seq;
     try{
-     if(id!==generation)return;
-     const raw=typeof event.data==='string'?event.data:event.data instanceof ArrayBuffer?new TextDecoder().decode(event.data):await event.data.text();
      const data=JSON.parse(raw);if(id!==generation)return;
      if(data.error)throw new Error('The live session ended unexpectedly. Your transcript is kept.');
      if(data.setupComplete&&!active){
@@ -98,7 +118,14 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
      if(data.usageMetadata&&usage.length<100)usage.push(data.usageMetadata);
      const content=data.serverContent;
      if(content){
-      if(content.inputTranscription?.text)userText+=content.inputTranscription.text;
+      if(content.inputTranscription?.text){
+       const now=performance.now();
+       if(lastDelta){const gap=now-lastDelta;if(gap>turnGap)turnGap=gap;}
+       lastDelta=now;
+       userText+=content.inputTranscription.text;
+      }
+      // The agent starting to reply closes the user turn's pacing measurement.
+      if(content.outputTranscription?.text||content.modelTurn?.parts?.length)evaluatePacing();
       if(content.outputTranscription?.text)assistantText+=content.outputTranscription.text;
       events.caption(userText||assistantText);
       if(content.interrupted){playback?.interrupt();emitTurns();events.phase(paused?'paused':'listening');}
@@ -116,7 +143,19 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
       else{events.ended?.('provider-ending');void stop();}
      }
     }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}}
-   });
+    finally{report();}
+    // Frames decoded while an earlier frame was still applying go now, in order.
+    const nextRaw=parked.get(appliedSeq+1);
+    if(nextRaw!==undefined){parked.delete(appliedSeq+1);const nextReport=reporters.get(appliedSeq+1);reporters.delete(appliedSeq+1);if(nextReport)apply(nextRaw,appliedSeq+1,nextReport);}
+   };
+   socket.onmessage=(event:MessageEvent)=>{
+    if(id!==generation)return Promise.resolve();
+    const seq=++arrival;let report!:()=>void;const applied=new Promise<void>(resolve=>report=resolve);
+    if(typeof event.data==='string')apply(event.data,seq,report);
+    else if(event.data instanceof ArrayBuffer)apply(decoder.decode(event.data),seq,report);
+    else void event.data.text().then((raw:string)=>{if(id===generation)apply(raw,seq,report);else report();}).catch((error:unknown)=>{report();if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}});
+    return applied;
+   };
    socket.onerror=()=>{if(id===generation){if(active)events.ended?.('disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','connect_failed'));void stop();}};
    socket.onclose=()=>{if(id===generation){if(active)events.ended?.(endReason==='provider-ending'||deadline&&Date.now()>=deadline-1000?endReason:'disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. Please try again.','connect_failed'));void stop();}};
   }catch(error){if(id===generation){events.problem(error instanceof TypeError?new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','network'):error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}

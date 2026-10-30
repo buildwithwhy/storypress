@@ -176,7 +176,13 @@ function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: Text
     gemini: (system, input, json, model) => retryOnGemini(() => openAiCompletion(route, key(), openAiBody(route, system, input, json ?? true, false)), () => gemini.gemini(system, input, json, model)),
     nimble: gemini.nimble,
     parseJson: gemini.parseJson,
-    interviewStream: (system, input, _model, signal) => streamWithFallback(openAiStream(route, key(), openAiBody(route, system, input, true, true), signal), () => gemini.interviewStream(system, input, gemini.modelFor('interview'), signal)),
+    interviewStream: (system, input, _model, signal) => streamWithFallback(openAiStream(route, key(), openAiBody(route, system, input, true, true), signal),
+     // Reliability outranks latency on an already-failed route: backends that
+     // do not stream fall back to the proven whole-result call, while Vertex
+     // keeps its streaming fallback.
+     gemini.backend() === 'vertex'
+      ? () => gemini.interviewStream(system, input, gemini.modelFor('interview'), signal)
+      : async function*(){ yield await gemini.gemini(system, input, true, gemini.modelFor('interview')); }),
   };
 }
 export function createProviders(env: Record<string, string | undefined>, language: Language = "en"): TextProvider {
@@ -194,6 +200,12 @@ function modelConfigured(): boolean {
   return backend() === "ai-studio" && !!setting("GEMINI_API_KEY");
 }
 
+// The AI-Studio /interactions whole-result shape: either a flat output_text
+// or per-output text parts. Shared by the non-streaming call and the
+// streaming fallback below.
+function interactionText(data: { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] }): string | undefined {
+  return data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+}
 async function gemini(system: string, input: ModelInput, json = true, model?: string): Promise<string> {
   const selectedModel = validateModel(model ?? (setting("GEMINI_MODEL") || DEFAULT_MODEL));
   if (backend() === "vertex") return vertex(system, input, json, selectedModel);
@@ -203,9 +215,18 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false }), signal: AbortSignal.timeout(55000) });
   if (!res.ok) throw providerError(res.status);
   const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] };
-  const output = data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+  const output = interactionText(data);
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
+}
+function generateContentsBody(system: string, input: ModelInput, json: boolean, model: string) {
+  const parts = typeof input === "string" ? [{ text: input }] : input.map(part => part.type === "text" ? { text: part.text } : { inlineData: { mimeType: part.mime_type, data: part.data } });
+  return {
+    systemInstruction: { parts: [{ text: system + (json ? " Output valid JSON without markdown fences." : "") }] },
+    contents: [{ role: "user", parts }],
+    generationConfig: { maxOutputTokens: 8192, ...(json ? { responseMimeType: "application/json" } : {}), ...(model === DEFAULT_MODEL ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}) },
+    labels: { app: "storypress" },
+  };
 }
 async function vertexRequest(system: string, input: ModelInput, json: boolean, model: string,stream=false,signal?:AbortSignal): Promise<Response> {
   const key = setting("VERTEX_API_KEY");
@@ -214,16 +235,10 @@ async function vertexRequest(system: string, input: ModelInput, json: boolean, m
   if (!key || !project) throw new ServiceError("The story editor's Google Cloud connection is not ready yet. Your words are still saved on this device.", 503);
   if (!/^[a-z0-9-]+$/.test(project) || !/^[a-z0-9-]+$/.test(location)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
   const host = location === "global" ? "aiplatform.googleapis.com" : `${location}-aiplatform.googleapis.com`;
-  const parts = typeof input === "string" ? [{ text: input }] : input.map(part => part.type === "text" ? { text: part.text } : { inlineData: { mimeType: part.mime_type, data: part.data } });
   const res = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:${stream?'streamGenerateContent?alt=sse':'generateContent'}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: system + (json ? " Output valid JSON without markdown fences." : "") }] },
-      contents: [{ role: "user", parts }],
-      generationConfig: { maxOutputTokens: 8192, ...(json ? { responseMimeType: "application/json" } : {}), ...(model === "gemini-3.8-flash" ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}) },
-      labels: { app: "storypress" },
-    }),
+    body: JSON.stringify(generateContentsBody(system, input, json, model)),
     signal: signal?AbortSignal.any([signal,AbortSignal.timeout(55000)]):AbortSignal.timeout(55000),
   });
   if (!res.ok) throw providerError(res.status);
@@ -238,22 +253,34 @@ async function vertex(system: string, input: ModelInput, json: boolean, model: s
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
 }
+// Both Google backends stream the same GenerateContent SSE shape; other
+// configured backends keep their normal whole-result contract.
+async function* streamResult(res: Response) {
+  if (!res.body) throw new ServiceError('The interview returned no reply. Your words are kept.', 502);
+  let finished = false;
+  for await (const raw of eventData(res.body)) {
+    if (raw === '[DONE]') continue;
+    const data = JSON.parse(raw); if (data.error) throw new ServiceError('The interview could not finish. Your words are kept.', 502);
+    const candidate = data.candidates?.[0];
+    if (candidate?.finishReason) { if (candidate.finishReason !== 'STOP') throw new ServiceError('The reply did not finish. Your words are kept; try again.', 502); finished = true; }
+    for (const part of candidate?.content?.parts || []) if (typeof part.text === 'string' && !part.thought) yield part.text;
+  }
+  if (!finished) throw new ServiceError('The reply was interrupted. Your words are kept; try again.', 502);
+}
 async function* interviewStream(system:string,input:string,model:string,signal:AbortSignal){
  validateModel(model);
+ if(backend()==='ai-studio'){
+  const key=setting('GEMINI_API_KEY');
+  if(!key)throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.",503);
+  const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(generateContentsBody(system,input,true,model)),signal:AbortSignal.any([signal,AbortSignal.timeout(55000)])});
+  if(!res.ok)throw providerError(res.status);
+  yield* streamResult(res);return;
+ }
  // The existing Google Cloud route streams; other configured backends retain
  // their normal request contract without switching credentials or providers.
  if(backend()!=='vertex'){yield await gemini(system,input,true,model);return;}
  const res=await vertexRequest(system,input,true,model,true,signal);
- if(!res.body)throw new ServiceError('The interview returned no reply. Your words are kept.',502);
- let finished=false;
- for await(const raw of eventData(res.body)){
-  if(raw==='[DONE]')continue;
-  const data=JSON.parse(raw);if(data.error)throw new ServiceError('The interview could not finish. Your words are kept.',502);
-  const candidate=data.candidates?.[0];
-  if(candidate?.finishReason){if(candidate.finishReason!=='STOP')throw new ServiceError('The reply did not finish. Your words are kept; try again.',502);finished=true;}
-  for(const part of candidate?.content?.parts||[])if(typeof part.text==='string'&&!part.thought)yield part.text;
- }
- if(!finished)throw new ServiceError('The reply was interrupted. Your words are kept; try again.',502);
+ yield* streamResult(res);
 }
 function parseJson<T>(text: string, schema: z.ZodType<T>): T { const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""); try { return schema.parse(JSON.parse(cleaned)); } catch { throw new ServiceError("The editor’s response could not be read. Please try again; your words have been kept."); } }
 async function nimble(query: string, locale: string): Promise<ResearchResult[]> {

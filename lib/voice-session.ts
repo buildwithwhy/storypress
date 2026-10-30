@@ -17,6 +17,8 @@ export function createVoiceSession(events: Events) {
   let recordingTimer: ReturnType<typeof setInterval> | undefined;
   let speechTimer: ReturnType<typeof setTimeout> | undefined;
   let utterance: SpeechSynthesisUtterance | undefined;
+  let queue: string[] = [];
+  let queueLanguage: "en" | "zh" | "es" = "en";
   let phase: VoicePhase = "idle";
   const state = (next: VoicePhase) => { phase = next; events.phase(next); };
   function cleanup() {
@@ -25,6 +27,7 @@ export function createVoiceSession(events: Events) {
   }
   function cancel() {
     generation++;
+    queue = [];
     request?.abort(); request = undefined;
     if (rec && rec.state !== "inactive") rec.stop();
     rec = undefined;
@@ -35,13 +38,30 @@ export function createVoiceSession(events: Events) {
   function speak(text: string, language: "en" | "zh" | "es") {
     cancel();
     if (!text.trim()) return;
-    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") { events.problem("speech"); return; }
+    startUtterance(text, language);
+  }
+  // Streamed question playback: sentence deltas enqueue as they arrive and
+  // each starts the moment the previous finishes, instead of the whole reply
+  // waiting for the full validated response before a word is spoken.
+  function queueSpeak(text: string, language: "en" | "zh" | "es") {
+    if (!text.trim()) return;
+    queue.push(text); queueLanguage = language;
+    if (phase !== "speaking") startNext();
+  }
+  function startNext() {
+    const next = queue.shift();
+    if (next === undefined) return;
+    if (!next.trim()) { startNext(); return; }
+    startUtterance(next, queueLanguage);
+  }
+  function startUtterance(text: string, language: "en" | "zh" | "es") {
+    if (!("speechSynthesis" in window) || typeof SpeechSynthesisUtterance === "undefined") { events.problem("speech"); queue = []; return; }
     const id = generation;
     const synth = window.speechSynthesis;
     const lang = { en: "en-US", zh: "zh-CN", es: "es-ES" }[language];
     const voices = synth.getVoices();
     const matching = voices.filter(v => v.lang.replace("_", "-").toLowerCase().startsWith(language));
-    if (voices.length && !matching.length) { events.problem("speech"); return; }
+    if (voices.length && !matching.length) { events.problem("speech"); queue = []; return; }
     const u = new SpeechSynthesisUtterance(text);
     utterance = u; // Keep a strong reference until playback finishes.
     u.lang = lang; u.rate = 0.9;
@@ -49,7 +69,7 @@ export function createVoiceSession(events: Events) {
     if (voice) u.voice = voice;
     let started = false;
     u.onstart = () => { if (id === generation) { started = true; clearTimeout(speechTimer); } };
-    u.onend = () => { if (id === generation) { clearTimeout(speechTimer); utterance = undefined; state("idle"); } };
+    u.onend = () => { if (id !== generation) return; clearTimeout(speechTimer); utterance = undefined; if (queue.length) startNext(); else state("idle"); };
     u.onerror = () => { if (id === generation) { cancel(); events.problem("speech"); } };
     state("speaking");
     // Mobile browsers may block an asynchronous utterance until another tap.
@@ -102,5 +122,5 @@ export function createVoiceSession(events: Events) {
     }
   }
   function finish() { if (rec?.state === "recording") { clearInterval(recordingTimer); rec.stop(); state("transcribing"); } }
-  return { speak, record, finish, cancel };
+  return { speak, queueSpeak, record, finish, cancel };
 }

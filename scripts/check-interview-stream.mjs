@@ -39,4 +39,15 @@ try{
  assert.equal(fetches,3,'Provider failures must not silently switch backend or credentials');
  globalThis.fetch=async()=>new Response('',{status:403});await assert.rejects(()=>collect(generate()),/connection needs attention/);
 }finally{globalThis.fetch=originalFetch;}
-console.log('Passed streaming UTF-8 boundaries, JSON preview escapes, completed-only persistence, invalid/truncated response rejection, cancellation, Vertex routing, thought exclusion and provider failure handling. Providers mocked.');
+// AI Studio streams the same GenerateContent SSE shape on the public endpoint —
+// no credential switch, no call-site change.
+try{
+ globalThis.fetch=async(url,init)=>{assert.match(String(url),/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/models\/gemini-test:streamGenerateContent\?alt=sse$/);assert.equal(init.headers['x-goog-api-key'],'fixture-key');assert.equal(JSON.parse(init.body).generationConfig.responseMimeType,'application/json');
+  const events=[{candidates:[{content:{parts:[{text:'{"question":"What did '}]}}]},{candidates:[{content:{parts:[{text:'the garden look like?"}'}]},finishReason:'STOP'}]}];
+  return new Response(bytes(events.map(x=>'data: '+JSON.stringify(x)+'\n\n').join('')));
+ };
+ const generateStudio=()=>createProviders({GEMINI_BACKEND:'ai-studio',GEMINI_API_KEY:'fixture-key'}).interviewStream('Question first','memory','gemini-test',new AbortController().signal);
+ assert.equal((await collect(generateStudio())).join(''),'{"question":"What did the garden look like?"}');
+ globalThis.fetch=async()=>new Response('',{status:403});await assert.rejects(()=>collect(generateStudio()),/connection needs attention/);
+}finally{globalThis.fetch=originalFetch;}
+console.log('Passed streaming UTF-8 boundaries, JSON preview escapes, completed-only persistence, invalid/truncated response rejection, cancellation, Vertex routing, AI Studio streaming, thought exclusion and provider failure handling. Providers mocked.');
