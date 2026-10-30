@@ -14,7 +14,7 @@ export function wrapLines(text:string,maxWidth:number,measure:(s:string)=>number
  }
  if(line.trim())lines.push(line.trimEnd());return lines;
 }
-export async function shareImages(story:Story):Promise<Blob[]>{
+export async function shareImages(story:Story,creditUrl?:string):Promise<Blob[]>{
  const s=editionSnapshot(story),p=s.paper!,c=keepsakeCopy[s.language];
  await document.fonts?.ready;
  const canvas=document.createElement('canvas');canvas.width=1080;canvas.height=1350;
@@ -30,7 +30,20 @@ export async function shareImages(story:Story):Promise<Blob[]>{
  const blobs:Blob[]=[];
  for(const [index,lines]of pages.entries()){
   ctx.fillStyle='#fffaf0';ctx.fillRect(0,0,1080,1350);ctx.fillStyle='#294b3b';ctx.fillRect(0,0,1080,12);
-  ctx.font='22px system-ui';ctx.fillText('ONCE & OURS  /  '+c.page+' '+(index+1)+' · '+pages.length,90,75);
+  const folio='ONCE & OURS  /  '+c.page+' '+(index+1)+' · '+pages.length;
+  ctx.font='22px system-ui';ctx.fillText(folio,90,75);
+  if(creditUrl){
+   // Growth credit, right-aligned in the header row's empty half. Shrink to
+   // fit, then shed the phrase — the URL is the part people follow, and the
+   // credit may never touch the folio text or cross the column edge.
+   const host=creditUrl.replace(/^https?:\/\//,'').replace(/\/+$/,'');
+   const leftEnd=90+measure(folio);
+   for(const text of [c.madeWith+' · '+host,host]){
+    let size=22;ctx.font=size+'px system-ui';
+    while(size>12&&leftEnd+24+measure(text)>990){size--;ctx.font=size+'px system-ui';}
+    if(leftEnd+24+measure(text)<=990){ctx.fillText(text,990-measure(text),75);break;}
+   }
+  }
   ctx.font='54px Georgia, "Songti SC", serif';
   let title=wrapLines(p.headline,900,measure);let size=54;
   while(title.length>3&&size>28){size-=2;ctx.font=`${size}px Georgia, "Songti SC", serif`;title=wrapLines(p.headline,900,measure);}

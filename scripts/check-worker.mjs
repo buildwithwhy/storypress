@@ -4,7 +4,11 @@ const story={name:'Alex',language:'en',occasion:'life',turns:[{role:'user',text:
 const request=(action,auth=true,origin='https://story.test')=>new Request('https://story.test/api/story',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(auth?{'oai-authenticated-user-id':'test-user'}:{})},body:JSON.stringify({action,story})});
 assert.equal((await worker.fetch(new Request('https://story.test/'),{})).status,200);
 const geminiRoute=language=>[language,{provider:'gemini',model:'gemini-3.8-flash',configured:false}];
-assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{liveVoice:false,gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'},languageRouting:Object.fromEntries(['en','zh','es'].map(geminiRoute)),video:{enabled:false},billing:{configured:false}});
+assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{liveVoice:false,gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'},languageRouting:Object.fromEntries(['en','zh','es'].map(geminiRoute)),video:{enabled:false},billing:{configured:false},socialCredit:{url:'https://story.test'}});
+// The social credit rides the services payload like the other env-gated
+// capabilities: STORYPRESS_CREDIT_URL configures it, the request origin is
+// the default, and the client never hard-codes a host.
+assert.deepEqual((await (await worker.fetch(new Request('https://story.test/api/story'),{STORYPRESS_CREDIT_URL:'https://made.example'})).json()).socialCredit,{url:'https://made.example'},'STORYPRESS_CREDIT_URL must configure the share-image credit');
 // The billing flag is env-gated on the Stripe secret's presence, the same way
 // the video capability is gated on STORYPRESS_VIDEO: enforcement stays an
 // environment change, never a code change.
