@@ -88,5 +88,7 @@ export function suggestedQuestion(language:Story['language'],occasion:Story['occ
 const listJoin={en:', ',zh:'、',es:', '},withLead={en:' with ',zh:'，与 ',es:' con '};
 // Byline continuation: "A story by Wei, with Mei (aunt), Bob" / "讲述者 Wei，与 Mei（阿姨）、Bob".
 export function withContributors(language:Story['language'],names:string[]){return names.length?withLead[language]+names.join(listJoin[language]):'';}
+// Contributor names without the owner lead, for stories with no owner name.
+export function contributorsJoined(language:Story['language'],names:string[]){return names.join(listJoin[language]);}
 
 export function formatEndDate(language:Story['language'],iso:string){try{return new Date(iso).toLocaleDateString(language==='zh'?'zh-CN':language==='es'?'es':'en',{year:'numeric',month:'long',day:'numeric'});}catch{return '';}}

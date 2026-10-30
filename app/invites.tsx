@@ -1,27 +1,47 @@
 import {useEffect,useState} from 'react';
-import {Check,Share2,Users} from 'lucide-react';
-import {type Story} from '../lib/story';
+import {Check,Share2,Users,X} from 'lucide-react';
+import {storySchema,type Story} from '../lib/story';
 import {type SavedStory} from '../lib/story-saver';
+import {accountRequest} from '../lib/account-client';
 import {inviteApi} from '../lib/invite-client';
 import {inviteCopy,suggestedQuestion,formatEndDate} from '../lib/invite-copy';
 
 type InviteRow={id:string;question:string;status:'open'|'expired'|'revoked';expiresAt:string;createdAt:string};
+type ContributionRow={id:string;inviteId:string|null;authorLabel:string;contributorUserId:string|null;turns:{role:'user'|'assistant';text:string}[];status:'pending'|'approved'|'declined';createdAt:string;reviewedAt:string|null};
 
 // Owner side of contributor invitations: mint a personal-question link,
 // share it through the same navigator.share path as keepsake links, and
-// revoke it. Review of guest contributions mounts in this panel too.
-export function Invites({language,occasion,storyName,saved,onSave}:{language:Story['language'];occasion:Story['occasion'];storyName?:string;saved:SavedStory;onSave:()=>Promise<SavedStory|null>;}){
+// revoke it. Pending contributions wait here for review — approval merges
+// them server-side, then the panel adopts the merged story so the next
+// local save cannot clobber the guest's words.
+export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{language:Story['language'];occasion:Story['occasion'];storyName?:string;saved:SavedStory;onSave:()=>Promise<SavedStory|null>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;}){
  const c=inviteCopy[language];
  const [invites,setInvites]=useState<InviteRow[]>([]);
+ const [contributions,setContributions]=useState<ContributionRow[]>([]);
  const [question,setQuestion]=useState(()=>suggestedQuestion(language,occasion,storyName));
  const [name,setName]=useState(''),[link,setLink]=useState(''),[expires,setExpires]=useState('');
  const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
  async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setPending(false);}}
- async function refresh(){const data=await inviteApi(undefined,`story_id=${encodeURIComponent(saved.id)}`) as {invites:InviteRow[]};setInvites(data.invites);}
+ async function refresh(){const data=await inviteApi(undefined,`story_id=${encodeURIComponent(saved.id)}`) as {invites:InviteRow[];contributions:ContributionRow[]};setInvites(data.invites);setContributions(data.contributions);}
  useEffect(()=>{void run(refresh);},[saved.id]);
  async function create(){const data=await inviteApi({action:'create',storyId:saved.id,question:question.trim(),contributorName:name.trim()||undefined}) as {url:string;expiresAt:string};setLink(data.url);setExpires(data.expiresAt);setName('');await refresh();}
  async function copyLink(){try{await navigator.clipboard.writeText(link);setNotice(c.copied);}catch{setError(c.guestError);}}
  async function shareLink(){if(navigator.share)await navigator.share({url:link,title:c.title});else await copyLink();}
+ const waiting=contributions.filter(row=>row.status==='pending');
+ async function approve(row:ContributionRow){
+  await inviteApi({action:'review',contributionId:row.id,decision:'approve'});
+  // Adopt the server-merged story (fresh revision included) before anything
+  // else saves, so the guest's words cannot be lost to a stale local draft.
+  const data=await accountRequest(undefined,saved.id) as {id:string;revision:number;share_token?:string|null;data:unknown};
+  await onLoad(storySchema.parse(data.data),{id:data.id,revision:data.revision,share_token:data.share_token??null});
+  setNotice(c.merged);
+  await refresh();
+ }
+ async function decline(row:ContributionRow){
+  await inviteApi({action:'review',contributionId:row.id,decision:'decline'});
+  setNotice(c.declinedLabel);
+  await refresh();
+ }
  const statusLabel=(status:InviteRow['status'])=>status==='open'?c.statusOpen:status==='expired'?c.statusExpired:c.statusRevoked;
  return <section className="sharing-panel no-print invite-panel" aria-label={c.title}>
   <p className="eyebrow">ONCE &amp; OURS</p><h2>{c.title}</h2><p>{c.help}</p>
@@ -38,6 +58,18 @@ export function Invites({language,occasion,storyName,saved,onSave}:{language:Sto
    <summary className="text-button">{c.openTitle}</summary>
    {invites.length?<div className="invite-list">{invites.map(row=><div className="invite-row" key={row.id}><strong>{row.question}</strong><span className={'invite-status'+(row.status==='open'?'':' closed')}>{statusLabel(row.status)}</span><small>{c.ends} {formatEndDate(language,row.expiresAt)}</small>
     <button className="text-button" disabled={pending||row.status!=='open'} onClick={()=>void run(async()=>{if(!confirm(c.revokeConfirm))return;await inviteApi({action:'revoke',inviteId:row.id});setNotice(c.revoked);await refresh();})}>{c.revoke}</button></div>)}</div>:<p className="quiet left">{c.none}</p>}
+  </details>
+  <details className="invite-review-list" open>
+   <summary className="text-button">{c.reviewTitle}{waiting.length?` · ${waiting.length}`:''}</summary>
+   {waiting.length?waiting.map(row=><div className="invite-review" key={row.id}>
+    <p className="invite-review-from">{c.from} <strong>{row.authorLabel}</strong> · {formatEndDate(language,row.createdAt)}</p>
+    <div>{row.turns.map((t,i)=><div className="turn" key={i}><small>{t.role==='user'?row.authorLabel:c.q}</small><p>{t.text}</p></div>)}</div>
+    <p className="quiet left">{c.approveHelp}</p>
+    <div className="sharing-actions">
+     <button className="primary" disabled={pending} onClick={()=>void run(()=>approve(row))}><Check size={17}/>{c.approve}</button>
+     <button className="secondary" disabled={pending} onClick={()=>void run(()=>decline(row))}><X size={17}/>{c.decline}</button>
+    </div>
+   </div>):<p className="quiet left">{c.reviewEmpty}</p>}
   </details>
   {notice&&<p role="status" className="sharing-notice"><Check size={16}/>{notice}</p>}{error&&<p role="alert" className="error">{error}</p>}
  </section>;

@@ -8,6 +8,9 @@
 .invite-question-input{min-height:84px}
 .invite-review .turn{border-bottom:1px solid #d9dccd;padding:10px 0}
 .invite-review .turn>p{font-size:15px;line-height:1.7}
+.invite-review{border:1px solid #d9dccd;border-radius:7px;background:#fbfcf7;padding:16px;margin-top:13px}
+.invite-review-from{font-size:12px;margin-bottom:9px}
+.invite-review .sharing-actions{margin-top:13px}
 .invite-review .turn>small,.guest-turns .turn>small{font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:#737358;font-weight:650}
 .guest-page{max-width:640px;margin:0 auto;padding:38px 22px 60px}
 .guest-page .question-block h1{min-height:0;font-size:37px}

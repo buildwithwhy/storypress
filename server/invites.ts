@@ -3,12 +3,13 @@
 // the owner approves a contribution. Guests never hold accounts and the token
 // reveals only the question — never the story blob, transcript or keepsake.
 import {z} from 'zod';
-import {turnSchema,guestStory,type Story} from '../lib/story';
+import {turnSchema,guestStory,storySchema,type Story} from '../lib/story';
 import {ServiceError,createProviders} from '../lib/providers';
 import {interviewer} from '../lib/editorial';
 import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
 import {interviewResult} from '../lib/interview-result';
 import {identity,db,sameOrigin,reserveGuestAi,type Bindings} from './storage';
+import {isInviteToken,inviteStatus,applyApproval} from '../lib/invite-state';
 
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 const token=z.string().regex(/^[a-f0-9]{64}$/);
@@ -16,13 +17,12 @@ const uuid=z.string().uuid();
 const languages={en:1,zh:1,es:1} as const;
 
 export function inviteLink(origin:string,tokenValue:string,contributorName?:string){return `${origin}/i/${tokenValue}${contributorName?`#${encodeURIComponent(contributorName)}`:''}`;}
-
 type InviteContext={status:'open'|'expired'|'revoked'|'unknown';question?:string;expiresAt?:string;language?:Story['language'];occasion?:Story['occasion']};
 export async function inviteContext(env:Bindings,tokenValue:string):Promise<InviteContext>{
  const [row]=await db(env,`storypress_invites?token=eq.${tokenValue}&select=id,story_id,question,expires_at,status`) as {id:string;story_id:string;question:string;expires_at:string;status:string}[];
  if(!row)return {status:'unknown'};
- if(row.status!=='open')return {status:row.status==='revoked'?'revoked':'expired'};
- if(new Date(row.expires_at).getTime()<=Date.now())return {status:'expired'};
+ const status=inviteStatus(row,Date.now());
+ if(status!=='open')return {status};
  // Story context only: the language and occasion guide the guest interview.
  const [story]=await db(env,`storypress_stories?id=eq.${row.story_id}&select=language:data->>language,occasion:data->>occasion`) as {language?:string;occasion?:string}[];
  return {status:'open',question:row.question,expiresAt:row.expires_at,
@@ -78,6 +78,40 @@ async function contribute(env:Bindings,invite:OpenedInvite,body:Record<string,un
  const [row]=await db(env,'storypress_contributions','POST',{story_id:invite.storyId,invite_id:invite.id,author_label:input.authorLabel,turns:input.turns}) as {id:string}[];
  if(!row)throw new ServiceError('That step did not finish. Please try again.',500);
  return {id:row.id,submitted:true as const};
+}
+
+const reviewShape=z.object({contributionId:uuid,decision:z.enum(['approve','decline'])});
+
+async function review(env:Bindings,userId:string,body:Record<string,unknown>){
+ const input=reviewShape.parse({contributionId:body.contributionId,decision:body.decision});
+ const [pending]=await db(env,`storypress_contributions?id=eq.${input.contributionId}&status=eq.pending&select=id,story_id,author_label,contributor_user_id,turns`) as {id:string;story_id:string;author_label:string;contributor_user_id:string|null;turns:unknown}[];
+ if(!pending)throw new ServiceError('That contribution was already reviewed or is gone.',404);
+ await ownStory(env,userId,pending.story_id);
+ const reviewedAt=new Date().toISOString();
+ if(input.decision==='decline'){
+  await db(env,`storypress_contributions?id=eq.${input.contributionId}&status=eq.pending`,'PATCH',{status:'declined',reviewed_at:reviewedAt});
+  return {declined:true as const};
+ }
+ // Approve appends the attributed conversation to the story blob — the ONLY
+ // path that mutates it. The revision guard re-reads when the owner saved
+ // concurrently instead of clobbering their words.
+ const guestTurns=z.array(turnSchema).min(1).max(60).parse(pending.turns);
+ for(let attempt=0;attempt<3;attempt++){
+  const [current]=await db(env,`storypress_stories?id=eq.${pending.story_id}&select=data,revision`) as {data:unknown;revision:number}[];
+  if(!current)throw new ServiceError('That story is not in your account.',404);
+  let merged;
+  try{merged=applyApproval(storySchema.parse(current.data),guestTurns,pending.author_label,pending.contributor_user_id||undefined);}
+  catch(problem){
+   if((problem as Error).message==='transcript-full')throw new ServiceError('This story transcript is full. Finish this keepsake before adding more family memories.',400);
+   throw problem;
+  }
+  const patched=await db(env,`storypress_stories?id=eq.${pending.story_id}&revision=eq.${current.revision}`,'PATCH',{data:merged,revision:current.revision+1}) as unknown[]|null;
+  if(patched&&patched.length){
+   await db(env,`storypress_contributions?id=eq.${input.contributionId}&status=eq.pending`,'PATCH',{status:'approved',reviewed_at:reviewedAt});
+   return {approved:true as const,mergedTurns:guestTurns.length};
+  }
+ }
+ throw new ServiceError('The story kept changing while we tried to add those memories. Please try again.',409);
 }
 
 async function ownStory(env:Bindings,userId:string,storyId:string){
@@ -141,6 +175,11 @@ export async function invitesApi(request:Request,env:Bindings){
    await ownStory(env,user.id,invite.story_id);
    await db(env,`storypress_invites?id=eq.${inviteId}&status=eq.open`,'PATCH',{status:'revoked'});
    return json({revoked:true});
+  }
+  if(body.action==='review'){
+   const user=await identity(request,env);
+   if(!user)return json({error:'Sign in to review contributions.'},401);
+   return json(await review(env,user.id,body));
   }
   return json({error:'Unknown action.'},400);
  }catch(error){
