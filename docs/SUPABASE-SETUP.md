@@ -2,7 +2,7 @@
 
 Use a dedicated Supabase project for Storypress. The React site and its Worker remain on the frontend host; Supabase supplies Auth and Postgres. No Storage bucket is needed for this first version: compressed photographs are saved inside private story JSON and copied into an approved edition. Raw recordings are not uploaded to the database.
 
-1. Create the project and apply `supabase/migrations/202610110001_storypress.sql` in its SQL editor. The migration creates new namespaced tables, RLS and one server-only quota function. It is a first-run migration, not a repeatable reset. Never run it against unrelated production tables.
+1. Create the project and apply `supabase/migrations/202610110001_storypress.sql` in its SQL editor. The migration creates new namespaced tables, RLS and one server-only quota function. It is a first-run migration, not a repeatable reset. Never run it against unrelated production tables. Later additive migrations apply the same way, never editing an applied file: `202610300001_contributions.sql` (invites and contributions) and `202610300002_billing.sql` (billing entitlements, story counters, webhook idempotency, and the `storypress_reserve_story` server-only quota RPC). The billing migration ships dormant — nothing in the app reads those tables until Stripe is configured in the host environment.
 2. Fill the ignored `.dev.vars` file and the host's server environment with:
    - `SUPABASE_URL`: the project HTTPS URL.
    - `SUPABASE_PUBLISHABLE_KEY`: its publishable key beginning with `sb_publishable_`.

@@ -41,4 +41,32 @@ alter table public.storypress_billing_events enable row level security;
 revoke all on public.storypress_billing_events from public, anon, authenticated;
 grant all on public.storypress_billing_events to service_role;
 
+-- Race-safe story reservation: the server calls this once per new self-started
+-- story (never for translations, save-as-copies, revisions, or deletes) and
+-- refuses past the free allowance. Mirrors storypress_reserve_ai: security
+-- definer, transaction advisory lock, input validation, service_role-only
+-- execution. The free allowance is a parameter (default 3) so the server can
+-- pass its STORYPRESS_FREE_STORIES env without schema churn. Entitlement is
+-- read from plan alone: past_due keeps grace access, cancellation flips plan
+-- to 'free' at period end. The counter increments on every success, entitled
+-- or not, and never decrements.
+create function public.storypress_reserve_story(p_user uuid,p_limit integer default 3)
+returns table(ok boolean,reason text) language plpgsql security definer set search_path = '' as $$
+begin
+ if p_user is null or p_limit is null or p_limit<0 then raise exception 'Invalid reservation'; end if;
+ if not exists(select 1 from auth.users where id=p_user) then raise exception 'Unknown account'; end if;
+ perform pg_catalog.pg_advisory_xact_lock(1937010529);
+ insert into public.storypress_story_counts(owner_id,stories_created) values(p_user,0) on conflict(owner_id) do nothing;
+ if exists(select 1 from public.storypress_entitlements where owner_id=p_user and plan in ('subscription','lifetime')) then
+  update public.storypress_story_counts set stories_created=stories_created+1 where owner_id=p_user;
+  return query select true,'entitled';
+ elsif (select stories_created from public.storypress_story_counts where owner_id=p_user)>=p_limit then
+  return query select false,'limit';
+ else
+  update public.storypress_story_counts set stories_created=stories_created+1 where owner_id=p_user;
+  return query select true,'free';
+ end if;
+end $$;
+revoke all on function public.storypress_reserve_story(uuid,integer) from public,anon,authenticated;
+grant execute on function public.storypress_reserve_story(uuid,integer) to service_role;
 commit;
