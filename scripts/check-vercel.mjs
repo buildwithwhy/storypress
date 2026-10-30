@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {serveVercel} from '../server/vercel.mjs';
 import shared from '../api/shared.mjs';
+import billing from '../api/billing.mjs';
+import stripeWebhook from '../api/stripe-webhook.mjs';
 const origin='https://storypress.example';
 const env={SUPABASE_URL:'https://supabase.example',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture',SUPABASE_SECRET_KEY:'sb_secret_fixture',GEMINI_API_KEY:'fixture',STORYPRESS_PUBLIC_SHARING:'true'};
 const request=(path,body)=>new Request(origin+path,{method:body?'POST':'GET',headers:{'oai-authenticated-user-id':'spoofed-owner','Content-Type':'application/json',Origin:origin},...(body?{body:JSON.stringify(body)}:{})});
@@ -24,6 +26,16 @@ try{
   }
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',env)).status,401);
   assert.equal((await serveVercel(request('/api/stories'),'/api/stories',env)).status,401);
+  // The billing wrappers ride the same adapter: /api/billing is a normal
+  // authenticated route (401 unauthenticated), /api/stripe-webhook refuses
+  // unverified deliveries (503 unconfigured / 400 unsigned) without touching
+  // Supabase.
+  assert.equal((await billing.fetch(new Request(origin+'/api/billing',{method:'POST',body:JSON.stringify({action:'checkout',mode:'subscription'})}),env)).status,401);
+  // Through the adapter, an unconfigured deployment retries with 503 before
+  // anything is verified; with Supabase configured, an unsigned delivery is
+  // refused by signature verification itself.
+  assert.equal((await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),{})).status,503);
+  assert.equal((await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),{...env,STRIPE_WEBHOOK_SECRET:'whsec_mock'})).status,400);
   const account=await(await serveVercel(request('/api/account'),'/api/account',env)).json();
   assert.equal(account.user,null);
   assert.equal(account.supabase.key,env.SUPABASE_PUBLISHABLE_KEY);
