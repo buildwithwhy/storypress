@@ -38,11 +38,11 @@ const videoProblem=(e:unknown,c:(typeof keepsakeCopy)['en']):string=>e instanceo
 // render at all. That is the hidden-when-off property the rollout proof walks:
 // no navigation entries, no other surface, anywhere.
 type RenderedVideo={url:string;blob:Blob;mimeType:string;name:string;width:number;height:number;downgraded:boolean;webm:boolean};
-export function ShareVideo({story,enabled}:{story:Story;enabled:boolean}){
+export function ShareVideo({story,enabled,creditUrl}:{story:Story;enabled:boolean;creditUrl?:string}){
  const c=keepsakeCopy[story.language];
  const [video,setVideo]=useState<RenderedVideo|null>(null),[working,setWorking]=useState(false),[progress,setProgress]=useState<number|null>(null),[error,setError]=useState('');
  const generation=useRef(0);
- const signature=JSON.stringify([story.paper,story.photo,story.generatedArt,story.artwork,story.approved,story.name,story.language,story.paperLanguage]);
+ const signature=JSON.stringify([story.paper,story.photo,story.generatedArt,story.artwork,story.approved,story.name,story.language,story.paperLanguage,creditUrl]);
  useEffect(()=>{generation.current++;setVideo(null);setProgress(null);setError('');setWorking(false);},[signature]);
  useEffect(()=>()=>{if(video)URL.revokeObjectURL(video.url);},[video]);
  if(!enabled||!story.approved)return null;
@@ -54,7 +54,7 @@ export function ShareVideo({story,enabled}:{story:Story;enabled:boolean}){
    // the artifact, the same rule the editions follow. onProgress paints each
    // finished frame — the patient-defaults precedent: the render is offline
    // and abandonable, never a silent modal.
-   const encoded=await encodeMemoryVideo(buildVideoManifest(editionSnapshot(story),artifactLanguage(story)),{onProgress:(done,total)=>{if(id===generation.current)setProgress(Math.round(done*100/total));}});
+   const encoded=await encodeMemoryVideo(buildVideoManifest(editionSnapshot(story),artifactLanguage(story)),{creditUrl,onProgress:(done,total)=>{if(id===generation.current)setProgress(Math.round(done*100/total));}});
    if(id!==generation.current)return;
    setVideo({url:URL.createObjectURL(encoded.blob),blob:encoded.blob,mimeType:encoded.mimeType,name:`once-and-ours-memory.${encoded.mimeType.includes('webm')?'webm':'mp4'}`,width:encoded.width,height:encoded.height,downgraded:encoded.width<FULL_VIDEO_SIZE.width,webm:encoded.mimeType.includes('webm')});
   }catch(e){if(id===generation.current)setError(videoProblem(e,c));}finally{if(id===generation.current)setWorking(false);}

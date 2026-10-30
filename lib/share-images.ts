@@ -14,6 +14,19 @@ export function wrapLines(text:string,maxWidth:number,measure:(s:string)=>number
  }
  if(line.trim())lines.push(line.trimEnd());return lines;
 }
+// The header-row growth credit, shared by the share images and the video end
+// card: 'made with · host' right-aligned in the row's empty half, shrinking
+// to fit, then falling back to the bare host — the URL is the part people
+// follow — and skipped entirely when even that cannot clear the row's left
+// text. The credit may never touch the left text or cross the column edge.
+export function drawHeaderCredit(ctx:CanvasRenderingContext2D,creditUrl:string,madeWith:string,leftEndX:number):void{
+ const host=creditUrl.replace(/^https?:\/\//,'').replace(/\/+$/,'');
+ for(const text of [madeWith+' · '+host,host]){
+  let size=22;ctx.font=size+'px system-ui';
+  while(size>12&&leftEndX+24+ctx.measureText(text).width>990){size--;ctx.font=size+'px system-ui';}
+  if(leftEndX+24+ctx.measureText(text).width<=990){ctx.fillText(text,990-ctx.measureText(text).width,75);break;}
+ }
+}
 export async function shareImages(story:Story,creditUrl?:string):Promise<Blob[]>{
  const s=editionSnapshot(story),p=s.paper!,c=keepsakeCopy[s.language];
  await document.fonts?.ready;
@@ -32,18 +45,7 @@ export async function shareImages(story:Story,creditUrl?:string):Promise<Blob[]>
   ctx.fillStyle='#fffaf0';ctx.fillRect(0,0,1080,1350);ctx.fillStyle='#294b3b';ctx.fillRect(0,0,1080,12);
   const folio='ONCE & OURS  /  '+c.page+' '+(index+1)+' · '+pages.length;
   ctx.font='22px system-ui';ctx.fillText(folio,90,75);
-  if(creditUrl){
-   // Growth credit, right-aligned in the header row's empty half. Shrink to
-   // fit, then shed the phrase — the URL is the part people follow, and the
-   // credit may never touch the folio text or cross the column edge.
-   const host=creditUrl.replace(/^https?:\/\//,'').replace(/\/+$/,'');
-   const leftEnd=90+measure(folio);
-   for(const text of [c.madeWith+' · '+host,host]){
-    let size=22;ctx.font=size+'px system-ui';
-    while(size>12&&leftEnd+24+measure(text)>990){size--;ctx.font=size+'px system-ui';}
-    if(leftEnd+24+measure(text)<=990){ctx.fillText(text,990-measure(text),75);break;}
-   }
-  }
+  if(creditUrl)drawHeaderCredit(ctx,creditUrl,c.madeWith,90+measure(folio));
   ctx.font='54px Georgia, "Songti SC", serif';
   let title=wrapLines(p.headline,900,measure);let size=54;
   while(title.length>3&&size>28){size-=2;ctx.font=`${size}px Georgia, "Songti SC", serif`;title=wrapLines(p.headline,900,measure);}

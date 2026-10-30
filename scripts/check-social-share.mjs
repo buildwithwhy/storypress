@@ -44,7 +44,7 @@ const shareArgs = src => {
   }
   return out;
 };
-const CALL_SITES = ['app/keepsake-studio.tsx', 'app/sharing.tsx', 'app/invites.tsx', 'lib/reader.ts'];
+const CALL_SITES = ['app/keepsake-studio.tsx', 'app/sharing.tsx', 'app/invites.tsx', 'lib/reader.ts', 'lib/video-encode.ts'];
 for (const path of CALL_SITES) {
   const src = await fs.readFile(path, 'utf8');
   for (const args of shareArgs(src)) {
@@ -53,6 +53,12 @@ for (const path of CALL_SITES) {
     if (hasFiles) assert.ok(args.includes('artifactSharePayload('), `${path}: files shares must route through the audited artifactSharePayload builder`);
   }
 }
+
+// The video delivery path routes through the audited builders too — the
+// end card carries the growth credit (asserted in check-video.mjs), and the
+// file it travels in is under the same files-only invariant.
+const videoEncodeSrc = await fs.readFile('lib/video-encode.ts', 'utf8');
+assert.ok(videoEncodeSrc.includes('artifactSharePayload(') && videoEncodeSrc.includes('shareSheetAvailable('), 'the video delivery path must route through the audited payload builders');
 
 // ---- Section 2: desktop detection matrix --------------------------------
 // The runtime capability probe is the single gate: canShare true offers the

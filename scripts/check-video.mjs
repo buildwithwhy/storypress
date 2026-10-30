@@ -11,10 +11,10 @@ import fs from 'node:fs/promises';
 // network, no paid calls, anywhere in the render path.
 
 const bundle = await build({
-  stdin: { contents: "export {buildStoryboard,buildVideoManifest,videoManifestSchema,audioTrackSchema,VIDEO_WIDTH,VIDEO_HEIGHT} from './lib/video-storyboard.ts'; export {wrapLines} from './lib/share-images.ts'; export {samplePaper} from './lib/story.ts';", resolveDir: process.cwd() },
+  stdin: { contents: "export {buildStoryboard,buildVideoManifest,videoManifestSchema,audioTrackSchema,VIDEO_WIDTH,VIDEO_HEIGHT} from './lib/video-storyboard.ts'; export {wrapLines} from './lib/share-images.ts'; export {keepsakeCopy,mastheadCopy} from './lib/keepsake.ts'; export {samplePaper} from './lib/story.ts';", resolveDir: process.cwd() },
   bundle: true, write: false, platform: 'node', format: 'esm',
 });
-const { buildStoryboard, buildVideoManifest, videoManifestSchema, audioTrackSchema, VIDEO_WIDTH, VIDEO_HEIGHT, wrapLines, samplePaper } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const { buildStoryboard, buildVideoManifest, videoManifestSchema, audioTrackSchema, VIDEO_WIDTH, VIDEO_HEIGHT, wrapLines, keepsakeCopy, mastheadCopy, samplePaper } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 
 // Privacy guard: the fetch mock counts every network touch. The render path
 // must close with zero — story content never leaves the device.
@@ -231,6 +231,47 @@ try {
   for (const t of [0, 500, 1200, esSlots[1].startMs + 50]) video.renderFrame(sharedCtx, esManifest, t, esSlots, new Map([[esStory.photo, fakeImage]]));
   assert.equal(fetchCalls, 0, 'the frame path must make zero network calls');
 
+  // End-card growth credit: the closing frame draws the localized made-with
+  // phrase and the configured short URL in the masthead row's empty half —
+  // the share-image header slot and primitives, one line. The URL is render
+  // config from the services payload; the manifest never carries it.
+  const creditHost = 'onceandours.example';
+  const endSlot = slots[slots.length - 1];
+  const headerRow = () => ctxLog.fillText.filter(t => t.y === 75);
+  ctxLog.fillText = [];
+  video.renderFrame(sharedCtx, manifest, endSlot.endMs - 1, slots, images, `https://${creditHost}`);
+  const zhCredit = headerRow().find(t => t.text.includes(creditHost));
+  assert.ok(zhCredit, 'the end card draws the credit URL in the header row');
+  assert.equal(zhCredit.text, `${keepsakeCopy.zh.madeWith} · ${creditHost}`, 'the end-card credit carries the localized phrase and the configured URL');
+  const zhCreditWidth = measureAt(parseFloat(zhCredit.font.match(/(\d+(?:\.\d+)?)px/)[1]), zhCredit.text);
+  assert.ok(zhCredit.x + zhCreditWidth <= 990, `the end-card credit ends inside the column edge (ends at ${zhCredit.x + zhCreditWidth})`);
+  assert.ok(zhCredit.x >= 90 + measureAt(22, mastheadCopy.zh.toUpperCase()) + 24, 'the end-card credit never collides with the masthead text');
+  assert.ok(headerRow().every(t => t.x === 90 || t === zhCredit), 'the end-card header row carries only the masthead and the credit');
+  assert.equal(headerRow().find(t => t.x === 90).text, mastheadCopy.zh.toUpperCase(), 'the end-card masthead is unchanged beside the credit');
+
+  // Render config, not content: without a credit URL the header row holds
+  // only the masthead, and the credit never enters the manifest.
+  ctxLog.fillText = [];
+  video.renderFrame(sharedCtx, manifest, endSlot.endMs - 1, slots, images);
+  assert.equal(headerRow().length, 1, 'without a credit URL the end-card header row carries only the masthead');
+  assert.ok(!('creditUrl' in parsed), 'the manifest stays free of render config');
+
+  // The credit rides the end card only — the title frame never draws it.
+  ctxLog.fillText = [];
+  video.renderFrame(sharedCtx, manifest, 0, slots, images, `https://${creditHost}`);
+  assert.ok(!headerRow().some(t => t.text.includes(creditHost)), 'the title frame never draws the credit');
+
+  // The same credit in the other artifact languages, drawn by the same pass.
+  for (const [lang, story, phrase] of [['en', enStory, keepsakeCopy.en.madeWith], ['es', esStory, keepsakeCopy.es.madeWith]]) {
+    const langManifest = buildVideoManifest(story, lang);
+    const langSlots = video.frameTimeline(langManifest);
+    ctxLog.fillText = [];
+    video.renderFrame(sharedCtx, langManifest, langSlots[langSlots.length - 1].endMs - 1, langSlots, new Map(), `https://${creditHost}`);
+    const credit = headerRow().find(t => t.text.includes(creditHost));
+    assert.ok(credit && credit.text.startsWith(phrase), `${lang} end-card credit carries the localized phrase`);
+    assert.ok(credit.x + measureAt(parseFloat(credit.font.match(/(\d+(?:\.\d+)?)px/)[1]), credit.text) <= 990, `${lang} end-card credit ends inside the column edge`);
+  }
+
   // Encoder seam: the driver hands the manifest to exactly one rung encode,
   // records every degradation explicitly, and ends the exhausted ladder in
   // a typed share-images refusal.
@@ -281,7 +322,7 @@ try {
     }
     async flush() {} close() {}
   };
-  const wcResult = await video.encodeMemoryVideo(shortManifest, { rungs: [video.webCodecsMp4Rung()] });
+  const wcResult = await video.encodeMemoryVideo(shortManifest, { rungs: [video.webCodecsMp4Rung()], creditUrl: `https://${creditHost}` });
   assert.equal(wcResult.width, 720, 'the full-size refusal must downgrade once to 720x900');
   assert.equal(wcResult.height, 900);
   assert.deepEqual(wcResult.path, ['webcodecs-mp4:refused-1080x1350', 'webcodecs-mp4:accepted-720x900'], 'the downgrade must be explicit and singular');
@@ -290,6 +331,7 @@ try {
   assert.equal(wcResult.blob.type, 'video/mp4');
   const head = Buffer.from(await wcResult.blob.slice(0, 12).arrayBuffer()).toString('latin1');
   assert.equal(head.slice(4, 8), 'ftyp', 'the output must be a genuine MP4 container');
+  assert.ok(ctxLog.fillText.some(t => t.text.includes(creditHost)), 'the encode path threads the credit into the rendered frames');
 
   // MediaRecorder rung: candidates are proven by short real recordings
   // loaded into a media element — the first (Safari) candidate fails to
@@ -320,4 +362,4 @@ try {
 } finally { globalThis.fetch = originalFetch; }
 
 assert.equal(fetchCalls, 0, 'the whole render path must make zero network calls');
-console.log('Passed: scene derivation for en/zh/es fixtures, 4-8 prose cards, 45-75s pacing band, deterministic Ken Burns, 900px measure hold, manifest schema, the empty audioTrack narration seam, frame rendering with Ken Burns cover-fit, the encoder seam (manifest received exactly once), explicit ladder degradation to a typed share-images refusal, the real muxer producing an MP4 container, probe-verified MediaRecorder candidates, and zero network calls across the whole render path.');
+console.log('Passed: scene derivation for en/zh/es fixtures, 4-8 prose cards, 45-75s pacing band, deterministic Ken Burns, 900px measure hold, manifest schema, the empty audioTrack narration seam, frame rendering with Ken Burns cover-fit, the end-card growth credit (localized, config-sourced, end-card only, manifest-free), the encoder seam (manifest received exactly once), explicit ladder degradation to a typed share-images refusal, the real muxer producing an MP4 container, probe-verified MediaRecorder candidates, and zero network calls across the whole render path.');
