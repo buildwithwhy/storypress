@@ -8,7 +8,7 @@ import type {SavedRecording} from "../lib/recording-vault";
 import {KeepsakeView,FormatPicker,IntentionPicker,ShareImages} from "./keepsake-studio";
 import {keepsakeCopy,type KeepsakeFormat} from "../lib/keepsake";
 import {mergeResearch} from "../lib/research-state";
-import {readInterviewResponse} from '../lib/interview-client';
+import {readInterviewResponse,interviewProblemText,networkFailure} from '../lib/interview-client';
 import {StoryArt} from "./story-art";
 import {StoryStart,SamplePreview} from "./story-start";
 import {sharedEntryLanguage,startCopy} from "../lib/start-copy";
@@ -109,6 +109,9 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  const voice = useRef<ReturnType<typeof createVoiceSession> | null>(null);
  const latest = useRef({ mode, voicePaused, reviewVoice, story, input, stage });
  latest.current = { mode, voicePaused, reviewVoice, story, input, stage };
+ // Network-level failures (offline, refused connection) have no server copy:
+ // speak the story's language and reassure the narrator their words are kept.
+ function problemText(problem: unknown): string { return interviewProblemText(problem, latest.current.story.language); }
  const requestId = useRef(0);
  const submitting = useRef(false);
  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
@@ -173,7 +176,8 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
    transcribe: async (blob, signal) => {
     const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(",")[1]); reader.onerror = reject; reader.readAsDataURL(blob); });
     if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
-    return (await callApi("transcribe", undefined, { data, mime: blob.type.split(";")[0] }, signal)).transcript;
+    try { return (await callApi("transcribe", undefined, { data, mime: blob.type.split(";")[0] }, signal)).transcript; }
+    catch (error) { if (networkFailure(error)) throw new Error(flowCopy[latest.current.story.language].offlineRecord); throw error; }
    },
    transcript: text => {
     const current = latest.current;
@@ -225,7 +229,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   const next: Story = { ...current, draft: "", approved: false, paper: undefined, turns: [...current.turns, { role: "user", text: value.trim() }] };
   setStory(next); setInput(""); setReviewing(false); setShowText(false); setBusy(v.thinking); setError("");
   try { const q = await nextQuestion(next); if (id !== requestId.current) return; setStory(s=>({ ...s, researchSuggestion:q.researchSuggestion,researchQueries:[...new Set([...(s.researchQueries||[]),...q.researchQueries])].slice(-60), turns: [...next.turns, { role: "assistant", text: q.text }] })); speakFollowup(q.text, next.language); }
-  catch(e) { if (id === requestId.current) setError((e as Error).message); }
+  catch(e) { if (id === requestId.current) setError(problemText(e)); }
   finally { if (id === requestId.current) { setBusy(""); submitting.current = false; } }
  }
  sendRef.current = send;
@@ -234,14 +238,14 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   const current=latest.current.story;if(current.turns.length>58){setError(v.maxTurns);return;}
   setBusy(v.thinking);setError('');
   try{const q=await nextQuestion(current);setStory(s=>({...s,researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...current.turns,{role:'assistant',text:q.text}]}));speakFollowup(q.text,current.language);}
-  catch(e){setError((e as Error).message);}finally{setBusy('');}
+  catch(e){setError(problemText(e));}finally{setBusy('');}
  }
  async function skip() {
   if (interactionBusy || correcting || !canUseAi()) return;
   if (story.turns.length > 57) { setError(v.maxTurns); return; }
   voice.current?.cancel(); setBusy(v.alternate); setError("");
   try { const q=await nextQuestion({...story,turns:[...story.turns,{role:'user',text:'Please ask about a different, unanswered aspect of my story. I want to keep talking.'}]});patch({researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...story.turns,{role:'assistant',text:q.text}]});speakFollowup(q.text,story.language); }
-  catch(e) { setError((e as Error).message); } finally { setBusy(""); }
+  catch(e) { setError(problemText(e)); } finally { setBusy(""); }
  }
  function listen() { setError(""); if (voicePhase === "speaking") voice.current?.cancel(); else voice.current?.speak(question, story.language); }
  function pauseVoice() { voice.current?.cancel(); setVoicePaused(true); }
@@ -263,7 +267,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   const next: Story = { ...story, paper: undefined, approved: false, turns: story.turns.slice(0, index + 1).map((t, i) => i === index ? { ...t, text: correction.trim() } : t) };
   setStory(next); setCorrecting(false); setBusy(v.thinking); setError("");
   try { const q = await nextQuestion(next); setStory(s=>({ ...s, researchSuggestion:q.researchSuggestion,researchQueries:[...new Set([...(s.researchQueries||[]),...q.researchQueries])].slice(-60), turns: [...next.turns, { role: "assistant", text: q.text }] })); speakFollowup(q.text, next.language); }
-  catch(e) { setError((e as Error).message); } finally { setBusy(""); }
+  catch(e) { setError(problemText(e)); } finally { setBusy(""); }
  }
  function modePicker() { return <div className="interview-modes" role="group" aria-label={v.chooseMode}>{(services.liveVoice?(["voice", "type", "dictate"] as const):(["type", "dictate", "voice"] as const)).map(m => <button key={m} type="button" aria-pressed={mode === m} disabled={interactionBusy || correcting} onClick={() => changeMode(m)}>{m === "type" ? <Pencil size={18}/> : m === "dictate" ? <Mic size={18}/> : <Volume2 size={18}/>}<span>{m==='voice'&&services.liveVoice?({en:"Talk live",zh:"实时对话",es:"Hablar en directo"}[story.language]):v[m]}</span></button>)}</div>; }
  function choosePhoto(){if(interactionBusy||correcting)return;voice.current?.cancel();file.current?.click();}
@@ -295,7 +299,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
    else{analysis=(await callApi('photo',current)).analysis;question=analysis!.question;}
    if(id!==requestId.current)return;
    setStory({...current,...research,photoAnalysis:analysis,turns:[...current.turns,{role:'assistant',text:question}]});speakFollowup(question,current.language);
-  }catch(e){if(id===requestId.current)setError((e as Error).message);}finally{if(id===requestId.current)setBusy('');}
+  }catch(e){if(id===requestId.current)setError(problemText(e));}finally{if(id===requestId.current)setBusy('');}
  }
  async function discover(photoQuery?:string,inlineQuery?:string) {
   if(researching||correcting||(!story.sample&&!canUseAi()))return;
@@ -310,7 +314,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
     setStory(current=>mergeResearch(current,base,result.sources,result.query));
    }
    if(generation===storyGeneration.current)setSearched(true);
-  }catch(e){if(!controller.signal.aborted&&generation===storyGeneration.current)setError((e as Error).message);}
+  }catch(e){if(!controller.signal.aborted&&generation===storyGeneration.current)setError(problemText(e));}
   finally{if(researchRequest.current===controller){researchRequest.current=null;setResearching(false);}}
  }
 
@@ -322,7 +326,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   if(next.turns.length>60){setError(v.maxTurns);return;}
   voice.current?.cancel();setStory(next);setInput('');setBusy(d.making);setError('');
   try{const paper=next.sample?{...sample.paper,paragraphs:[...sample.paper.paragraphs,...originalWords(next).slice(1)]}:(await callApi('write',next)).paper;patch({paper,paperLanguage:next.language,translation:undefined,approved:false});navigate('paper');}
-  catch(e){setError((e as Error).message);}finally{setBusy('');}
+  catch(e){setError(problemText(e));}finally{setBusy('');}
  }
 
  async function translateKeepsake(target:Story['language']){
@@ -355,7 +359,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
    const sourceKey=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
    if(id!==requestId.current)return;
    patch({generatedArt:{data,style,model:image.model,sourceKey},artwork:'generated',approved:false});
-  }catch(e){if(id===requestId.current)setError((e as Error).message);}finally{if(id===requestId.current)setBusy('');}
+  }catch(e){if(id===requestId.current)setError(problemText(e));}finally{if(id===requestId.current)setBusy('');}
  }
  function exportOriginal() { download("storypress-original-words.txt", story.turns.map(t => `${t.role === "user" ? story.name || "Storyteller" : "Interviewer"}: ${t.text}`).join("\n\n")); }
  function editPaper(value: Partial<Paper>) { if (story.paper) patch({ paper: { ...story.paper, ...value }, approved: false }); }

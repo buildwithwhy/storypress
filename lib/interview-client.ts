@@ -1,3 +1,5 @@
+import {flowCopy} from './flow-copy';
+
 import {eventData} from './event-stream';
 import {interviewResult,type InterviewResult} from './interview-result';
 export async function readInterviewResponse(response:Response,onPreview:(text:string)=>void):Promise<InterviewResult>{
@@ -11,4 +13,15 @@ export async function readInterviewResponse(response:Response,onPreview:(text:st
   if(event.type==='complete')return interviewResult.parse(event.result);
  }
  throw new Error('The reply was interrupted. Your words are kept; try again.');
+}
+
+// A fetch-level failure (offline, DNS, connection reset) surfaces as a
+// TypeError; server error responses and cancellations pass through untouched.
+export function networkFailure(error: unknown): boolean { return error instanceof TypeError; }
+
+// Maps a thrown interview error to reader copy: network failures have no
+// server text, so the story's language carries the reassurance; everything
+// else arrives with its own reader message.
+export function interviewProblemText(error: unknown, language: keyof typeof flowCopy): string {
+ return networkFailure(error) ? flowCopy[language].offline : (error as Error).message;
 }

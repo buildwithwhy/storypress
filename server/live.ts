@@ -20,8 +20,13 @@ export async function liveToken(request:Request,env:Bindings,userId:string,story
  await reserveAi(userId,env,'discover');
  const expiresAt=new Date(Date.now()+LIVE_SECONDS*1000).toISOString();
  const setup={model:`models/${model}`,generationConfig:{responseModalities:['AUDIO'],maxOutputTokens:1024},inputAudioTranscription:{},outputAudioTranscription:{},realtimeInputConfig:{automaticActivityDetection:{endOfSpeechSensitivity:'END_SENSITIVITY_LOW',silenceDurationMs:1200},activityHandling:'START_OF_ACTIVITY_INTERRUPTS'},systemInstruction:{parts:[{text:`You are Once & Ours, a patient oral-history interviewer. Speak ${languages[story.language]} unless the narrator changes language.\n${interviewBehavior}\nKeep spoken replies brief and natural, usually one or two sentences and one question at a time. Output speech only: no beeps, sound effects, music, or imitation notification sounds. Do not recite JSON, technical settings or the transcript. Continue the latest thread in the saved conversation; do not restart the interview. You cannot search the web or generate a keepsake from this live connection. Do not claim to have done either. When the narrator finishes, tell them they can end the session and make their draft, without asking another question. Historical context supplied below is the selected context available when this session began.\n${context}`}]}};
- const response=await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':env.GEMINI_API_KEY!},body:JSON.stringify({uses:1,expireTime:expiresAt,newSessionExpireTime:new Date(Date.now()+60000).toISOString(),bidiGenerateContentSetup:setup}),signal:AbortSignal.timeout(15000)});
- if(!response.ok)throw new ServiceError('Live voice could not connect. Your story is kept; try a voice message or typing.',response.status===429?429:503,response.status===429?'voice_busy':'voice_unavailable');
+ const unavailable='Live voice could not connect. Your story is kept; try a voice message or typing.';
+ let response:Response;
+ // An unreachable network (not an HTTP status) is the failure to degrade from:
+ // name it in reader copy and keep the narrator's session.
+ try{response=await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':env.GEMINI_API_KEY!},body:JSON.stringify({uses:1,expireTime:expiresAt,newSessionExpireTime:new Date(Date.now()+60000).toISOString(),bidiGenerateContentSetup:setup}),signal:AbortSignal.timeout(15000)});}
+ catch{throw new ServiceError(unavailable,503,'voice_unavailable');}
+ if(!response.ok)throw new ServiceError(unavailable,response.status===429?429:503,response.status===429?'voice_busy':'voice_unavailable');
  const data=await response.json() as {name?:string};
  if(!data.name)throw new ServiceError('Live voice did not return a session. Please try again.',502);
  return Response.json({token:data.name,model,expiresAt,maxSeconds:LIVE_SECONDS,provider:'gemini'},{headers:{'Cache-Control':'no-store'}});

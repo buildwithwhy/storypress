@@ -1,4 +1,4 @@
-import type {Turn} from './story';
+import type {Story,Turn} from './story';
 import {createPcm16Encoder,createLivePlayback,type PlaybackMetrics} from './live-audio';
 export type LivePhase='idle'|'connecting'|'listening'|'speaking'|'paused';
 export type LiveEndReason='time-limit'|'provider-ending'|'disconnected';
@@ -18,6 +18,22 @@ export const geminiLiveVoice: LiveVoiceProvider = {
   id: 'gemini',
   socketUrl: grant => `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(grant.token)}`,
 };
+
+// Connection problems carry a stable code so the UI can speak the reader's
+// language; the message text stays as the English fallback.
+export type LiveProblemCode='connect_failed'|'connect_timeout'|'network';
+export class LiveVoiceProblem extends Error { constructor(message:string,public code:LiveProblemCode){super(message);} }
+const liveProblemCopy:Record<Story['language'],Record<LiveProblemCode,string>>={
+ en:{connect_failed:'Live voice could not connect. Your words are kept — record a message or type instead.',connect_timeout:'Live voice took too long to connect. Your words are kept — try again, or use a voice message.',network:'The live connection is unavailable. Your words are kept — record a message or type instead.'},
+ zh:{connect_failed:'实时对话无法连接。你的原话已保留，可以录音或打字继续。',connect_timeout:'实时对话连接超时。你的原话已保留，请重试，或用录音或打字继续。',network:'实时连接暂时不可用。你的原话已保留，可以录音或打字继续。'},
+ es:{connect_failed:'La voz en directo no pudo conectar. Tus palabras se conservan; graba un mensaje o escribe.',connect_timeout:'La voz en directo tardó demasiado en conectar. Tus palabras se conservan; inténtalo de nuevo, o graba un mensaje o escribe.',network:'La conexión en directo no está disponible ahora. Tus palabras se conservan; graba un mensaje o escribe.'}
+};
+// Renders a live-voice problem for the reader; messages without a connection
+// code (server copy, provider limits) pass through unchanged.
+export function liveProblemMessage(message:string,code:string|undefined,language:Story['language']):string{
+ if(code==='connect_failed'||code==='connect_timeout'||code==='network')return liveProblemCopy[language][code];
+ return message;
+}
 export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiLiveVoice){
  let generation=0,ws:WebSocket|undefined,stream:MediaStream|undefined,context:AudioContext|undefined,processor:AudioWorkletNode|undefined,recorder:MediaRecorder|undefined;
  let deadline=0,endReason:LiveTiming['reason']='time-limit';
@@ -61,7 +77,7 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
    const rec=new MediaRecorder(acquired,{audioBitsPerSecond:48000,...(mime?{mimeType:mime}:{})}),chunks:Blob[]=[];recorder=rec;
    rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};rec.onstop=()=>{const blob=new Blob(chunks,{type:rec.mimeType||mime||'audio/webm'});if(blob.size)events.recording(blob);};
    rec.onerror=()=>{if(id===generation){events.problem(new Error('The recording stopped unexpectedly. Your transcript is kept.'));void stop();}};
-   connectingTimer=setTimeout(()=>{if(id===generation){events.problem(new Error('Live voice took too long to connect. Try again, or use a voice message.'));void stop();}},20000);
+   connectingTimer=setTimeout(()=>{if(id===generation){events.problem(new LiveVoiceProblem('Live voice took too long to connect. Try again, or use a voice message.','connect_timeout'));void stop();}},20000);
    socket.onopen=()=>{if(id===generation)socket.send(JSON.stringify({setup:{model:`models/${permission.model}`}}));};
    // Serialize decoding as well as processing, including Blob frames on older browsers.
    let messages=Promise.resolve();
@@ -101,9 +117,9 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
      }
     }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}}
    });
-   socket.onerror=()=>{if(id===generation){if(active)events.ended?.('disconnected');else events.problem(new Error('Live voice could not connect. You can still record a message or type.'));void stop();}};
-   socket.onclose=()=>{if(id===generation){if(active)events.ended?.(endReason==='provider-ending'||deadline&&Date.now()>=deadline-1000?endReason:'disconnected');else events.problem(new Error('Live voice could not connect. Please try again.'));void stop();}};
-  }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}
+   socket.onerror=()=>{if(id===generation){if(active)events.ended?.('disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','connect_failed'));void stop();}};
+   socket.onclose=()=>{if(id===generation){if(active)events.ended?.(endReason==='provider-ending'||deadline&&Date.now()>=deadline-1000?endReason:'disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. Please try again.','connect_failed'));void stop();}};
+  }catch(error){if(id===generation){events.problem(error instanceof TypeError?new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','network'):error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}
  }
  function text(value:string){if(!active||ws?.readyState!==WebSocket.OPEN||!value.trim())return false;silence();emitTurns();events.turn({role:'user',text:value.trim()});ws.send(JSON.stringify({clientContent:{turns:[{role:'user',parts:[{text:value.trim()}]}],turnComplete:true}}));return true;}
  function pause(){if(!active||paused||ws?.readyState!==WebSocket.OPEN)return;paused=true;silence();encoder?.reset();stream?.getAudioTracks().forEach(track=>{track.enabled=false;});if(recorder?.state==='recording')recorder.pause();ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));events.phase('paused');}
