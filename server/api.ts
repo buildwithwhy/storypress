@@ -5,7 +5,8 @@ import {generateStoryImage,imageModel} from "../lib/image-provider";
 import { storySchema, sourceSchema, paperSchema, photoAnalysisSchema, originalWords, safeSourceUrl } from "../lib/story";
 import { interviewer, researcher, contextualEditor, ghostwriter, photoReader } from "../lib/editorial";
 import { createProviders, ServiceError, type TextProvider, languageRoutes, languageRoutesSchema, videoFlag, videoFlagSchema } from "../lib/providers";
-import {owner,reserveAi,type Bindings} from './storage';
+import {owner,reserveAi,billingConfigured,type Bindings} from './storage';
+import {billingFlagSchema} from '../lib/billing';
 import {photoPart} from '../lib/photo';
 import {storyFocus} from '../lib/story-modes';
 import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
@@ -18,7 +19,7 @@ export async function handleApi(request: Request, env: Bindings) {
     if(request.method === "GET"){
       const providers: TextProvider = createProviders(envRecord);
       const {setting,backend,modelConfigured,modelFor}=providers;
-      return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)},languageRouting:languageRoutesSchema.parse(languageRoutes(envRecord)),video:videoFlagSchema.parse(videoFlag(envRecord))},{headers:{"Cache-Control":"no-store"}});
+      return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)},languageRouting:languageRoutesSchema.parse(languageRoutes(envRecord)),video:videoFlagSchema.parse(videoFlag(envRecord)),billing:billingFlagSchema.parse({configured:billingConfigured(envRecord)})},{headers:{"Cache-Control":"no-store"}});
     }
     const userId = await owner(request,env);
     const origin = request.headers.get("origin");

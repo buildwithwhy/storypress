@@ -32,7 +32,7 @@ for(const [language,action] of [['zh','讲讲我自己的故事'],['es','Crear m
 }
 assert.equal((await worker.fetch(req('/s/'+token),{...env,STORYPRESS_PUBLIC_SHARING:'false'})).status,404);
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
-queue=[authenticated()];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));
+queue=[authenticated(),{data:[]},{data:[]}];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));assert.ok(!config.includes('sk_test'),'Billing config must not leak into the account payload');
 assert.equal(queue.length,0);
 const incomplete={...env,SUPABASE_SECRET_KEY:''};
 const account=await(await worker.fetch(req('/api/account',undefined,false),incomplete)).json();assert.equal(account.storage,false);assert.equal(account.supabase,null);

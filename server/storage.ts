@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {storySchema,artifactLanguage} from '../lib/story';
+import {billingStatusSchema,parseAddons,type BillingStatus} from '../lib/billing';
 import {multilingualSnapshot, editionHtml} from '../lib/edition';
 import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
@@ -25,7 +26,7 @@ export function sameOrigin(request:Request){const origin=request.headers.get('or
 const uuid=z.string().uuid();
 export async function accountApi(request:Request,env:Bindings){
  if(request.method!=='GET')return json({error:'Method not allowed'},405);
- try{return json({user:await identity(request,env),supabase:configured(env)?{url:env.SUPABASE_URL,key:env.SUPABASE_PUBLISHABLE_KEY}:null,storage:configured(env),linkSharing:env.STORYPRESS_PUBLIC_SHARING==='true',dailyUnits:configured(env)?40:null});}
+ try{const user=await identity(request,env);return json({user,supabase:configured(env)?{url:env.SUPABASE_URL,key:env.SUPABASE_PUBLISHABLE_KEY}:null,storage:configured(env),linkSharing:env.STORYPRESS_PUBLIC_SHARING==='true',dailyUnits:configured(env)?40:null,billing:await billingStatus(env,user?.id??null)});}
  catch{return json({error:'Could not load your account.'},503)}
 }
 export async function storiesApi(request:Request,env:Bindings){
@@ -110,6 +111,22 @@ export async function reserveStory(userId:string,env:Bindings){
  const [result]=Array.isArray(results)?results:[];
  if(!result)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
  if(result.ok!==true)throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
+}
+// The account payload's billing block (§4): the Stripe flag plus the signed-in
+// owner's entitlement and monotonic story counter. Read failures degrade to
+// free-tier defaults — a missing or broken billing table must never take down
+// the account panel; the save-seam reserve is the enforcement path.
+export async function billingStatus(env:Bindings,userId:string|null):Promise<BillingStatus>{
+ const fallback=()=>({configured:billingConfigured(env),plan:'free' as const,addons:[] as string[],storiesCreated:0,freeStoryLimit:freeStoryLimit(env)});
+ if(!configured(env)||!userId)return fallback();
+ try{
+  const entitlementRows=await db(env,`storypress_entitlements?owner_id=eq.${userId}&select=plan,addons`) as {plan?:string;addons?:string}[]|null;
+  const entitlement=Array.isArray(entitlementRows)?entitlementRows[0]:undefined;
+  const countRows=await db(env,`storypress_story_counts?owner_id=eq.${userId}&select=stories_created`) as {stories_created?:number}[]|null;
+  const count=Array.isArray(countRows)?countRows[0]:undefined;
+  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan??'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env)});
+  return parsed.success?parsed.data:fallback();
+ }catch{return fallback();}
 }
 
 
