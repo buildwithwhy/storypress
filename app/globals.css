@@ -104,4 +104,8 @@
 @media(max-width:800px){
  .mobile-action-bar{display:flex;align-items:flex-start;gap:10px;position:fixed;left:0;right:0;bottom:0;z-index:15;background:var(--paper);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -8px 24px #45391c14}
  .workspace{padding-bottom:96px}
+ /* Paper stage on phones: share/download belong above the keepsake, not after it. */
+ .paper-page{display:flex;flex-direction:column}
+ .paper-page>.paper-toolbar{order:-2}
+ .keepsake-share-actions{order:-1;border:0;padding:0;margin:0 0 24px;min-width:0}
 }
