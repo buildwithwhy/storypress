@@ -67,6 +67,17 @@ export function languageRoutes(env: Record<string, string | undefined>): Record<
   // until this payload — and the schema above — learn about it.
   return { en: info("en"), zh: info("zh"), es: info("es") };
 }
+
+// Hidden video capability: the services payload reports the env-gated flag so
+// deployments show nothing until STORYPRESS_VIDEO is turned on — enabling is
+// an env change, never a code change. Render compatibility itself is a browser
+// property probed at render time, the same split as liveVoice: the server
+// answers availability, the browser answers capability.
+export const videoFlagSchema = z.object({ enabled: z.boolean() });
+export type VideoFlag = z.infer<typeof videoFlagSchema>;
+export function videoFlag(env: Record<string, string | undefined>): VideoFlag {
+  return { enabled: env.STORYPRESS_VIDEO === "true" };
+}
 function providerError(status: number): ServiceError {
   if (status === 429) return new ServiceError("The story editor is busy. Please try again in a moment.", 429);
   if (status === 402) return new ServiceError("The story editor is waiting for its billing setup. Your words are kept; please contact the app owner.", 503);
