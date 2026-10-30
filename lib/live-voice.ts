@@ -79,12 +79,16 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
    rec.onerror=()=>{if(id===generation){events.problem(new Error('The recording stopped unexpectedly. Your transcript is kept.'));void stop();}};
    connectingTimer=setTimeout(()=>{if(id===generation){events.problem(new LiveVoiceProblem('Live voice took too long to connect. Try again, or use a voice message.','connect_timeout'));void stop();}},20000);
    socket.onopen=()=>{if(id===generation)socket.send(JSON.stringify({setup:{model:`models/${permission.model}`}}));};
-   // Serialize decoding as well as processing, including Blob frames on older browsers.
-   let messages=Promise.resolve();
-   socket.onmessage=event=>messages=messages.then(async()=>{
+   // Frames apply strictly in server order, but decoding never queues behind
+   // the previous frame: string and binary frames decode inline on arrival,
+   // and a slow legacy Blob decode parks later frames briefly (order still
+   // preserved) instead of serializing the whole pipeline behind one await.
+   const decoder=new TextDecoder();
+   let arrival=0,appliedSeq=0;const parked=new Map<number,string>(),reporters=new Map<number,()=>void>();
+   const apply=(raw:string,seq:number,report:()=>void)=>{
+    if(seq!==appliedSeq+1){parked.set(seq,raw);reporters.set(seq,report);return;}
+    appliedSeq=seq;
     try{
-     if(id!==generation)return;
-     const raw=typeof event.data==='string'?event.data:event.data instanceof ArrayBuffer?new TextDecoder().decode(event.data):await event.data.text();
      const data=JSON.parse(raw);if(id!==generation)return;
      if(data.error)throw new Error('The live session ended unexpectedly. Your transcript is kept.');
      if(data.setupComplete&&!active){
@@ -116,7 +120,19 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
       else{events.ended?.('provider-ending');void stop();}
      }
     }catch(error){if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}}
-   });
+    finally{report();}
+    // Frames decoded while an earlier frame was still applying go now, in order.
+    const nextRaw=parked.get(appliedSeq+1);
+    if(nextRaw!==undefined){parked.delete(appliedSeq+1);const nextReport=reporters.get(appliedSeq+1);reporters.delete(appliedSeq+1);if(nextReport)apply(nextRaw,appliedSeq+1,nextReport);}
+   };
+   socket.onmessage=(event:MessageEvent)=>{
+    if(id!==generation)return Promise.resolve();
+    const seq=++arrival;let report!:()=>void;const applied=new Promise<void>(resolve=>report=resolve);
+    if(typeof event.data==='string')apply(event.data,seq,report);
+    else if(event.data instanceof ArrayBuffer)apply(decoder.decode(event.data),seq,report);
+    else void event.data.text().then((raw:string)=>{if(id===generation)apply(raw,seq,report);else report();}).catch((error:unknown)=>{report();if(id===generation){events.problem(error instanceof Error?error:new Error('Live voice could not continue.'));void stop();}});
+    return applied;
+   };
    socket.onerror=()=>{if(id===generation){if(active)events.ended?.('disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','connect_failed'));void stop();}};
    socket.onclose=()=>{if(id===generation){if(active)events.ended?.(endReason==='provider-ending'||deadline&&Date.now()>=deadline-1000?endReason:'disconnected');else events.problem(new LiveVoiceProblem('Live voice could not connect. Please try again.','connect_failed'));void stop();}};
   }catch(error){if(id===generation){events.problem(error instanceof TypeError?new LiveVoiceProblem('Live voice could not connect. You can still record a message or type.','network'):error instanceof Error?error:new Error('Could not start live voice.'));await stop();}}
