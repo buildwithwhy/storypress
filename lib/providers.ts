@@ -176,7 +176,13 @@ function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: Text
     gemini: (system, input, json, model) => retryOnGemini(() => openAiCompletion(route, key(), openAiBody(route, system, input, json ?? true, false)), () => gemini.gemini(system, input, json, model)),
     nimble: gemini.nimble,
     parseJson: gemini.parseJson,
-    interviewStream: (system, input, _model, signal) => streamWithFallback(openAiStream(route, key(), openAiBody(route, system, input, true, true), signal), () => gemini.interviewStream(system, input, gemini.modelFor('interview'), signal)),
+    interviewStream: (system, input, _model, signal) => streamWithFallback(openAiStream(route, key(), openAiBody(route, system, input, true, true), signal),
+     // Reliability outranks latency on an already-failed route: backends that
+     // do not stream fall back to the proven whole-result call, while Vertex
+     // keeps its streaming fallback.
+     gemini.backend() === 'vertex'
+      ? () => gemini.interviewStream(system, input, gemini.modelFor('interview'), signal)
+      : async function*(){ yield await gemini.gemini(system, input, true, gemini.modelFor('interview')); }),
   };
 }
 export function createProviders(env: Record<string, string | undefined>, language: Language = "en"): TextProvider {
@@ -194,6 +200,12 @@ function modelConfigured(): boolean {
   return backend() === "ai-studio" && !!setting("GEMINI_API_KEY");
 }
 
+// The AI-Studio /interactions whole-result shape: either a flat output_text
+// or per-output text parts. Shared by the non-streaming call and the
+// streaming fallback below.
+function interactionText(data: { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] }): string | undefined {
+  return data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+}
 async function gemini(system: string, input: ModelInput, json = true, model?: string): Promise<string> {
   const selectedModel = validateModel(model ?? (setting("GEMINI_MODEL") || DEFAULT_MODEL));
   if (backend() === "vertex") return vertex(system, input, json, selectedModel);
@@ -203,7 +215,7 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
   const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false }), signal: AbortSignal.timeout(55000) });
   if (!res.ok) throw providerError(res.status);
   const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] };
-  const output = data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+  const output = interactionText(data);
   if (!output) throw new ServiceError("The editor returned no text. Please try again.");
   return output;
 }
