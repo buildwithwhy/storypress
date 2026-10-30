@@ -110,11 +110,16 @@ try {
   const sql = readFileSync('supabase/migrations/202610300002_billing.sql', 'utf8');
   assert.ok(!/stories_created\s*-\s*1/.test(sql), 'the migration must contain no counter decrement');
 
-  // Dormancy: no product code reads the billing tables or RPC yet (migration, docs and checks may).
-  const dormant = (() => { try { return execFileSync('git', ['grep', '-l', '-E', 'storypress_entitlements|storypress_story_counts|storypress_billing_events|storypress_reserve_story', '--', 'app', 'server', 'lib', 'worker', 'api']).toString().trim(); } catch (error) { if (error.status === 1) return ''; throw error; } })();
-  assert.equal(dormant, '', `billing must stay dormant — product code referenced it: ${dormant}`);
+  // Governance lint: the billing tables and RPC are referenced only by the
+  // sanctioned server surfaces — PR #16's metering and status (server/
+  // storage.ts) and the money path (server/billing.ts, api wrappers) plus
+  // their built bundle. Any other product code referencing them is a
+  // regression, and client code must never touch billing directly.
+  const sanctioned=new Set(['server/storage.ts','server/billing.ts','worker/index.js','api/billing.mjs','api/stripe-webhook.mjs']);
+  const dormant = (() => { try { return execFileSync('git', ['grep', '-l', '-E', 'storypress_entitlements|storypress_story_counts|storypress_billing_events|storypress_reserve_story', '--', 'app', 'server', 'lib', 'worker', 'api']).toString().trim().split('\n').filter(Boolean); } catch (error) { if (error.status === 1) return []; throw error; } })();
+  assert.deepEqual(dormant.filter(path => !sanctioned.has(path)), [], `billing tables referenced outside sanctioned server code: ${dormant}`);
 
-  console.log('Passed: billing schema shape, RLS/policy/ACL isolation, service-role-only reserve RPC (security definer, locked search_path), free cap + refusal semantics, monotonic delete-proof counter, entitled grace and downgrade re-metering, parallel race admits exactly the remaining slots, no decrement path, and PR-1 dormancy. Verified against a real throwaway PostgreSQL cluster with Supabase role/schema stubs; live Supabase activation still required.');
+  console.log('Passed: billing schema shape, RLS/policy/ACL isolation, service-role-only reserve RPC (security definer, locked search_path), free cap + refusal semantics, monotonic delete-proof counter, entitled grace and downgrade re-metering, parallel race admits exactly the remaining slots, no decrement path, and the sanctioned-reader governance lint. Verified against a real throwaway PostgreSQL cluster with Supabase role/schema stubs; live Supabase activation still required.');
 } finally {
   stop();
 }
