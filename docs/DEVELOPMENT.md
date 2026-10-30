@@ -48,7 +48,7 @@ Follow [Supabase setup](SUPABASE-SETUP.md) for a new deployment. Check the datab
 
 Device drafts use browser storage. Signed-in drafts and completed newspapers save privately with ownership checks and revision conflict protection. Guest handoff is limited to the same browser and origin. Save to an account or export work before moving to another host. Audio recordings are temporary and are not part of saved stories.
 
-Website access and story sharing are separate settings. Keep `STORYPRESS_PUBLIC_SHARING=false` until the deployment is ready for anonymous recipients. An unlisted link exposes an approved edition snapshot, not private interview notes or unfinished text. Owners can revoke links. AI allowances do not constitute payment collection; payments are not implemented.
+Website access and story sharing are separate settings. Keep `STORYPRESS_PUBLIC_SHARING=false` until the deployment is ready for anonymous recipients. An unlisted link exposes an approved edition snapshot, not private interview notes or unfinished text. Owners can revoke links. AI allowances do not constitute payment collection; payment stays dormant until the Stripe environment keys are configured (see [Vercel setup](VERCEL-SETUP.md)).
 
 ## Editorial and media behavior
 

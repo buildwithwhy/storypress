@@ -18,6 +18,19 @@ SUPABASE_SECRET_KEY=YOUR_SERVER_SECRET_KEY
 STORYPRESS_PUBLIC_SHARING=false
 ```
 
+Optional billing variables enable checkout and webhooks. The paywall ships dormant: without `STRIPE_SECRET_KEY` nothing is gated, charged or verified, and enabling billing is an environment change, never a code change. Price **amounts** live in Stripe products; only price IDs appear here.
+
+```env
+STRIPE_SECRET_KEY=YOUR_STRIPE_SECRET_KEY
+STRIPE_WEBHOOK_SECRET=YOUR_STRIPE_WEBHOOK_SECRET
+STRIPE_PRICE_SUBSCRIPTION_MONTHLY=YOUR_STRIPE_PRICE_ID
+STRIPE_PRICE_SUBSCRIPTION_ANNUAL=YOUR_STRIPE_PRICE_ID
+STRIPE_PRICE_LIFETIME=YOUR_STRIPE_PRICE_ID
+STORYPRESS_FREE_STORIES=3
+```
+
+`STORYPRESS_FREE_STORIES` is optional (default 3) and counts self-started original stories ever per account — deletes never refund it, while translations and save-as-copies stay free. In the Stripe dashboard, point a webhook at `https://YOUR_DEPLOYMENT/api/stripe-webhook` subscribed to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.paid`, and copy its signing secret into `STRIPE_WEBHOOK_SECRET`. Redeploy after changing variables.
+
 `GEMINI_MODEL` is optional. The current default is `gemini-3.8-flash`. `NIMBLE_API_KEY` is optional; without it, research is unavailable. Vercel does not inherit local `.dev.vars` or Sites secrets. Redeploy after changing variables. The adapter refuses API access when Supabase is incomplete and never accepts a visitor-supplied Sites identity header.
 
 4. In Supabase Authentication URL Configuration, set Site URL to the chosen canonical production origin and allow its exact redirect URL with a trailing `/`. Keep any other deployment origins you still use. Avoid wildcard redirects for untrusted domains. For a new database, follow [Supabase setup](SUPABASE-SETUP.md). On an existing database, check migration state and **do not rerun an already-applied migration**.
@@ -29,7 +42,7 @@ STORYPRESS_PUBLIC_SHARING=false
 
 Photos are resized/re-encoded before upload and capped at 1.8 MB of encoded image data. Voice answers are capped at two minutes and 3 MB of raw audio (about 4 MB after base64), with a requested 48 kbps audio bitrate. This fits Vercel's 4.5 MB function payload ceiling. Browsers may choose a different bitrate; an oversized recording asks the narrator to record a shorter answer. Speech playback uses browser voices and still needs testing on physical iOS/Android devices.
 
-The existing per-user and project AI allowances remain enforced in Supabase. No payment collection is implemented.
+The existing per-user and project AI allowances remain enforced in Supabase. Payment collection stays dormant until the Stripe environment variables above are set; without them, no story creation is gated and no checkout exists.
 
 ## Verification
 
