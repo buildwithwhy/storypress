@@ -8,7 +8,17 @@ export type LiveMetrics={provider:'gemini';model:string;durationSeconds:number;f
 type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
 export function pcm16(samples:Float32Array,rate:number){return createPcm16Encoder(rate).encode(samples);}
 function encoded(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
-export function createLiveVoice(events:Events){
+
+// The live-voice seam: the server names the provider on each grant (provider
+// field) and the client connects through the matching implementation.
+// Gemini Live is the only implementation today; a future provider adds one
+// object with the same shape.
+export interface LiveVoiceProvider { id: string; socketUrl(grant: LiveGrant): string; }
+export const geminiLiveVoice: LiveVoiceProvider = {
+  id: 'gemini',
+  socketUrl: grant => `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(grant.token)}`,
+};
+export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiLiveVoice){
  let generation=0,ws:WebSocket|undefined,stream:MediaStream|undefined,context:AudioContext|undefined,processor:AudioWorkletNode|undefined,recorder:MediaRecorder|undefined;
  let deadline=0,endReason:LiveTiming['reason']='time-limit';
  let limit:ReturnType<typeof setTimeout>|undefined,connectingTimer:ReturnType<typeof setTimeout>|undefined;
@@ -46,7 +56,7 @@ export function createLiveVoice(events:Events){
    const url=URL.createObjectURL(new Blob([`class Capture extends AudioWorkletProcessor{constructor(){super();this.buffer=new Float32Array(Math.round(sampleRate*.04));this.offset=0;}process(inputs){const x=inputs[0]?.[0];if(x)for(let i=0;i<x.length;i++){this.buffer[this.offset++]=x[i];if(this.offset===this.buffer.length){this.port.postMessage(this.buffer,[this.buffer.buffer]);this.buffer=new Float32Array(Math.round(sampleRate*.04));this.offset=0;}}return true;}}registerProcessor('storypress-capture',Capture);`],{type:'text/javascript'}));
    try{await audio.audioWorklet.addModule(url);}finally{URL.revokeObjectURL(url);}
    if(id!==generation)return;
-   const socket=new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(permission.token)}`);ws=socket;socket.binaryType='arraybuffer';
+   const socket=new WebSocket(provider.socketUrl(permission));ws=socket;socket.binaryType='arraybuffer';
    const mime=['audio/webm;codecs=opus','audio/mp4','audio/webm'].find(m=>MediaRecorder.isTypeSupported(m));
    const rec=new MediaRecorder(acquired,{audioBitsPerSecond:48000,...(mime?{mimeType:mime}:{})}),chunks:Blob[]=[];recorder=rec;
    rec.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};rec.onstop=()=>{const blob=new Blob(chunks,{type:rec.mimeType||mime||'audio/webm'});if(blob.size)events.recording(blob);};

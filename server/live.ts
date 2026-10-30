@@ -24,5 +24,5 @@ export async function liveToken(request:Request,env:Bindings,userId:string,story
  if(!response.ok)throw new ServiceError('Live voice could not connect. Your story is kept; try a voice message or typing.',response.status===429?429:503,response.status===429?'voice_busy':'voice_unavailable');
  const data=await response.json() as {name?:string};
  if(!data.name)throw new ServiceError('Live voice did not return a session. Please try again.',502);
- return Response.json({token:data.name,model,expiresAt,maxSeconds:LIVE_SECONDS},{headers:{'Cache-Control':'no-store'}});
+ return Response.json({token:data.name,model,expiresAt,maxSeconds:LIVE_SECONDS,provider:'gemini'},{headers:{'Cache-Control':'no-store'}});
 }
