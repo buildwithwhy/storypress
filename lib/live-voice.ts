@@ -5,7 +5,7 @@ export type LiveEndReason='time-limit'|'provider-ending'|'disconnected';
 export type LiveTiming={endsAt:number;reason:'time-limit'|'provider-ending'};
 export type LiveGrant={token:string;model:string;expiresAt:string;maxSeconds:number};
 export type LiveMetrics={provider:'gemini';model:string;durationSeconds:number;firstAudioMs:number|null;usage:Record<string,unknown>[];playback:PlaybackMetrics};
-type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void};
+type Events={timing?:(timing:LiveTiming)=>void;ended?:(reason:LiveEndReason)=>void;phase:(phase:LivePhase)=>void;caption:(text:string)=>void;turn:(turn:Turn)=>void;problem:(error:Error)=>void;recording:(blob:Blob)=>void;metrics:(metrics:LiveMetrics)=>void;pacing?:(quickTurns:number)=>void};
 export function pcm16(samples:Float32Array,rate:number){return createPcm16Encoder(rate).encode(samples);}
 function encoded(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);}
 
@@ -40,7 +40,23 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
  let limit:ReturnType<typeof setTimeout>|undefined,connectingTimer:ReturnType<typeof setTimeout>|undefined;
  let playback:ReturnType<typeof createLivePlayback>|undefined,encoder:ReturnType<typeof createPcm16Encoder>|undefined;
  let userText='',assistantText='',started=0,firstAudioMs:number|null=null,model='',usage:Record<string,unknown>[]=[],active=false,paused=false;
- function emitTurns(){if(userText.trim())events.turn({role:'user',text:userText.trim().slice(0,12000)});if(assistantText.trim())events.turn({role:'assistant',text:assistantText.trim().slice(0,12000)});userText='';assistantText='';events.caption('');}
+ // Narrator pacing, measured client-side from live input-transcription
+ // timing: a turn whose transcription deltas never gapped more than 700 ms
+ // is brisk. Two consecutive brisk turns let the server tighten its
+ // end-of-speech window; a long gap (or a pause, or a typed turn) resets
+ // toward the patient default. The count is only a hint — the server owns
+ // the mapping and the bounds (600–1500 ms).
+ let quickTurns=0,lastDelta=0,turnGap=0;
+ function emitTurns(){if(userText.trim())events.turn({role:'user',text:userText.trim().slice(0,12000)});if(assistantText.trim())events.turn({role:'assistant',text:assistantText.trim().slice(0,12000)});userText='';assistantText='';lastDelta=0;turnGap=0;events.caption('');}
+ // Evaluated when the agent starts replying: the widest gap between the
+ // user turn's transcription deltas decides whether it was brisk or hesitant.
+ function evaluatePacing(){
+  if(!lastDelta)return;
+  if(turnGap<=700)quickTurns++;
+  else if(turnGap>=1200)quickTurns=0;
+  events.pacing?.(quickTurns);
+  lastDelta=0;turnGap=0;
+ }
  function silence(){playback?.clear();}
  async function stop(){
   generation++;clearTimeout(limit);clearTimeout(connectingTimer);emitTurns();playback?.clear(false);
@@ -102,7 +118,14 @@ export function createLiveVoice(events:Events,provider:LiveVoiceProvider=geminiL
      if(data.usageMetadata&&usage.length<100)usage.push(data.usageMetadata);
      const content=data.serverContent;
      if(content){
-      if(content.inputTranscription?.text)userText+=content.inputTranscription.text;
+      if(content.inputTranscription?.text){
+       const now=performance.now();
+       if(lastDelta){const gap=now-lastDelta;if(gap>turnGap)turnGap=gap;}
+       lastDelta=now;
+       userText+=content.inputTranscription.text;
+      }
+      // The agent starting to reply closes the user turn's pacing measurement.
+      if(content.outputTranscription?.text||content.modelTurn?.parts?.length)evaluatePacing();
       if(content.outputTranscription?.text)assistantText+=content.outputTranscription.text;
       events.caption(userText||assistantText);
       if(content.interrupted){playback?.interrupt();emitTurns();events.phase(paused?'paused':'listening');}

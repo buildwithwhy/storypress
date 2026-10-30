@@ -51,7 +51,7 @@ const copy = {
 
 const STORAGE = DRAFT_PREFIX;
 function download(name: string, data: string, type = "text/plain") { const url = URL.createObjectURL(new Blob([data], { type })); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 500); }
-async function callApi(action: string, story?: Story, audio?: { data: string; mime: string }, signal?: AbortSignal, photoSearch?: {query:string;approved:true}, researchSearch?: {query:string;approved:true},imageStyle?:'illustration'|'comic') { const res = await fetch("/api/story", { method: "POST", headers: { "Content-Type": "application/json", ...await accountHeaders() }, body: JSON.stringify({ action, story: story ? { ...story, generatedArt:undefined,photo: action==='photo'?story.photo:undefined } : undefined, audio, ...(action==='photo'?{photoConsent:true}:{}), photoSearch, researchSearch, imageStyle }), signal }); const data = await res.json(); if (!res.ok) throw Object.assign(new Error(data.error || "That didn’t finish. Please try again."),{code:data.code}); return data; }
+async function callApi(action: string, story?: Story, audio?: { data: string; mime: string }, signal?: AbortSignal, photoSearch?: {query:string;approved:true}, researchSearch?: {query:string;approved:true},imageStyle?:'illustration'|'comic',extra?:Record<string,unknown>) { const res = await fetch("/api/story", { method: "POST", headers: { "Content-Type": "application/json", ...await accountHeaders() }, body: JSON.stringify({ action, story: story ? { ...story, generatedArt:undefined,photo: action==='photo'?story.photo:undefined } : undefined, audio, ...(action==='photo'?{photoConsent:true}:{}), photoSearch, researchSearch, imageStyle, ...extra }), signal }); const data = await res.json(); if (!res.ok) throw Object.assign(new Error(data.error || "That didn’t finish. Please try again."),{code:data.code}); return data; }
 
 function StoryApp() {
  const [account,setAccount]=useState<AccountConfig|null>(null);
@@ -86,6 +86,10 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  const [busy, setBusy] = useState("");
  const [streamingQuestion,setStreamingQuestion]=useState('');
  const interviewRequest=useRef<AbortController|null>(null);
+ // Quick conversational turns observed in live voice; the server tightens its
+ // end-of-speech window after two consecutive brisk turns and only the server
+ // sets the bounds.
+ const pacing=useRef(0);
  const [error, setError] = useState("");
  const [editing, setEditing] = useState(false);
  const [searched, setSearched] = useState(false);
@@ -435,7 +439,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   {showSample&&<SamplePreview language={story.language} onClose={()=>setShowSample(false)}><FormatPicker story={{...createSampleStory(story.language),presentation:{version:1,format:sampleFormat}}} onChange={setSampleFormat}/><KeepsakeView story={{...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}],presentation:{version:1,format:sampleFormat}}}/></SamplePreview>}
   {stage === "tell" && <main className={`workspace interview-${mode}`}><section className="conversation">
    {modePicker()}
-   {mode==='voice'&&services.liveVoice&&<LiveInterview story={story} grant={()=>callApi('live',latest.current.story)} onActive={setLiveActive} onRecording={blob=>captureRecording(blob,story.recordingCollectionId)} onTurn={turn=>setStory(s=>s.turns.length>=60?s:{...s,approved:false,paper:undefined,turns:[...s.turns,turn]})}/>}
+   {mode==='voice'&&services.liveVoice&&<LiveInterview story={story} grant={()=>callApi('live',latest.current.story,undefined,undefined,undefined,undefined,undefined,{pacing:{quickTurns:pacing.current}})} onPacing={value=>{pacing.current=value;}} onActive={setLiveActive} onRecording={blob=>captureRecording(blob,story.recordingCollectionId)} onTurn={turn=>setStory(s=>s.turns.length>=60?s:{...s,approved:false,paper:undefined,turns:[...s.turns,turn]})}/>}
 
    <p className="interview-introduction">{mode === "voice" ? (services.liveVoice?"":v.help) : mode === "dictate" ? v.dictateHelp : v.typeHelp}</p>
    <PhotoStory story={story} disabled={interactionBusy||correcting} canAnalyse={!!account.user} canSearch={services.nimble} onChoose={choosePhoto} onRemove={()=>patch({photo:undefined,photoCaption:undefined,photoAnalysis:undefined,artwork:story.artwork==='generated'?'generated':'none',approved:false})} onCaption={text=>patch({photoCaption:text,approved:false})} onAnalyse={()=>void photoQuestion()} onAsk={analysis=>void photoQuestion(analysis)} onSearch={query=>void discover(query)} onSignIn={()=>setShowAccount(true)}/>

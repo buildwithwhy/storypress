@@ -47,7 +47,7 @@ export async function handleApi(request: Request, env: Bindings) {
       try{return Response.json({turns:validateTranscript(input,result)},{headers:{'Cache-Control':'no-store'}});}
       catch{throw new ServiceError('The transcript translation was incomplete. Your original is kept. Please try again.',502);}
     }
-    if(body.action==='live')return await liveToken(request,env,userId,storySchema.parse(body.story));
+    if(body.action==='live')return await liveToken(request,env,userId,storySchema.parse(body.story),body.pacing);
     if (body.action === "transcribe") {
       // Transcription stays on Gemini for every language; the spoken language
       // is inferred from the audio by prompt convention.
