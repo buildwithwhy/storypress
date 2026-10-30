@@ -1,5 +1,6 @@
 import { handleApi } from '../server/api';
 import {accountApi,storiesApi,sharedEdition,type Bindings} from '../server/storage';
+import {billingApi} from '../server/billing';
 import {invitesApi} from '../server/invites';
 import { html, css, javascript, icon } from 'virtual:storypress-assets';
 export default {
@@ -7,6 +8,7 @@ export default {
   const url = new URL(request.url);
   if(url.pathname === '/api/story') return handleApi(request,env);
   if(url.pathname === '/api/account') return accountApi(request,env);
+  if(url.pathname === '/api/billing') return billingApi(request,env);
   if(url.pathname === '/api/stories') return storiesApi(request,env);
  if(url.pathname === '/api/invites') return invitesApi(request,env);
   if(url.pathname.startsWith('/s/')) return sharedEdition(request,env,url.pathname.slice(3));
