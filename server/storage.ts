@@ -1,6 +1,6 @@
 import {z} from 'zod';
-import {storySchema} from '../lib/story';
-import {editionSnapshot, editionHtml} from '../lib/edition';
+import {storySchema,artifactLanguage} from '../lib/story';
+import {multilingualSnapshot, editionHtml} from '../lib/edition';
 import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
 export type Bindings=Record<string,string|undefined>;
@@ -57,7 +57,14 @@ export async function storiesApi(request:Request,env:Bindings){
    const revision=z.number().int().positive().parse(body.revision);
    const [row]=await db(env,`storypress_stories?id=eq.${id}&${own}&revision=eq.${revision}&select=data,share_token`);if(!row)return json({error:'Save your latest changes before sharing.'},409);
    const token=body.action==='share'?(row.share_token||crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','')):null;
-   const snapshot=body.action==='share'?editionSnapshot(storySchema.parse(row.data)):null;
+   let snapshot=null;
+   if(body.action==='share'){
+    const story=storySchema.parse(row.data);
+    // Approved translated keepsakes of this story (linked by originStoryId) ride along as extra editions.
+    const siblings=await db(env,`storypress_stories?owner_id=eq.${userId}&data->>originStoryId=eq.${id}&select=data&limit=10`);
+    const translations=(Array.isArray(siblings)?siblings:[]).map(sibling=>storySchema.parse(sibling.data));
+    snapshot=multilingualSnapshot(story,translations);
+   }
    const rows=await db(env,`storypress_stories?id=eq.${id}&${own}&revision=eq.${revision}`,'PATCH',{share_token:token,edition:snapshot,revision:revision+1});
    if(!rows.length)return json({error:'This saved copy changed. Save again before sharing.'},409);
    return json({id,revision:revision+1,share_token:token,url:token?`${url.origin}/s/${token}`:null});

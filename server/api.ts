@@ -1,4 +1,4 @@
-import {translationInputSchema,translationResultSchema,translationInstructions,validateTranslation} from '../lib/translation';
+import {translationInputSchema,translationResultSchema,translationInstructions,validateTranslation,transcriptInputSchema,transcriptResultSchema,transcriptInstructions,validateTranscript} from '../lib/translation';
 import {liveAccess,liveToken} from './live';
 import { z } from "zod";
 import {generateStoryImage,imageModel} from "../lib/image-provider";
@@ -37,6 +37,15 @@ export async function handleApi(request: Request, env: Bindings) {
       const result=geminiProvider.parseJson(await geminiProvider.gemini(translationInstructions,JSON.stringify(input),true,geminiProvider.modelFor('write')),translationResultSchema);
       try{return Response.json({translation:validateTranslation(input,result)},{headers:{'Cache-Control':'no-store'}});}
       catch{throw new ServiceError('The translation was incomplete. Your original is kept. Please try again.',502);}
+    }
+    if(body.action==='translate-transcript'){
+      const geminiProvider: TextProvider = createProviders(envRecord);
+      const input=transcriptInputSchema.parse(body.transcript);
+      if(!geminiProvider.modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
+      await reserveAi(userId,env,'write');
+      const result=geminiProvider.parseJson(await geminiProvider.gemini(transcriptInstructions,JSON.stringify(input),true,geminiProvider.modelFor('write')),transcriptResultSchema);
+      try{return Response.json({turns:validateTranscript(input,result)},{headers:{'Cache-Control':'no-store'}});}
+      catch{throw new ServiceError('The transcript translation was incomplete. Your original is kept. Please try again.',502);}
     }
     if(body.action==='live')return await liveToken(request,env,userId,storySchema.parse(body.story));
     if (body.action === "transcribe") {
