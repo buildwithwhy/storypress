@@ -39,10 +39,11 @@ export async function handleApi(request: Request, env: Bindings) {
       catch{throw new ServiceError('The translation was incomplete. Your original is kept. Please try again.',502);}
     }
     if(body.action==='translate-transcript'){
+      const geminiProvider: TextProvider = createProviders(envRecord);
       const input=transcriptInputSchema.parse(body.transcript);
-      if(!modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
+      if(!geminiProvider.modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
       await reserveAi(userId,env,'write');
-      const result=parseJson(await gemini(transcriptInstructions,JSON.stringify(input),true,modelFor('write')),transcriptResultSchema);
+      const result=geminiProvider.parseJson(await geminiProvider.gemini(transcriptInstructions,JSON.stringify(input),true,geminiProvider.modelFor('write')),transcriptResultSchema);
       try{return Response.json({turns:validateTranscript(input,result)},{headers:{'Cache-Control':'no-store'}});}
       catch{throw new ServiceError('The transcript translation was incomplete. Your original is kept. Please try again.',502);}
     }
