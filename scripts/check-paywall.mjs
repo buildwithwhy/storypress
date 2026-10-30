@@ -13,14 +13,15 @@ import {StoryStart} from './app/story-start.tsx';
 import {UpgradePanel} from './app/sharing.tsx';
 import {freeStoryLimitReached} from './lib/billing.ts';
 import {checkoutReturnId,startCheckout,confirmCheckout} from './lib/billing-client.ts';
+import {paywallCopy} from './lib/paywall-copy.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(StoryStart,props));
 export const renderPanel=props=>renderToStaticMarkup(React.createElement(UpgradePanel,props));
-export {freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout};
+export {freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy};
 `,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
 // Resolve React from this repository while importing the generated check.
 import fs from 'node:fs/promises';
 const path=new URL('../work/paywall-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {render,renderPanel,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout}=await import(path.href);
+const {render,renderPanel,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
 
 const base={disabled:false,hasDraft:false,needsSignIn:false,fromShared:false,freeLimit:3,onUpgrade:()=>{},onStart:()=>{},onContinue:()=>{},children:null};
 
@@ -112,4 +113,15 @@ assert.deepEqual(rescued,{configured:true,plan:'lifetime',addons:[],storiesCreat
 assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the rescue asks the server to verify the session');
 globalThis.fetch=originalFetch;
 
-console.log('Passed paywall client gates: freeStoryLimitReached truth table (dormancy, free cap, paid plans, zero allowance), StoryStart limitReached state with upgrade CTA in en/zh/es, resume stays free, UpgradePanel plan state/dormant/entitled/owner-tree guard, checkout return-id shape checks, and the server-verified status rescue. React rendered server-side; no network calls.');
+// ---- paywall copy module: shape, placeholders, and language coverage ----
+const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','subscriptionActive','lifetimeActive','monthly','annual','lifetime','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending'].sort();
+for(const language of ['en','zh','es']){
+ const copy=paywallCopy[language];
+ assert.deepEqual(Object.keys(copy).sort(),expectedKeys,`${language} carries exactly the paywall copy keys`);
+ for(const [key,value] of Object.entries(copy))assert.ok(value.trim().length>0,`${language}.${key} is never empty`);
+ assert.ok(copy.limitTitle.includes('{limit}')&&copy.freeUsage.includes('{used}')&&copy.freeUsage.includes('{limit}'),`${language} interpolation placeholders survive the module extraction`);
+}
+assert.notEqual(paywallCopy.en.limitCta,paywallCopy.zh.limitCta,'translations are distinct, not copy-pasted');
+assert.notEqual(paywallCopy.en.checkoutPending,paywallCopy.es.checkoutPending,'es copy is its own translation');
+
+console.log('Passed paywall client gates: paywallCopy shape/placeholders/coverage across en/zh/es, freeStoryLimitReached truth table (dormancy, free cap, paid plans, zero allowance), StoryStart limitReached state with upgrade CTA in en/zh/es, resume stays free, UpgradePanel plan state/dormant/entitled/owner-tree guard, checkout return-id shape checks, and the server-verified status rescue. React rendered server-side; no network calls.');

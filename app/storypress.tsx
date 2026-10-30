@@ -33,6 +33,7 @@ import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '
 import {saveCopy} from '../lib/save-copy';
 import {freeStoryLimitReached,type BillingStatus} from '../lib/billing';
 import {checkoutReturnId,confirmCheckout} from '../lib/billing-client';
+import {paywallCopy} from '../lib/paywall-copy';
 import {sharingCopy} from "../lib/sharing-copy";
 import {shareGroupsCopy} from "../lib/share-groups-copy";
 import {PhotoStory} from './photo-story';
@@ -462,11 +463,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&<div className={cloudStatus==='error'?'message error no-print':'message no-print'} role={cloudStatus==='error'?'alert':'status'}>{cloudStatus==='error'?sc.error:cloudStatus==='saved'?sc.saved:cloudStatus==='saving'?sc.saving:sc.waiting}{cloudStatus==='error'&&<><span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></>}</div>}
   {resumedDraft&&<div className="message no-print" role="status">{sharingCopy[story.language].resumed}<button onClick={()=>setResumedDraft(false)} aria-label={sharingCopy[story.language].close}><X size={18}/></button></div>}
-  {checkoutNotice&&<div className="message no-print" role="status">{({
-   en:checkoutNotice==='confirmed'?'Your plan is active. Thank you for supporting the studio.':'Thank you! Your payment is still being confirmed — this page will show your plan shortly. Your stories remain fully available meanwhile.',
-   zh:checkoutNotice==='confirmed'?'你的方案已生效。感谢你对工作室的支持。':'感谢你！你的付款还在确认中——页面稍后会显示你的方案。期间你的故事仍然完全可用。',
-   es:checkoutNotice==='confirmed'?'Tu plan está activo. Gracias por apoyar el estudio.':'¡Gracias! Tu pago aún se está confirmando: esta página mostrará tu plan en breve. Mientras tanto, tus historias siguen totalmente disponibles.'
-  }[story.language])}<button onClick={()=>setCheckoutNotice('')} aria-label="Dismiss message"><X size={18}/></button></div>}
+  {checkoutNotice&&<div className="message no-print" role="status">{checkoutNotice==='confirmed'?paywallCopy[story.language].checkoutConfirmed:paywallCopy[story.language].checkoutPending}<button onClick={()=>setCheckoutNotice('')} aria-label="Dismiss message"><X size={18}/></button></div>}
   {stage === "home" && <main className="home">
    <section className="intro"><p className="eyebrow"><span/> {d.eyebrow}</p><h1>{story.language === "zh" ? <>每个人生，<br/>都值得<span>上头版。</span></> : story.language === "es" ? <>Toda vida merece<br/><span>su portada.</span></> : <>Every life has<br/>a <span>front page.</span></>}</h1><p className="intro-text">{story.language === "zh" ? "聊聊你的回忆，找回那个世界。我们一起把它变成一份值得珍藏、分享的作品。" : story.language === "es" ? "Cuenta un recuerdo. Redescubre su mundo. Juntos crearemos un recuerdo para conservar y compartir." : "Tell a memory. Rediscover its world. Together, we’ll turn it into a keepsake worth sharing."}</p>
     <StoryStart language={story.language} disabled={interactionBusy||correcting||!!account.sampleOnly} hasDraft={hasStoryContent(story)} needsSignIn={!!account.supabase&&!account.user} fromShared={!!sharedEntryLanguage(location.search)} limitReached={limitReached} freeLimit={account.billing.freeStoryLimit} onUpgrade={()=>setShowAccount(true)} onStart={(photo,prompt)=>void startFresh(photo,prompt)} onContinue={()=>story.paper?void flushThenNavigate("paper"):void begin()}>

@@ -2,24 +2,22 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ArrowRight,BookOpen,ImagePlus,Lock,Sparkles,X} from 'lucide-react';
 import {startCopy} from '../lib/start-copy';
 import type {Story} from '../lib/story';
-
-// Inline until the paywall copy module lands (paywall §5); then these move to
-// lib/paywall-copy.ts with the rest of the paywall strings.
-const limitCopy={en:{limitTitle:'You have used all {limit} free stories',limitBody:'Everything you have made stays yours — read, print and share it any time. Upgrade to keep telling new stories.',limitUpgrade:'Upgrade'},zh:{limitTitle:'你已经用完 {limit} 个免费故事',limitBody:'你创作的一切都仍然属于你——随时可以阅读、打印和分享。升级后可以继续创作新故事。',limitUpgrade:'升级'},es:{limitTitle:'Has usado tus {limit} historias gratis',limitBody:'Todo lo que creaste sigue siendo tuyo: puedes leerlo, imprimirlo y compartirlo cuando quieras. Mejora tu plan para seguir creando historias nuevas.',limitUpgrade:'Mejorar'}};
+import {paywallCopy} from '../lib/paywall-copy';
 
 export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,limitReached,freeLimit,onUpgrade,onStart,onContinue,children}:{
  language:Story['language'];disabled:boolean;hasDraft:boolean;needsSignIn:boolean;fromShared:boolean;limitReached:boolean;freeLimit:number;onUpgrade:()=>void;
  onStart:(withPhoto?:boolean,prompt?:string)=>void;onContinue:()=>void;children:ReactNode;
 }) {
  const c=startCopy[language];
+ const pw=paywallCopy[language];
  const [showPrompts,setShowPrompts]=useState(false);
  return <div className="start-card story-start">
   {hasDraft&&<div className="resume-story"><div><strong>{c.resume}</strong><p>{c.resumeHelp}</p></div><button className="secondary wide" disabled={disabled} onClick={onContinue}>{c.continueLast}<ArrowRight size={18}/></button></div>}
   <h2>{c.title}</h2><p className="start-time">{c.time}</p>
   {limitReached&&<div className="start-limit" role="status">
-   <strong>{limitCopy[language].limitTitle.replace('{limit}',String(freeLimit))}</strong>
-   <p>{limitCopy[language].limitBody}</p>
-   <button className="primary" onClick={onUpgrade}>{limitCopy[language].limitUpgrade}</button>
+   <strong>{pw.limitTitle.replace('{limit}',String(freeLimit))}</strong>
+   <p>{pw.limitBody}</p>
+   <button className="primary" onClick={onUpgrade}>{pw.limitCta}</button>
   </div>}
   <div className="start-choices">
    <button className="secondary wide" disabled={disabled||limitReached} onClick={()=>onStart()}><BookOpen size={20}/><span>{c.memory}</span><ArrowRight size={18}/></button>

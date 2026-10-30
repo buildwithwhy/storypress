@@ -10,6 +10,7 @@ import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {startCheckout} from '../lib/billing-client';
 import {type BillingStatus} from '../lib/billing';
+import {paywallCopy} from '../lib/paywall-copy';
 import {EmailSignIn} from './email-sign-in';
 import {readerCopy} from '../lib/reader';
 export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void}){
@@ -43,10 +44,6 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
 }
 
 
-// Inline until the paywall copy module lands (paywall §5); then these move to
-// lib/paywall-copy.ts with the rest of the paywall strings.
-const panelCopy={en:{planHeading:'Your plan',freeUsage:'{used} of {limit} free stories used',subscriptionActive:'Unlimited stories — subscription active',lifetimeActive:'Unlimited stories — lifetime',monthly:'Monthly',annual:'Annual',lifetime:'Lifetime — one payment',checkout:'Continue to checkout',checkoutBusy:'Opening checkout…',dormant:'Online payment is not connected yet. Your stories remain fully available.'},zh:{planHeading:'你的方案',freeUsage:'已使用 {used}/{limit} 个免费故事',subscriptionActive:'无限故事——订阅已生效',lifetimeActive:'无限故事——终身有效',monthly:'按月',annual:'按年',lifetime:'终身——一次付清',checkout:'前往结账',checkoutBusy:'正在打开结账……',dormant:'在线支付尚未开通。你的故事仍然完全可用。'},es:{planHeading:'Tu plan',freeUsage:'{used} de {limit} historias gratis usadas',subscriptionActive:'Historias ilimitadas — suscripción activa',lifetimeActive:'Historias ilimitadas — de por vida',monthly:'Mensual',annual:'Anual',lifetime:'De por vida — un solo pago',checkout:'Ir al pago',checkoutBusy:'Abriendo el pago…',dormant:'El pago en línea aún no está conectado. Tus historias siguen totalmente disponibles.'}};
-
 // The upgrade surface (paywall §5): plan state first, then — only when Stripe
 // is configured and the owner is on the free plan — the subscription cadence
 // toggle and the lifetime unlock side by side. Dormant deployments keep the
@@ -54,7 +51,7 @@ const panelCopy={en:{planHeading:'Your plan',freeUsage:'{used} of {limit} free s
 // is the free-forever invariant: outside the owner's Storypress tree the
 // panel renders nothing.
 export function UpgradePanel({billing,language,ownerTree}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean}){
- const c=panelCopy[language];
+ const c=paywallCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
