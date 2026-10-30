@@ -1,0 +1,4 @@
+# Storypress repo policy
+defaultBranch: main
+mergeMethod: squash   # GitHub allows merge commit, squash, and rebase; squash chosen as default for setup PRs
+requireHumanMerge: true
