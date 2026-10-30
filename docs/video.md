@@ -15,3 +15,8 @@ spec "hidden client-side memory videos" (October 30, 2026).
   that v1 never fills. Self-recorded narration stays on-device when it
   arrives; AI narration and generated motion are later, separately-specced
   layers (see the spec's roadmap).
+- On the paper stage, an approved keepsake shows a video action beside share
+  images only when the services payload reports `video.enabled` — the section
+  is absent, not disabled, when either the flag or the approval is missing.
+  Rendering and delivery stay client-side; no navigation entries anywhere
+  else.
