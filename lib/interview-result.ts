@@ -17,3 +17,23 @@ export function questionPreview(raw:string){
  // Don't display half of a surrogate pair while a chunk is still arriving.
  return text.replace(/[\uD800-\uDBFF]$/,'');
 }
+
+
+// Length of the leading run of complete sentences in a streamed question —
+// the text through the last sentence-final mark (closing quotes included).
+// CJK marks, question and exclamation marks are unambiguous; a Latin period
+// only ends a sentence when followed by whitespace or the end of the text,
+// so decimals and abbreviations stay attached. A rare false split (for
+// example "Mr.") costs a little spoken cadence, never content: only the
+// fully validated reply is ever persisted.
+export function spokenSentencesLength(text:string){
+ const closers='」』”’”）)';
+ const scan=(i:number)=>{let j=i+1;while(j<text.length&&closers.includes(text[j]))j++;return j;};
+ let end=0;
+ for(let i=0;i<text.length;i++){
+  const char=text[i];
+  if('。！？!?…'.includes(char)){end=scan(i);continue;}
+  if(char==='.'){const j=scan(i);if(text[j]===undefined||/\s/.test(text[j]))end=j;}
+ }
+ return end;
+}
