@@ -19,7 +19,7 @@ const bin = name => join(binDir, name);
 const work = mkdtempSync(join(tmpdir(), 'storypress-billing-'));
 const socket = work, log = join(work, 'pg.log');
 const user = '11111111-1111-4111-8111-111111111111', mate = '22222222-2222-4222-8222-222222222222';
-const free = '33333333-3333-4333-8333-333333333333', paid = '44444444-4444-4444-8444-444444444444';
+const free = '33333333-3333-4333-8333-333333333333', paid = '44444444-4444-4444-8444-444444444444', addon = '55555555-5555-4555-8555-555555555555';
 let down = false;
 const stop = () => { if (!down) { down = true; try { execFileSync(bin('pg_ctl'), ['-D', join(work, 'pgdata'), '-o', `-p ${port} -k ${socket}`, 'stop', '-m', 'fast'], {stdio: 'ignore'}); } catch {} rmSync(work, {recursive: true, force: true}); } };
 process.on('exit', stop); process.on('SIGINT', () => process.exit(1)); process.on('SIGTERM', () => process.exit(1));
@@ -41,7 +41,7 @@ try {
     create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`);
   for (const file of ['202610110001_storypress.sql', '202610300001_contributions.sql', '202610300002_billing.sql'])
     execFileSync(bin('psql'), ['-h', socket, '-p', String(port), '-U', 'postgres', '-d', 'billtest', '-v', 'ON_ERROR_STOP=1', '-q', '-f', join('supabase', 'migrations', file)], {stdio: 'pipe'});
-  psql(`insert into auth.users(id) values('${user}'),('${mate}'),('${free}'),('${paid}');`);
+  psql(`insert into auth.users(id) values('${user}'),('${mate}'),('${free}'),('${paid}'),('${addon}');`);
 
   // Schema shape: RLS everywhere, zero policies, service-role-only access.
   for (const table of ['storypress_entitlements', 'storypress_story_counts', 'storypress_billing_events']) {
@@ -57,6 +57,16 @@ try {
   psql(`insert into public.storypress_billing_events(event_id) values('evt_1');`);
   assert.ok(failing(`insert into public.storypress_billing_events(event_id) values('evt_1')`).includes('duplicate key'), 'event_id is a primary key so webhook redeliveries collide');
   psql(`delete from public.storypress_billing_events where event_id='evt_1';`);
+
+  // Video add-on hook (paywall §6): the addons column accepts a JSON array
+  // like ["video"] with no schema change, and a plan upsert — the exact write
+  // shape applyEntitlement issues, which never touches the addons column —
+  // leaves a granted add-on intact. A future one-time video unlock therefore
+  // needs zero migration.
+  psql(`insert into public.storypress_entitlements(owner_id,plan,addons) values('${addon}','free','["video"]');`);
+  assert.equal(psql(`select addons from public.storypress_entitlements where owner_id='${addon}'`), '["video"]', 'addons round-trips a video unlock with no schema change');
+  psql(`insert into public.storypress_entitlements(owner_id,plan,addons) values('${addon}','lifetime','[]') on conflict (owner_id) do update set plan='lifetime';`);
+  assert.equal(psql(`select addons from public.storypress_entitlements where owner_id='${addon}'`), '["video"]', 'a plan upsert must not erase granted addons');
 
   // RPC surface: security definer, locked search_path, service_role-only execution.
   assert.equal(psql(`select prosecdef from pg_proc where proname='storypress_reserve_story'`), 't', 'reserve RPC must be security definer');
@@ -119,7 +129,7 @@ try {
   const dormant = (() => { try { return execFileSync('git', ['grep', '-l', '-E', 'storypress_entitlements|storypress_story_counts|storypress_billing_events|storypress_reserve_story', '--', 'app', 'server', 'lib', 'worker', 'api']).toString().trim().split('\n').filter(Boolean); } catch (error) { if (error.status === 1) return []; throw error; } })();
   assert.deepEqual(dormant.filter(path => !sanctioned.has(path)), [], `billing tables referenced outside sanctioned server code: ${dormant}`);
 
-  console.log('Passed: billing schema shape, RLS/policy/ACL isolation, service-role-only reserve RPC (security definer, locked search_path), free cap + refusal semantics, monotonic delete-proof counter, entitled grace and downgrade re-metering, parallel race admits exactly the remaining slots, no decrement path, and the sanctioned-reader governance lint. Verified against a real throwaway PostgreSQL cluster with Supabase role/schema stubs; live Supabase activation still required.');
+  console.log('Passed: billing schema shape, RLS/policy/ACL isolation, service-role-only reserve RPC (security definer, locked search_path), free cap + refusal semantics, monotonic delete-proof counter, entitled grace and downgrade re-metering, parallel race admits exactly the remaining slots, no decrement path, the video add-on hook (addons accepts ["video"] with no schema change and plan upserts never erase it), and the sanctioned-reader governance lint. Verified against a real throwaway PostgreSQL cluster with Supabase role/schema stubs; live Supabase activation still required.');
 } finally {
   stop();
 }

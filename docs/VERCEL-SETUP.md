@@ -29,7 +29,7 @@ STRIPE_PRICE_LIFETIME=YOUR_STRIPE_PRICE_ID
 STORYPRESS_FREE_STORIES=3
 ```
 
-`STORYPRESS_FREE_STORIES` is optional (default 3) and counts self-started original stories ever per account — deletes never refund it, while translations and save-as-copies stay free. In the Stripe dashboard, point a webhook at `https://YOUR_DEPLOYMENT/api/stripe-webhook` subscribed to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.paid`, and copy its signing secret into `STRIPE_WEBHOOK_SECRET`. Redeploy after changing variables.
+`STORYPRESS_FREE_STORIES` is optional (default 3) and counts self-started original stories ever per account — deletes never refund it, while translations and save-as-copies stay free. In the Stripe dashboard, point a webhook at `https://YOUR_DEPLOYMENT/api/stripe-webhook` subscribed to `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.updated`, `customer.subscription.deleted` and `invoice.paid`, and copy its signing secret into `STRIPE_WEBHOOK_SECRET`. Redeploy after changing variables. The full connect runbook — products and prices, webhook configuration, and a test-mode checkout checklist — is in [Stripe setup](STRIPE-SETUP.md).
 
 `GEMINI_MODEL` is optional. The current default is `gemini-3.8-flash`. `NIMBLE_API_KEY` is optional; without it, research is unavailable. Vercel does not inherit local `.dev.vars` or Sites secrets. Redeploy after changing variables. The adapter refuses API access when Supabase is incomplete and never accepts a visitor-supplied Sites identity header.
 
