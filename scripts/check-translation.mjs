@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 const bundled=await build({stdin:{contents:"export * from './lib/translation';export * from './lib/story';export * from './lib/story-saver';export * from './lib/edition';export * from './lib/keepsake';export * from './server/api';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',loader:{'.txt':'text','.jpg':'dataurl'}});
-const {translationInput,translatedStory,validateTranslation,storySchema,initialStory,editionSnapshot,editionHtml,keepsakeMarkup,createStorySaver,handleApi}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+const {translationInput,translatedStory,validateTranslation,transcriptInput,validateTranscript,applyTranscriptTranslation,storySchema,initialStory,editionSnapshot,editionHtml,keepsakeMarkup,createStorySaver,handleApi}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
 const story={...initialStory,name:'Lin',approved:true,presentation:{version:1,format:'booklet'},paper:{headline:'Grandma’s kitchen',standfirst:'A place for all of us.',paragraphs:['Grandma made dumplings.','I always wanted another.'],quote:''},photo:'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==',photoCaption:'Our kitchen',artwork:'memories',turns:[{role:'user',text:'PRIVATE_INTERVIEW'}],draft:'PRIVATE_UNSENT',artInstructions:'PRIVATE_DIRECTIONS',sources:[{id:'keep',title:'Market',description:'The market opened in 1960.',date:'June 1960',url:'https://example.org/archive',publisher:'Archive',selected:true,connection:'PRIVATE_CONNECTION',question:'PRIVATE_QUESTION'},{id:'omit',title:'PRIVATE_UNSELECTED',description:'PRIVATE_UNSELECTED',date:'',url:'https://example.org/other',publisher:'Archive',selected:false,connection:'',question:''}]};
 const result={sourceLanguage:'en',paper:{headline:'外婆的厨房',standfirst:'属于我们所有人的地方。',paragraphs:['外婆包饺子。','我总想再吃一个。'],quote:''},photoCaption:'我们的厨房',context:[{title:'集市',description:'集市于1960年开业。',date:'1960年6月'}]};
 const input=translationInput(story,'zh'),before=structuredClone(story);
@@ -39,5 +39,23 @@ try{
  queue=[auth(),quota(true),provider()];const response=await handleApi(request(),env);assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.deepEqual(await response.json(),{translation:result});assert.equal(queue.length,0);
  queue=[auth(),quota(true),provider({...result,context:[]})];assert.equal((await handleApi(request(),env)).status,502);assert.equal(queue.length,0);
  queue=[auth(),quota(true),{status:500,body:{error:'PRIVATE_PROVIDER_ERROR'}}];const failed=await handleApi(request(),env);assert.equal(failed.status,502);assert.ok(!(await failed.text()).includes('PRIVATE_PROVIDER_ERROR'));assert.equal(queue.length,0);assert.deepEqual(story,before);
+ // Transcript translation: explicit opt-in, minimal input, structure and roles preserved on this story.
+ const interview={...story,turns:[{role:'user',text:'She made dumplings.'},{role:'assistant',text:'  '},{role:'user',text:'Every Sunday.'}]};
+ const transcriptRequest=transcriptInput(interview,'zh');
+ assert.ok(!JSON.stringify(transcriptRequest).includes('PRIVATE_'));assert.ok(!JSON.stringify(transcriptRequest).includes('base64'));
+ assert.deepEqual(transcriptRequest,{turns:[{text:'She made dumplings.'},{text:'  '},{text:'Every Sunday.'}],targetLanguage:'zh'});
+ assert.throws(()=>validateTranscript(transcriptRequest,{turns:[{text:'她包饺子。'},{text:'  '}]}));
+ assert.throws(()=>validateTranscript(transcriptRequest,{turns:[{text:'她包饺子。'},{text:'好吃'},{text:'每个周日。'}]}),'An empty turn must stay empty');
+ const transcriptResult={turns:[{text:'她包饺子。'},{text:'  '},{text:'每个周日。'}]};
+ assert.deepEqual(validateTranscript(transcriptRequest,transcriptResult),['她包饺子。','  ','每个周日。']);
+ const withTranscript=applyTranscriptTranslation(interview,'zh',transcriptResult);
+ assert.deepEqual(withTranscript.transcriptTranslations.zh.map(t=>({role:t.role,text:t.text})),[{role:'user',text:'她包饺子。'},{role:'assistant',text:'  '},{role:'user',text:'每个周日。'}]);
+ assert.equal(interview.transcriptTranslations,undefined,'The original story stays untouched');
+ const transcriptApi=(transcript=transcriptRequest,signedIn=true)=>new Request('https://story.test/api/story',{method:'POST',headers:{Origin:'https://story.test',...(signedIn?{Authorization:'Bearer fixture'}:{})},body:JSON.stringify({action:'translate-transcript',transcript})});
+ const providerTranscript=(output=transcriptResult)=>({check:c=>{assert.ok(c.url.endsWith('/models/gemini-test-writing:generateContent'));assert.ok(!JSON.stringify(c.body).includes('PRIVATE_'));assert.deepEqual(JSON.parse(c.body.contents[0].parts[0].text),JSON.parse(JSON.stringify(transcriptRequest)));},body:{candidates:[{content:{parts:[{text:JSON.stringify(output)}]},finishReason:'STOP'}]}});
+ assert.equal((await handleApi(transcriptApi(transcriptRequest,false),env)).status,401);
+ queue=[auth(),quota(false)];assert.equal((await handleApi(transcriptApi(),env)).status,429);assert.equal(queue.length,0);
+ queue=[auth(),quota(true),providerTranscript()];const transcriptResponse=await handleApi(transcriptApi(),env);assert.equal(transcriptResponse.status,200);assert.equal(transcriptResponse.headers.get('cache-control'),'no-store');assert.deepEqual(await transcriptResponse.json(),{turns:['她包饺子。','  ','每个周日。']});assert.equal(queue.length,0);
+ queue=[auth(),quota(true),providerTranscript({...transcriptResult,turns:[{text:'她包饺子。'},{text:'  '}]})];assert.equal((await handleApi(transcriptApi(),env)).status,502);assert.equal(queue.length,0);
 }finally{globalThis.fetch=originalFetch;}
-console.log('Passed: translation data minimization, validation, separate private copies, failed-save retention, original preservation, all three formats, translated reader/download language, auth, quota, Cloud writer routing, and upstream failures.');
+console.log('Passed: translation data minimization, validation, separate private copies, failed-save retention, original preservation, all three formats, translated reader/download language, auth, quota, Cloud writer routing, upstream failures, and transcript translation.');
