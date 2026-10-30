@@ -6,7 +6,7 @@ import {ServiceError} from '../lib/providers';
 export type Bindings=Record<string,string|undefined>;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export function configured(env:Bindings){return !!(env.SUPABASE_URL&&env.SUPABASE_PUBLISHABLE_KEY&&env.SUPABASE_SECRET_KEY);}
-function supabase(env:Bindings){if(!configured(env))throw new ServiceError('Account saving is not connected yet. Your device draft is kept.',503);return env.SUPABASE_URL!.replace(/\/$/,'');}
+export function supabase(env:Bindings){if(!configured(env))throw new ServiceError('Account saving is not connected yet. Your device draft is kept.',503);return env.SUPABASE_URL!.replace(/\/$/,'');}
 export async function identity(request:Request,env:Bindings){
  if(!env.SUPABASE_URL){const id=request.headers.get('oai-authenticated-user-id');return id?{id,email:''}:null;}
  const bearer=request.headers.get('authorization');if(!bearer?.startsWith('Bearer '))return null;
@@ -16,12 +16,12 @@ export async function identity(request:Request,env:Bindings){
 }
 export async function owner(request:Request,env:Bindings){const user=await identity(request,env);if(!user)throw new ServiceError('Sign in to use AI or save your stories. You can still explore the sample.',401);return user.id;}
 // Modern secret keys belong only in apikey; Authorization is reserved for user JWTs.
-async function db(env:Bindings,path:string,method='GET',body?:unknown){
+export async function db(env:Bindings,path:string,method='GET',body?:unknown){
  const response=await fetch(`${supabase(env)}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SECRET_KEY!,'User-Agent':'Storypress-Server/1.0','Content-Type':'application/json',Prefer:'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
  if(!response.ok)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
  return response.status===204?null:response.json();
 }
-function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Once & Ours directly.',403);}
+export function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Once & Ours directly.',403);}
 const uuid=z.string().uuid();
 export async function accountApi(request:Request,env:Bindings){
  if(request.method!=='GET')return json({error:'Method not allowed'},405);
@@ -78,4 +78,32 @@ export async function reserveAi(userId:string,env:Bindings,action:string){
  if(!env.SUPABASE_URL)return;
  const allowed=await db(env,'rpc/storypress_reserve_ai','POST',{p_user:userId,p_action:action});
  if(allowed!==true)throw new ServiceError('The daily AI preview allowance has been reached. You can still edit, download and print. Please try again tomorrow.',429,'daily_allowance');
+}
+
+
+export const GUEST_DAILY_UNIT_LIMIT=20;
+// Guests hold no account row, so their AI allowance uses invite-scoped usage
+// keys. PostgREST cannot increment server-side and the quota RPC requires a
+// signed-in user, so reservations use a guarded compare-and-set with bounded
+// retries — concurrent guests either both land or one re-reads and retries.
+export async function reserveGuestAi(env:Bindings,inviteId:string){
+ if(!env.SUPABASE_URL)return;
+ const day=new Date().toISOString().slice(0,10),siteKey='site:'+day,inviteKey='invite:'+inviteId+':'+day;
+ for(let attempt=0;attempt<5;attempt++){
+  const rows=await db(env,`storypress_ai_usage?scope=in.("${encodeURIComponent(siteKey)}","${encodeURIComponent(inviteKey)}")&select=scope,units`) as {scope:string;units:number}[]|null;
+  const used=(key:string)=>rows?.find(row=>row.scope===key)?.units??0;
+  if(used(inviteKey)+1>GUEST_DAILY_UNIT_LIMIT)throw new ServiceError('The daily invitation allowance has been reached. Please try again tomorrow.',429,'daily_allowance');
+  if(used(siteKey)+1>400)throw new ServiceError('The daily AI preview allowance has been reached. You can still edit, download and print. Please try again tomorrow.',429,'daily_allowance');
+  const siteMoved=await casUsage(env,siteKey,used(siteKey)),inviteMoved=await casUsage(env,inviteKey,used(inviteKey));
+  if(siteMoved&&inviteMoved)return;
+ }
+ throw new ServiceError('Too many people are telling stories right now. Please try again in a moment.',503);
+}
+async function casUsage(env:Bindings,scope:string,current:number){
+ if(current>0){
+  const patched=await db(env,`storypress_ai_usage?scope=eq.${encodeURIComponent(scope)}&units=eq.${current}`,'PATCH',{units:current+1});
+  return Array.isArray(patched)&&patched.length===1;
+ }
+ try{await db(env,'storypress_ai_usage','POST',{scope,units:1});return true;}
+ catch{return false;} // Insert lost a race with an existing row; the next loop re-reads both counters (a real outage rethrows there).
 }
