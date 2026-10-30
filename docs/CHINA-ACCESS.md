@@ -45,3 +45,40 @@ and ICP decisions whenever the business case justifies it.
 
 Nothing in this codebase prevents any of these; none of them can be done in code alone.
 Revisit each only on a founder decision.
+
+## Staged Mandarin live-voice path
+
+Mandarin **story text** routes today (Qwen via OpenRouter); **live voice** does not. When a
+Mandarin live conversation becomes a product priority, the path is a backend relay, staged
+as follows:
+
+1. **Why a relay is unavoidable.** Qwen Omni Realtime — the realtime voice API for Mandarin
+   live — is DashScope-only; OpenRouter carries no realtime voice API. It has no
+   browser-safe ephemeral token: the API key must travel in the WebSocket handshake, so the
+   browser can never hold it. `server/live.ts` plays exactly this role for Gemini today
+   (server-side credential and config holder minting short-lived access); a Qwen path needs
+   the same role served by a process that can terminate websockets.
+2. **Why it is not built here yet.** The server runs as Vercel functions, which cap at
+   300 seconds and cannot terminate websockets at all — the repo has no WebSocket surface.
+   The leading candidate is a small Cloudflare Worker relay inheriting `server/live.ts`'s
+   credential-and-config-holder role. On the client, the live-access grant's `provider`
+   field exists but is currently ignored; wiring it up is part of that stage, after the
+   in-flight voice-responsiveness work and a native-speaker Mandarin eval of the routed
+   text path.
+3. **What stays founder-owned** (per the decisions above): DashScope/Alibaba procurement
+   and billing, the hosting surface for the relay, and ICP filing for any mainland domain.
+
+### When DashScope direct replaces OpenRouter for text
+
+The OpenAI-compatible adapter in `lib/providers.ts` speaks the contract both providers
+share, so switching zh text to DashScope direct is an environment change (base URL, key,
+model), not code. It earns its place when any of these turn real:
+
+1. **Mandarin live voice** — its realtime API is DashScope-only (see above).
+2. **A genuine mainland deployment** — DashScope Beijing region under a China Aliyun
+   entity (real-name verification, CNY billing; lead time).
+3. **Scale** — direct list pricing runs slightly under OpenRouter's spread; a rounding
+   error at current volume, not a trigger on its own.
+
+Until one of those fires, OpenRouter keeps Mandarin text working against the existing
+prepaid balance with zero new accounts.
