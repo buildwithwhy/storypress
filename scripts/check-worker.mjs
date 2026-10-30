@@ -3,7 +3,7 @@ import worker from '../dist/server/index.js';
 const story={name:'Alex',language:'en',occasion:'life',turns:[{role:'user',text:'I watched the Moon landing in Queens with my grandmother.'}],sources:[],sample:false,approved:false};
 const request=(action,auth=true,origin='https://story.test')=>new Request('https://story.test/api/story',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(auth?{'oai-authenticated-user-id':'test-user'}:{})},body:JSON.stringify({action,story})});
 assert.equal((await worker.fetch(new Request('https://story.test/'),{})).status,200);
-assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'}});
+assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{liveVoice:false,gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'}});
 assert.equal((await worker.fetch(request('write',false),{})).status,401);
 assert.equal((await worker.fetch(request('write',true,'https://other.test'),{})).status,403);
 assert.equal((await worker.fetch(request('write'),{})).status,503);

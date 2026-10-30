@@ -4,7 +4,7 @@ import { z } from "zod";
 import {generateStoryImage,imageModel} from "../lib/image-provider";
 import { storySchema, sourceSchema, paperSchema, photoAnalysisSchema, originalWords, safeSourceUrl } from "../lib/story";
 import { interviewer, researcher, contextualEditor, ghostwriter, photoReader } from "../lib/editorial";
-import { createProviders, ServiceError } from "../lib/providers";
+import { createProviders, ServiceError, type TextProvider } from "../lib/providers";
 import {owner,reserveAi,type Bindings} from './storage';
 import {photoPart} from '../lib/photo';
 import {storyFocus} from '../lib/story-modes';
@@ -12,7 +12,8 @@ import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
 import {interviewResult} from '../lib/interview-result';
 import {streamInterview} from './interview-stream';
 export async function handleApi(request: Request, env: Bindings) {
- const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson,interviewStream}=createProviders(env as Record<string,string|undefined>);
+ const providers: TextProvider = createProviders(env as Record<string,string|undefined>);
+ const {setting,backend,modelConfigured,modelFor,gemini,nimble,parseJson,interviewStream}=providers;
  if(request.method !== "POST"&&request.method !== "GET") return new Response("Method not allowed",{status:405});
   try {
     if(request.method === "GET") return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)}},{headers:{"Cache-Control":"no-store"}});

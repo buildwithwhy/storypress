@@ -1,7 +1,24 @@
 import { z } from "zod";
 import {eventData} from './event-stream';
-type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
+export type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
 export type ModelTask = "interview" | "write" | "photo" | "transcribe" | "research";
+export interface ResearchResult { title: string; url: string; content: string; description?: string | null; }
+
+// The text seam: every AI text, research, and JSON-parse call resolves through
+// this interface. Gemini (AI Studio or Vertex backend) is the only
+// implementation today; a future provider implements the same members and no
+// call site changes. Kept intentionally synchronous-shaped: the server awaits
+// one result per call, streaming arrives via interviewStream.
+export interface TextProvider {
+  setting(key: string): string;
+  backend(): string;
+  modelConfigured(): boolean;
+  modelFor(task: ModelTask): string;
+  gemini(system: string, input: ModelInput, json?: boolean, model?: string): Promise<string>;
+  nimble(query: string, locale: string): Promise<ResearchResult[]>;
+  parseJson<T>(text: string, schema: z.ZodType<T>): T;
+  interviewStream(system: string, input: string, model: string, signal: AbortSignal): AsyncGenerator<string, void, unknown>;
+}
 const DEFAULT_MODEL = "gemini-3.8-flash";
 const taskModelSettings: Record<ModelTask, string> = {
   interview: "GEMINI_INTERVIEW_MODEL",
@@ -10,7 +27,7 @@ const taskModelSettings: Record<ModelTask, string> = {
   transcribe: "GEMINI_TRANSCRIPTION_MODEL",
   research: "GEMINI_RESEARCH_MODEL",
 };
-export function createProviders(env: Record<string, string | undefined>) {
+export function createProviders(env: Record<string, string | undefined>): TextProvider {
 function setting(key: string): string { return env[key] || ""; }
 function backend(): string { return setting("GEMINI_BACKEND") || "ai-studio"; }
 function validateModel(model: string): string {
@@ -93,7 +110,7 @@ function providerError(status: number): ServiceError {
   return new ServiceError("The story editor could not complete that request. Your words are kept; please try again.", 502);
 }
 function parseJson<T>(text: string, schema: z.ZodType<T>): T { const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""); try { return schema.parse(JSON.parse(cleaned)); } catch { throw new ServiceError("The editor’s response could not be read. Please try again; your words have been kept."); } }
-async function nimble(query: string, locale: string) {
+async function nimble(query: string, locale: string): Promise<ResearchResult[]> {
   const key = setting("NIMBLE_API_KEY");
   if (!key) throw new ServiceError("Historical search is not connected yet. You can continue with your own memories.", 503);
   const res = await fetch("https://sdk.nimbleway.com/v2/search", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ query, locale, max_results: 6, search_depth: "standard", full_content: true, output_format: "plain_text" }), signal: AbortSignal.timeout(45000) });
