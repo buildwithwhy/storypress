@@ -32,6 +32,16 @@ An unconfigured or failed zh route degrades to Gemini for that call and logs a `
 
 Deliberately not routed: **translation and transcription stay on Gemini** (their requests carry no story object, so no language is available to route on, and translate is the most correctness-sensitive path), **artwork stays Vertex-only**, and **live voice stays Gemini in every language** — a Mandarin live path needs a realtime API OpenRouter does not carry (see `docs/CHINA-ACCESS.md`). Switching zh to a DashScope direct connection later is an environment change (base URL, key, model) behind the same adapter.
 
+### Mandarin route cost (per 1M tokens)
+
+| Text model | Input | Output | Source (as of) |
+| --- | --- | --- | --- |
+| Qwen3.8 Flash via OpenRouter — the default zh route | $0.15 | $0.47 | openrouter.ai, fetched October 30, 2026; upstream provider is Alibaba Cloud Int. |
+| Gemini 3.8 Flash — the en/es route and the fallback | $0.75 | $3.75 | Google Cloud pricing, introductory through **December 31, 2026**, rising to $1.50 / $7.50 on January 1, 2027 |
+| Qwen3.8 Flash direct on DashScope — future option | $0.119 | $0.401 | Alibaba DashScope list price, provider research October 2026 |
+
+At the introductory Gemini rates the zh route is roughly 5× cheaper on input and 8× on output; the Gemini price rise on January 1, 2027 narrows but does not close the gap. DashScope direct list pricing runs slightly under OpenRouter's spread — rounding error at current volume (daily AI-unit allowances, not dollar spend). DashScope only earns its place for Mandarin live voice or a mainland deployment; see `docs/CHINA-ACCESS.md`. Prices change — verify the intended account before switching.
+
 ## Economical next experiments
 
 First improve the interview instructions and research flow. A larger model alone will not discover a restaurant unless the workflow asks for enough detail and runs a search.
