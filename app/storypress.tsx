@@ -26,6 +26,8 @@ import { interviewCopy } from "../lib/interview-copy";
 import {setupAccount,accountHeaders,accountRequest,type AccountConfig} from "../lib/account-client";
 import {Sharing} from "./sharing";
 import {Invites} from "./invites";
+import {InviteGuest} from "./invite-guest";
+import {parseInviteToken} from "../lib/invite-client";
 import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {sharingCopy} from "../lib/sharing-copy";
@@ -48,7 +50,7 @@ const STORAGE = DRAFT_PREFIX;
 function download(name: string, data: string, type = "text/plain") { const url = URL.createObjectURL(new Blob([data], { type })); const a = document.createElement("a"); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 500); }
 async function callApi(action: string, story?: Story, audio?: { data: string; mime: string }, signal?: AbortSignal, photoSearch?: {query:string;approved:true}, researchSearch?: {query:string;approved:true},imageStyle?:'illustration'|'comic') { const res = await fetch("/api/story", { method: "POST", headers: { "Content-Type": "application/json", ...await accountHeaders() }, body: JSON.stringify({ action, story: story ? { ...story, generatedArt:undefined,photo: action==='photo'?story.photo:undefined } : undefined, audio, ...(action==='photo'?{photoConsent:true}:{}), photoSearch, researchSearch, imageStyle }), signal }); const data = await res.json(); if (!res.ok) throw Object.assign(new Error(data.error || "That didn’t finish. Please try again."),{code:data.code}); return data; }
 
-export default function App() {
+function StoryApp() {
  const [account,setAccount]=useState<AccountConfig|null>(null);
  const [problem,setProblem]=useState('');
  const flushDraft=useRef<()=>void>(()=>{});
@@ -440,3 +442,11 @@ export function NewspaperView({ story, miniature = false }: { story: Story; mini
   <div className="paper-colophon"><span>{d.colophon}</span><span>{d.madeWith} <Asterisk size={10}/></span></div>
  </article>;
 }
+
+// A valid /i/<token> path renders the guest contribution surface instead of
+// the owner app; the token must match the server's 64-hex capability shape.
+export default function App(){
+ const token=parseInviteToken(location.pathname);
+ return token?<InviteGuest token={token}/>:<StoryApp/>;
+}
+

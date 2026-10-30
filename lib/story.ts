@@ -28,3 +28,7 @@ export function safeSourceUrl(value: string) { try { const u = new URL(value); r
 export function originalWords(story: Story) { return story.turns.filter(t => t.role === "user").map(t => t.text); }
 
 export function artifactLanguage(story:Story){return story.paperLanguage||story.language;}
+
+// Guests contribute on a synthetic story: no name, no sources — only their own
+// turns. Shared by the server prompt builder and the client surface.
+export function guestStory(language:Story['language'],occasion:Story['occasion'],turns:Turn[]):Story{return {name:'',language,occasion,turns,sources:[],sample:false,approved:false};}

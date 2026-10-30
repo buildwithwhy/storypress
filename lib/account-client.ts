@@ -27,9 +27,10 @@ export async function verifyEmailCode(email:string,code:string){
  if(error)throw error;
  if(!data.session)throw new Error('Sign-in could not be completed. Please try again.');
 }
-export async function signInWithGoogle(){
+export async function signInWithGoogle(returnTo?:string){
  if(!client)throw new Error('Accounts are not connected yet.');
- const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+'/'}});
+ // Guests on /i/<token> return to their invite, owners to the app.
+ const {error}=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:returnTo||location.origin+'/'}});
  if(error)throw error;
 }
 export async function signOut(){const {error}=await client!.auth.signOut({scope:'local'});if(error)throw error;}
