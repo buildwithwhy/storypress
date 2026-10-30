@@ -46,7 +46,14 @@ export async function storiesApi(request:Request,env:Bindings){
    const title=story.paper?.headline||(opening?{en:'Draft · ',zh:'草稿 · ',es:'Borrador · '}[story.language]+opening.slice(0,80)+(opening.length>80?'…':''):story.name||{en:'My story',zh:'我的故事',es:'Mi historia'}[story.language]);
    let rows;
    if(body.id){const revision=z.number().int().positive().parse(body.revision);rows=await db(env,`storypress_stories?id=eq.${id}&${own}&revision=eq.${revision}`,'PATCH',{title,data:story,revision:revision+1,updated_at:now});}
-   else rows=await db(env,'storypress_stories','POST',{id,owner_id:userId,title,data:story});
+   else{
+    // Metering seam (paywall §2): only self-started originals consume the
+    // monotonic counter. Translated keepsakes (originStoryId-linked rows) and
+    // save-as-copies (derivative marker from the story saver) insert freely —
+    // copies of copies inherit the exemption through the same two signals.
+    if(body.derivative!==true&&!story.originStoryId)await reserveStory(userId,env);
+    rows=await db(env,'storypress_stories','POST',{id,owner_id:userId,title,data:story});
+   }
    if(!rows.length)return json({error:'This story has a newer saved version. In My stories, save your draft as a new story to keep both versions.'},409);
    return json({id:rows[0].id,revision:rows[0].revision,share_token:rows[0].share_token,updated_at:rows[0].updated_at});
   }
@@ -70,7 +77,7 @@ export async function storiesApi(request:Request,env:Bindings){
    return json({id,revision:revision+1,share_token:token,url:token?`${url.origin}/s/${token}`:null});
   }
   return json({error:'Unknown action.'},400);
- }catch(error){if(error instanceof ServiceError)return json({error:error.message},error.status);if(error instanceof z.ZodError||error instanceof SyntaxError)return json({error:'Please check this story and try again.'},400);return json({error:error instanceof Error&&error.message.includes('approve')?error.message:'Could not save this change. Your device draft is kept.'},400);}
+ }catch(error){if(error instanceof ServiceError)return json({error:error.message,code:error.code},error.status);if(error instanceof z.ZodError||error instanceof SyntaxError)return json({error:'Please check this story and try again.'},400);return json({error:error instanceof Error&&error.message.includes('approve')?error.message:'Could not save this change. Your device draft is kept.'},400);}
 }
 export async function sharedEdition(request:Request,env:Bindings,token:string){
  if(env.STORYPRESS_PUBLIC_SHARING!=='true'||!/^[a-f0-9]{64}$/.test(token)||!['GET','HEAD'].includes(request.method))return new Response('Not found',{status:404,headers:{'Cache-Control':'no-store'}});
@@ -85,6 +92,24 @@ export async function reserveAi(userId:string,env:Bindings,action:string){
  if(!env.SUPABASE_URL)return;
  const allowed=await db(env,'rpc/storypress_reserve_ai','POST',{p_user:userId,p_action:action});
  if(allowed!==true)throw new ServiceError('The daily AI preview allowance has been reached. You can still edit, download and print. Please try again tomorrow.',429,'daily_allowance');
+}
+
+
+// Paywall metering (§2): the free allowance and its Stripe configuration gate.
+export function billingConfigured(env:Bindings){return !!env.STRIPE_SECRET_KEY;}
+export function freeStoryLimit(env:Bindings){const raw=env.STORYPRESS_FREE_STORIES?.trim(),limit=Number(raw);return raw&&Number.isInteger(limit)&&limit>=0?limit:3;}
+// The only real gate: called from the save-without-id seam before a self-started
+// original inserts, never for derivatives, revisions, deletes, or reads. While
+// Stripe is unconfigured this no-ops — a founder setup step must never block a
+// writer. The RPC owns the counter and the entitlement check; a structural
+// surprise fails closed as a storage error, never as a meter refusal.
+export async function reserveStory(userId:string,env:Bindings){
+ if(!billingConfigured(env))return;
+ const allowance=freeStoryLimit(env);
+ const results=await db(env,'rpc/storypress_reserve_story','POST',{p_user:userId,p_limit:allowance}) as {ok?:boolean;reason?:string}[]|null;
+ const [result]=Array.isArray(results)?results:[];
+ if(!result)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
+ if(result.ok!==true)throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
 }
 
 

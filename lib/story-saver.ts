@@ -2,7 +2,7 @@ import {type Story} from './story';
 export type SavedStory={id:string;revision:number;share_token?:string|null};
 export type SaveStatus='idle'|'waiting'|'saving'|'saved'|'error';
 export function hasStoryContent(story:Story){return !story.sample&&!!(story.draft?.trim()||story.photo||story.paper||story.turns.some(turn=>turn.role==='user'&&turn.text.trim()));}
-export function createStorySaver(options:{save:(story:Story,saved:SavedStory|null)=>Promise<SavedStory>;changeSharing:(action:'share'|'private',saved:SavedStory)=>Promise<SavedStory>;remove:(id:string)=>Promise<void>;onSaved:(saved:SavedStory|null)=>void;onStatus:(status:SaveStatus,error?:string)=>void}){
+export function createStorySaver(options:{save:(story:Story,saved:SavedStory|null,derivative?:boolean)=>Promise<SavedStory>;changeSharing:(action:'share'|'private',saved:SavedStory)=>Promise<SavedStory>;remove:(id:string)=>Promise<void>;onSaved:(saved:SavedStory|null)=>void;onStatus:(status:SaveStatus,error?:string)=>void}){
  let current:Story|null=null,identity:SavedStory|null=null,clean:string|null=null,tail:Promise<unknown>=Promise.resolve(),closed=false;
  function status(value:SaveStatus,error?:string){if(!closed)options.onStatus(value,error);}
  function replace(story:Story,saved:SavedStory|null,alreadySaved=false){current=story;identity=saved;clean=alreadySaved?JSON.stringify(story):null;options.onSaved(identity);status(hasStoryContent(story)?alreadySaved?'saved':'waiting':'idle');}
@@ -24,13 +24,16 @@ export function createStorySaver(options:{save:(story:Story,saved:SavedStory|nul
    const serialized=JSON.stringify(current);status('saving');
    // Preserve both versions when a stale revision cannot update the original.
    // Adopt the new identity only after creation succeeds; later edits drain there.
-   const saved=await options.save(JSON.parse(serialized),null);
+   // derivative:true — a copy of a story the user already owns never consumes
+   // the free-story meter (the server skips the reserve for derivative saves).
+   const saved=await options.save(JSON.parse(serialized),null,true);
    identity=saved;clean=serialized;if(!closed)options.onSaved(identity);
    return drain();
   }),
   saveCopy:(story:Story)=>enqueue(async()=>{
    await drain();status('saving');
-   const next=await options.save(story,null);
+   // derivative:true — translated keepsakes and copies insert freely (paywall §2).
+   const next=await options.save(story,null,true);
    // A failed create leaves the original identity and draft active.
    replace(story,next,true);return next;
   }),
