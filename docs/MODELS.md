@@ -18,6 +18,20 @@ Per-task routing is available, but **no task default has changed**. Resolution i
 
 Set `GEMINI_BACKEND=vertex` for the Google Cloud billing route. AI Studio is a separate supported text backend with separate billing; Google Cloud welcome credits do not cover its Developer API. Keys belong only in server environment settings. The frontend never selects arbitrary models.
 
+## Language routing
+
+Story text follows the narrator's **story language** — the required, user-chosen language on every story. Text providers are constructed per request from the environment:
+
+| Story language | Provider | Server settings |
+| --- | --- | --- |
+| `en`, `es` | Gemini (per-task table above) | unchanged |
+| `zh` | Qwen through the OpenAI-compatible adapter (`https://openrouter.ai/api/v1`) when `OPENROUTER_API_KEY` is set | `OPENROUTER_API_KEY`; optional `STORYPRESS_ZH_TEXT_MODEL` (default `qwen/qwen3.8-flash`) |
+| any language, route unconfigured | Gemini | — |
+
+An unconfigured or failed zh route degrades to Gemini for that call and logs a `[language-routing]` line; user-facing error copy still maps through the story language. Routed calls send `response_format: json_object` where JSON is requested, keep the prompt-level JSON instruction, and every output is re-validated by the existing zod schemas; interview streaming maps OpenRouter's server-sent events onto the same streamed-question shape. Quota accounting is unchanged (same action names, language-blind).
+
+Deliberately not routed: **translation and transcription stay on Gemini** (their requests carry no story object, so no language is available to route on, and translate is the most correctness-sensitive path), **artwork stays Vertex-only**, and **live voice stays Gemini in every language** — a Mandarin live path needs a realtime API OpenRouter does not carry (see `docs/CHINA-ACCESS.md`). Switching zh to a DashScope direct connection later is an environment change (base URL, key, model) behind the same adapter.
+
 ## Economical next experiments
 
 First improve the interview instructions and research flow. A larger model alone will not discover a restaurant unless the workflow asks for enough detail and runs a search.
