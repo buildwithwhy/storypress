@@ -39,6 +39,34 @@ export function textRoute(env: Record<string, string | undefined>, language: Lan
   if (language !== "zh" || !env.OPENROUTER_API_KEY) return { provider: "gemini" };
   return { provider: "openai-compatible", baseUrl: ZH_TEXT_BASE_URL, apiKeyEnv: "OPENROUTER_API_KEY", model: env.STORYPRESS_ZH_TEXT_MODEL || ZH_TEXT_DEFAULT_MODEL };
 }
+// Language-route visibility: the services payload reports the provider and
+// model each language resolves to and whether that provider is ready, so the
+// setup surface and checks can see routing without touching secrets. Gemini
+// languages report the task-independent base model; per-task overrides remain
+// in the payload's models field. "Configured" asks the provider the request
+// path would construct, so the two can never disagree.
+export const languageRouteInfoSchema = z.object({
+  provider: z.enum(["gemini", "openai-compatible"]),
+  baseUrl: z.string().url().optional(),
+  model: z.string().min(1),
+  configured: z.boolean(),
+});
+export type LanguageRouteInfo = z.infer<typeof languageRouteInfoSchema>;
+export const languageRoutesSchema = z.object({ en: languageRouteInfoSchema, zh: languageRouteInfoSchema, es: languageRouteInfoSchema });
+export function languageRoutes(env: Record<string, string | undefined>): Record<Language, LanguageRouteInfo> {
+  const info = (language: Language): LanguageRouteInfo => {
+    const route = textRoute(env, language);
+    return {
+      provider: route.provider,
+      ...(route.provider === "openai-compatible" ? { baseUrl: route.baseUrl } : {}),
+      model: route.provider === "openai-compatible" ? route.model : env.GEMINI_MODEL || DEFAULT_MODEL,
+      configured: createProviders(env, language).modelConfigured(),
+    };
+  };
+  // Literal keys so a Language added to lib/story.ts fails compilation here
+  // until this payload — and the schema above — learn about it.
+  return { en: info("en"), zh: info("zh"), es: info("es") };
+}
 function providerError(status: number): ServiceError {
   if (status === 429) return new ServiceError("The story editor is busy. Please try again in a moment.", 429);
   if (status === 402) return new ServiceError("The story editor is waiting for its billing setup. Your words are kept; please contact the app owner.", 503);

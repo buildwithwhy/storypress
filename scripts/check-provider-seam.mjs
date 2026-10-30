@@ -18,6 +18,9 @@ const sources={
 assert.match(sources.providers,/export interface TextProvider/,'lib/providers.ts must export the TextProvider interface');
 assert.match(sources.providers,/export interface ResearchResult/,'research results must be typed at the seam');
 assert.match(sources.providers,/export function createProviders\(env: Record<string, string \| undefined>, language: Language = "en"\): TextProvider/,'the factory must return the interface, routed by language');
+assert.match(sources.providers,/const ZH_TEXT_BASE_URL = "https:\/\/openrouter\.ai\/api\/v1"/,'routed connection URLs live in the route table, like every provider URL');
+assert.ok(!sources.api.includes('openrouter'),'server call sites never name routed provider hosts — the route table owns the URL');
+assert.ok(!sources.live.includes('createProviders'),'live voice must not route through the text table — the grant keeps naming gemini');
 assert.match(sources.api,/const providers: TextProvider = createProviders/,'server/api.ts must consume the named interface');
 assert.match(sources.liveVoice,/export interface LiveVoiceProvider/,'live-voice must export the provider interface');
 assert.match(sources.liveVoice,/export const geminiLiveVoice: LiveVoiceProvider/,'gemini must be a typed implementation');
@@ -36,6 +39,12 @@ const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 const providers=createProviders({GEMINI_BACKEND:'vertex',GOOGLE_CLOUD_PROJECT:'fixture',VERTEX_API_KEY:'k'});
 for(const member of ['setting','backend','modelConfigured','modelFor','gemini','nimble','parseJson','interviewStream'])assert.equal(typeof providers[member],'function',`TextProvider.${member} must exist`);
 assert.equal(providers.backend(),'vertex','config must select behavior through the interface');
+
+// Routing selects a different implementation through the same interface: the
+// routed provider must satisfy every TextProvider member unchanged.
+const routed=createProviders({GEMINI_API_KEY:'k',OPENROUTER_API_KEY:'k'},'zh');
+for(const member of ['setting','backend','modelConfigured','modelFor','gemini','nimble','parseJson','interviewStream'])assert.equal(typeof routed[member],'function',`TextProvider.${member} must exist on the routed implementation`);
+assert.equal(routed.backend(),'openai-compatible','routing must select the implementation through the same interface');
 
 assert.equal(geminiLiveVoice.id,'gemini');
 assert.equal(geminiLiveVoice.socketUrl({token:'fixture token'}),'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=fixture%20token','the gemini implementation owns the exact connection URL');

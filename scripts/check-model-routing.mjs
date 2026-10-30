@@ -22,7 +22,9 @@ globalThis.fetch = async (url, init) => {
   calls.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) });
   return Response.json(String(url).includes('aiplatform.googleapis.com')
     ? { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'fixture output' }] } }] }
-    : { output_text: 'fixture output' });
+    : String(url).includes('openrouter.ai')
+      ? { choices: [{ message: { content: 'fixture output' } }] }
+      : { output_text: 'fixture output' });
 };
 
 try {
@@ -31,6 +33,28 @@ try {
     assert.equal(createProviders({ GEMINI_MODEL: 'gemini-test-global' }).modelFor(task), 'gemini-test-global', 'Global model remains the fallback');
     assert.equal(createProviders({ GEMINI_MODEL: 'gemini-test-global', ...overrides }).modelFor(task), overrides[tasks[task]], 'Task override wins');
     assert.equal(createProviders({ GEMINI_MODEL: 'gemini-test-global', [tasks[task]]: '' }).modelFor(task), 'gemini-test-global', 'Empty environment values use the fallback');
+  }
+
+  // Language steering rides the same precedence: a routed language owns the
+  // model for every text task, while en/es keep their Gemini task models even
+  // with the zh route configured. Default-language construction — the
+  // transcription and translation call sites — stays on Gemini. All fetches
+  // are mocked; no paid API calls.
+  const routedEnv = { ...credentials, GEMINI_MODEL: 'gemini-test-global', ...overrides, OPENROUTER_API_KEY: 'mock-openrouter' };
+  assert.equal(createProviders(routedEnv).backend(), 'ai-studio', 'default-language construction (transcription, translation) stays on Gemini');
+  for (const task of ['interview', 'write', 'photo', 'research']) {
+    const zh = createProviders(routedEnv, 'zh');
+    assert.equal(zh.modelFor(task), 'qwen/qwen3.8-flash', 'a routed language owns the model for every task');
+    await zh.gemini('Fixture instructions', 'Fixture input', true);
+    const routedCall = calls.at(-1);
+    assert.equal(routedCall.url, 'https://openrouter.ai/api/v1/chat/completions', 'routed task calls dispatch to the route base URL');
+    assert.equal(routedCall.body.model, 'qwen/qwen3.8-flash');
+    assert.equal(routedCall.headers.Authorization, 'Bearer mock-openrouter');
+    for (const language of ['en', 'es']) {
+      const geminiProvider = createProviders(routedEnv, language);
+      await geminiProvider.gemini('Fixture instructions', 'Fixture input', true, geminiProvider.modelFor(task));
+      assert.equal(calls.at(-1).body.model, overrides[tasks[task]], `${language} keeps per-task Gemini models when the zh route is configured`);
+    }
   }
 
   for (const backend of ['vertex', 'ai-studio']) {

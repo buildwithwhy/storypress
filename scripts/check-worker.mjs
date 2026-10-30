@@ -3,7 +3,11 @@ import worker from '../dist/server/index.js';
 const story={name:'Alex',language:'en',occasion:'life',turns:[{role:'user',text:'I watched the Moon landing in Queens with my grandmother.'}],sources:[],sample:false,approved:false};
 const request=(action,auth=true,origin='https://story.test')=>new Request('https://story.test/api/story',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...(auth?{'oai-authenticated-user-id':'test-user'}:{})},body:JSON.stringify({action,story})});
 assert.equal((await worker.fetch(new Request('https://story.test/'),{})).status,200);
-assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{liveVoice:false,gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'}});
+const geminiRoute=language=>[language,{provider:'gemini',model:'gemini-3.8-flash',configured:false}];
+assert.deepEqual(await (await worker.fetch(new Request('https://story.test/api/story'),{})).json(),{liveVoice:false,gemini:false,nimble:false,geminiBackend:'ai-studio',models:{...Object.fromEntries(['interview','write','photo','transcribe','research'].map(task=>[task,'gemini-3.8-flash'])),image:'gemini-3.1-flash-lite-image'},languageRouting:Object.fromEntries(['en','zh','es'].map(geminiRoute))});
+// Per-language routing is visible in the payload with OPENROUTER_API_KEY set:
+// zh follows the OpenRouter-compatible route, en/es stay on Gemini.
+assert.deepEqual((await (await worker.fetch(new Request('https://story.test/api/story'),{GEMINI_API_KEY:'mock-secret',OPENROUTER_API_KEY:'mock-openrouter',STORYPRESS_ZH_TEXT_MODEL:'qwen/qwen-fixture'})).json()).languageRouting,{en:{provider:'gemini',model:'gemini-3.8-flash',configured:true},es:{provider:'gemini',model:'gemini-3.8-flash',configured:true},zh:{provider:'openai-compatible',baseUrl:'https://openrouter.ai/api/v1',model:'qwen/qwen-fixture',configured:true}},'the services payload must report per-language routing without leaking keys');
 assert.equal((await worker.fetch(request('write',false),{})).status,401);
 assert.equal((await worker.fetch(request('write',true,'https://other.test'),{})).status,403);
 assert.equal((await worker.fetch(request('write'),{})).status,503);
@@ -18,7 +22,9 @@ const source=(url)=>({id:'1',title:'Apollo',url,publisher:'NASA',date:'1969',des
 steps=[{host:'generativelanguage.googleapis.com',body:{output_text:JSON.stringify({query:'Apollo 11 1969 NASA history'})}},{host:'sdk.nimbleway.com',body:{results:[{title:'Apollo',url:'https://www.nasa.gov/history/',content:'An account of the Moon landing.'}]}},{host:'generativelanguage.googleapis.com',body:{output_text:JSON.stringify({sources:[source('https://www.nasa.gov/history/'),source('https://invented.example/archive')]})}}];
 const discoveries=await(await worker.fetch(request('discover'),env)).json();assert.equal(discoveries.sources.length,1);assert.equal(discoveries.sources[0].url,'https://www.nasa.gov/history/');assert.equal(discoveries.sources[0].selected,false);assert.equal(steps.length,0);
 const cloudEnv={...env,GEMINI_BACKEND:'vertex',GOOGLE_CLOUD_PROJECT:'storyteller-511316',GOOGLE_CLOUD_LOCATION:'global',VERTEX_API_KEY:'cloud-mock-secret'};
-assert.equal((await (await worker.fetch(new Request('https://story.test/api/story'),cloudEnv)).json()).geminiBackend,'vertex');
+const vertexServices=await (await worker.fetch(new Request('https://story.test/api/story'),cloudEnv)).json();
+assert.equal(vertexServices.geminiBackend,'vertex');
+assert.equal(vertexServices.languageRouting.en.configured,true,'per-language configured must follow the active Gemini backend');
 assert.equal((await (await worker.fetch(new Request('https://story.test/api/story'),{...cloudEnv,VERTEX_API_KEY:''})).json()).gemini,false);
 assert.equal((await worker.fetch(request('interview'),{...cloudEnv,VERTEX_API_KEY:''})).status,503,'Cloud mode must not fall back to the AI Studio key');
 steps=[{host:'aiplatform.googleapis.com',check:(url,init,payload)=>{
