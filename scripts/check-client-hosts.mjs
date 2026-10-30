@@ -11,12 +11,14 @@ import os from 'node:os';
 // Allowlist: every host the client legitimately references today.
 // - generativelanguage.googleapis.com: Gemini Live websocket + provider seam (lib/providers.ts)
 // - sdk.nimbleway.com: Nimble historical search (server-side lib/providers.ts)
+// - openrouter.ai: OpenRouter chat completions for routed zh text (server-side lib/providers.ts)
 // - www.nasa.gov: sample story fixture data (lib/story.ts)
 // - w3.org: SVG/XML namespace identifiers, not network hosts
 // - github.com, reactjs.org, aistudio.google.com, console.cloud.google.com: comments/docs only
 const ALLOWED_HOSTS = new Set([
   'generativelanguage.googleapis.com',
   'sdk.nimbleway.com',
+  'openrouter.ai',
   'online.nimbleway.com', // dashboard help link in the setup dialog (app/storypress.tsx)
   'www.nasa.gov',
   'w3.org',

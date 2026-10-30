@@ -1,5 +1,6 @@
 import { z } from "zod";
 export const languageSchema = z.enum(["en", "zh", "es"]);
+export type Language = z.infer<typeof languageSchema>;
 export const turnAuthorSchema = z.object({ label: z.string().min(1).max(80), userId: z.string().uuid().optional() });
 export const turnSchema = z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(12000), author: turnAuthorSchema.optional() });
 export const sourceSchema = z.object({ id: z.string(), title: z.string().max(400), url: z.string().url(), publisher: z.string().max(200), description: z.string().max(1600), connection: z.string().max(600), question: z.string().max(400), date: z.string().max(120), selected: z.boolean().default(false), reaction: z.enum(["familiar", "unsure", "unfamiliar"]).optional() });

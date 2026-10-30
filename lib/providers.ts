@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {eventData} from './event-stream';
+import type { Language } from './story';
 export type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
 export type ModelTask = "interview" | "write" | "photo" | "transcribe" | "research";
 export interface ResearchResult { title: string; url: string; content: string; description?: string | null; }
@@ -27,7 +28,130 @@ const taskModelSettings: Record<ModelTask, string> = {
   transcribe: "GEMINI_TRANSCRIPTION_MODEL",
   research: "GEMINI_RESEARCH_MODEL",
 };
-export function createProviders(env: Record<string, string | undefined>): TextProvider {
+// Language routing: story text follows the narrator's chosen language. The
+// route table is env-driven like taskModelSettings, and an unconfigured route
+// degrades to Gemini — today's behavior is the floor, never a regression.
+export interface OpenAICompatibleTextRoute { provider: "openai-compatible"; baseUrl: string; apiKeyEnv: string; model: string; }
+export type TextRoute = { provider: "gemini" } | OpenAICompatibleTextRoute;
+const ZH_TEXT_BASE_URL = "https://openrouter.ai/api/v1";
+const ZH_TEXT_DEFAULT_MODEL = "qwen/qwen3.8-flash";
+export function textRoute(env: Record<string, string | undefined>, language: Language): TextRoute {
+  if (language !== "zh" || !env.OPENROUTER_API_KEY) return { provider: "gemini" };
+  return { provider: "openai-compatible", baseUrl: ZH_TEXT_BASE_URL, apiKeyEnv: "OPENROUTER_API_KEY", model: env.STORYPRESS_ZH_TEXT_MODEL || ZH_TEXT_DEFAULT_MODEL };
+}
+function providerError(status: number): ServiceError {
+  if (status === 429) return new ServiceError("The story editor is busy. Please try again in a moment.", 429);
+  if (status === 402) return new ServiceError("The story editor is waiting for its billing setup. Your words are kept; please contact the app owner.", 503);
+  if (status === 401 || status === 403) return new ServiceError("The story editor's connection needs attention from the app owner. Your words are kept.", 503);
+  return new ServiceError("The story editor could not complete that request. Your words are kept; please try again.", 502);
+}
+
+// The OpenAI-compatible adapter speaks the /chat/completions contract shared
+// by OpenRouter and DashScope, so moving zh between them later is an env
+// change, not code. The route owns the model for every task; per-task model
+// settings keep shaping the Gemini route. Unlike a Gemini model id, a routed
+// id may carry a publisher prefix ("qwen/qwen3.8-flash") and travels in the
+// request body rather than a URL, so validation allows slashes.
+function validateRoutedModel(model: string): string {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,127}$/.test(model)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
+  return model;
+}
+type OpenAIPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+function openAiContent(input: ModelInput): string | OpenAIPart[] {
+  if (typeof input === "string") return input;
+  return input.map(part => {
+    if (part.type === "text") return { type: "text", text: part.text };
+    if (part.type === "image") return { type: "image_url", image_url: { url: `data:${part.mime_type};base64,${part.data}` } };
+    // Audio never routes here (transcription stays on Gemini by spec); the
+    // fallback wrapper turns this into the Gemini call that serves it.
+    throw new Error("The routed text provider cannot serve audio input");
+  });
+}
+function openAiBody(route: OpenAICompatibleTextRoute, system: string, input: ModelInput, json: boolean, stream: boolean): string {
+  return JSON.stringify({
+    model: validateRoutedModel(route.model),
+    messages: [
+      { role: "system", content: system + (json ? " Output valid JSON without markdown fences." : "") },
+      { role: "user", content: openAiContent(input) },
+    ],
+    // response_format plus the prompt instruction: providers that ignore
+    // response_format still get prompt-only JSON, and parseJson re-validates.
+    ...(json ? { response_format: { type: "json_object" } } : {}),
+    ...(stream ? { stream: true } : {}),
+  });
+}
+async function openAiCompletion(route: OpenAICompatibleTextRoute, key: string, body: string): Promise<string> {
+  if (!key) throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.", 503);
+  const res = await fetch(`${route.baseUrl}/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` }, body, signal: AbortSignal.timeout(55000) });
+  if (!res.ok) throw providerError(res.status);
+  const data = await res.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const output = data.choices?.[0]?.message?.content;
+  if (!output) throw new ServiceError("The editor returned no text. Please try again.");
+  return output;
+}
+async function* openAiStream(route: OpenAICompatibleTextRoute, key: string, body: string, signal: AbortSignal): AsyncGenerator<string, void, unknown> {
+  if (!key) throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.", 503);
+  const res = await fetch(`${route.baseUrl}/chat/completions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` }, body, signal: AbortSignal.any([signal, AbortSignal.timeout(55000)]) });
+  if (!res.ok) throw providerError(res.status);
+  if (!res.body) throw new ServiceError("The interview returned no reply. Your words are kept.", 502);
+  let finished = false;
+  for await (const raw of eventData(res.body)) {
+    if (raw === "[DONE]") { finished = true; continue; }
+    const data = JSON.parse(raw) as { error?: unknown; choices?: Array<{ delta?: { content?: string } }> };
+    if (data.error) throw new ServiceError("The interview could not finish. Your words are kept.", 502);
+    const delta = data.choices?.[0]?.delta?.content;
+    if (typeof delta === "string" && delta) yield delta;
+  }
+  if (!finished) throw new ServiceError("The reply was interrupted. Your words are kept; try again.", 502);
+}
+// A routed stream that fails before its first chunk retries on Gemini; once a
+// chunk has reached the client, failing over would replay and duplicate text.
+async function* streamWithFallback(routed: AsyncGenerator<string, void, unknown>, fallback: () => AsyncGenerator<string, void, unknown>): AsyncGenerator<string, void, unknown> {
+  const iterator = routed[Symbol.asyncIterator]();
+  try {
+    let first: IteratorResult<string, void>;
+    try {
+      first = await iterator.next();
+    } catch (error) {
+      console.error("[language-routing] routed stream failed before the first chunk; falling back to Gemini", error instanceof Error ? error.message : error);
+      yield* fallback();
+      return;
+    }
+    if (first.done) return;
+    yield first.value;
+    while (true) {
+      const next = await iterator.next();
+      if (next.done) return;
+      yield next.value;
+    }
+  } finally {
+    await iterator.return();
+  }
+}
+function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: TextProvider): TextProvider {
+  const key = () => gemini.setting(route.apiKeyEnv);
+  const retryOnGemini = async <T>(routed: () => Promise<T>, fallback: () => Promise<T>): Promise<T> => {
+    try {
+      return await routed();
+    } catch (error) {
+      console.error(`[language-routing] ${route.model} via ${route.baseUrl} failed; falling back to Gemini`, error instanceof Error ? error.message : error);
+      return fallback();
+    }
+  };
+  return {
+    setting: gemini.setting,
+    backend: () => route.provider,
+    modelConfigured: () => !!key(),
+    // The route owns the model for every task; call sites pass modelFor()
+    // output back in, and the Gemini fallback keeps the original task model.
+    modelFor: () => validateRoutedModel(route.model),
+    gemini: (system, input, json, model) => retryOnGemini(() => openAiCompletion(route, key(), openAiBody(route, system, input, json ?? true, false)), () => gemini.gemini(system, input, json, model)),
+    nimble: gemini.nimble,
+    parseJson: gemini.parseJson,
+    interviewStream: (system, input, _model, signal) => streamWithFallback(openAiStream(route, key(), openAiBody(route, system, input, true, true), signal), () => gemini.interviewStream(system, input, gemini.modelFor('interview'), signal)),
+  };
+}
+export function createProviders(env: Record<string, string | undefined>, language: Language = "en"): TextProvider {
 function setting(key: string): string { return env[key] || ""; }
 function backend(): string { return setting("GEMINI_BACKEND") || "ai-studio"; }
 function validateModel(model: string): string {
@@ -103,12 +227,6 @@ async function* interviewStream(system:string,input:string,model:string,signal:A
  }
  if(!finished)throw new ServiceError('The reply was interrupted. Your words are kept; try again.',502);
 }
-function providerError(status: number): ServiceError {
-  if (status === 429) return new ServiceError("The story editor is busy. Please try again in a moment.", 429);
-  if (status === 402) return new ServiceError("The story editor is waiting for its billing setup. Your words are kept; please contact the app owner.", 503);
-  if (status === 401 || status === 403) return new ServiceError("The story editor's connection needs attention from the app owner. Your words are kept.", 503);
-  return new ServiceError("The story editor could not complete that request. Your words are kept; please try again.", 502);
-}
 function parseJson<T>(text: string, schema: z.ZodType<T>): T { const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""); try { return schema.parse(JSON.parse(cleaned)); } catch { throw new ServiceError("The editor’s response could not be read. Please try again; your words have been kept."); } }
 async function nimble(query: string, locale: string): Promise<ResearchResult[]> {
   const key = setting("NIMBLE_API_KEY");
@@ -120,6 +238,8 @@ async function nimble(query: string, locale: string): Promise<ResearchResult[]> 
   return parsed.data.results.map(r => ({ ...r, content: (r.content || r.description || "").slice(0, 9000) }));
 }
 
-return { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson, interviewStream };
+const geminiProvider: TextProvider = { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson, interviewStream };
+const route = textRoute(env, language);
+return route.provider === "gemini" ? geminiProvider : openAiCompatibleProvider(route, geminiProvider);
 }
 export class ServiceError extends Error { constructor(message: string, public status = 502, public code?:string) { super(message); } }

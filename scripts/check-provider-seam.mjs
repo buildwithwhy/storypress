@@ -17,7 +17,7 @@ const sources={
 };
 assert.match(sources.providers,/export interface TextProvider/,'lib/providers.ts must export the TextProvider interface');
 assert.match(sources.providers,/export interface ResearchResult/,'research results must be typed at the seam');
-assert.match(sources.providers,/export function createProviders\(env: Record<string, string \| undefined>\): TextProvider/,'the factory must return the interface');
+assert.match(sources.providers,/export function createProviders\(env: Record<string, string \| undefined>, language: Language = "en"\): TextProvider/,'the factory must return the interface, routed by language');
 assert.match(sources.api,/const providers: TextProvider = createProviders/,'server/api.ts must consume the named interface');
 assert.match(sources.liveVoice,/export interface LiveVoiceProvider/,'live-voice must export the provider interface');
 assert.match(sources.liveVoice,/export const geminiLiveVoice: LiveVoiceProvider/,'gemini must be a typed implementation');

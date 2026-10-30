@@ -12,7 +12,12 @@ and ICP decisions whenever the business case justifies it.
   build if a new external font/CDN/analytics host appears in client code.
 - Strict CSP on shared editions; shared reading view is a static, noindex shell.
 - The AI provider seam (`lib/providers.ts`) is a single typed point — a China-reachable
-  model can be slotted in later without touching call sites.
+  model can be slotted in later without touching call sites. Language routing now ships:
+  Simplified-Chinese story text routes through Qwen via OpenRouter (`openrouter.ai`,
+  server-side only — the browser never contacts it), degrading to Gemini when unconfigured.
+- Live voice remains Gemini's browser websocket in every language. A Mandarin live path
+  needs a realtime API OpenRouter does not carry and a server-side websocket relay
+  (Vercel functions cannot terminate websockets) — net-new infrastructure, staged later.
 - Graceful failure: when the live-voice websocket cannot connect or an AI call fails at the
   network layer, the UI explains what happened in the reader's language and preserves the
   draft (draft-handoff pattern).
@@ -23,6 +28,7 @@ and ICP decisions whenever the business case justifies it.
 |---|---|---|
 | `generativelanguage.googleapis.com` (direct websocket from the browser) | Gemini Live real-time voice | Infrastructure (unreachable in mainland China); provider swap is code-only once procured |
 | Gemini HTTP endpoints (AI Studio / Vertex, server side) | Interviewing, writing, transcription, translation, artwork | Infrastructure; reachable only via relay today |
+| `openrouter.ai` (server side) | Mandarin story text (Qwen) | Infrastructure; same server-side reachability class as the Gemini HTTP endpoints |
 | `accounts.google.com` (Google OAuth) | One of two sign-in paths | Infrastructure + regulatory; needs a domestic auth option |
 | `*.supabase.co` | Auth, database, storage — the app's entire data plane | Infrastructure (slow/unreliable from China, not fully blocked) |
 | Vercel hosting (`*.vercel.app` / custom domain edge) | Serving the app and API at all | Infrastructure; hosting migration is a founder decision |
