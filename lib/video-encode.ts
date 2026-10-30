@@ -281,7 +281,7 @@ async function recordWithMediaRecorder(
   return blob;
 }
 
-function mediaRecorderRung(candidates: string[], name: string): EncodeRung {
+export function mediaRecorderRung(candidates: string[], name: string): EncodeRung {
   let verified: string | undefined;
   return {
     name,
@@ -304,7 +304,7 @@ function mediaRecorderRung(candidates: string[], name: string): EncodeRung {
 // The ladder: WebCodecs+Mediabunny MP4 primary, MediaRecorder MP4
 // (Safari-first), MediaRecorder WebM. Its final refusal names share-images —
 // the artifact that already exists on every device.
-function defaultRungs(): EncodeRung[] {
+export function defaultRungs(): EncodeRung[] {
   return [webCodecsMp4Rung(), mediaRecorderRung(MP4_RECORDER_CANDIDATES, "mediarecorder-mp4"), mediaRecorderRung(WEBM_RECORDER_CANDIDATES, "mediarecorder-webm")];
 }
 
