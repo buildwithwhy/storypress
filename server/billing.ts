@@ -34,8 +34,10 @@ function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'ann
 
 async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual',origin:string){
  // Stripe accepts form-encoded parameters; no stripe-node SDK — the worker
- // bundle targets platform:'browser'.
- const form=new URLSearchParams({mode,'line_items[0][price]':priceFor(env,mode,plan),'line_items[0][quantity]':'1',success_url:origin+'/',cancel_url:origin+'/',client_reference_id:userId,'metadata[userId]':userId});
+ // bundle targets platform:'browser'. The success return carries Stripe's
+ // {CHECKOUT_SESSION_ID} template so the client can trigger the §5 rescue;
+ // cancel returns plain, and both mirror the email sign-in return.
+ const form=new URLSearchParams({mode,'line_items[0][price]':priceFor(env,mode,plan),'line_items[0][quantity]':'1',success_url:`${origin}/?billing_checkout={CHECKOUT_SESSION_ID}`,cancel_url:origin+'/',client_reference_id:userId,'metadata[userId]':userId});
  if(email)form.set('customer_email',email);
  const response=await fetch(`${STRIPE_API}/v1/checkout/sessions`,{method:'POST',headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`,'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),signal:AbortSignal.timeout(15000)});
  const session=await response.json().catch(()=>null) as {url?:string}|null;

@@ -222,7 +222,7 @@ try{
    assert.equal(form.get('line_items[0][price]'),price);
    assert.equal(form.get('metadata[userId]'),user,'checkout must carry the owner id in metadata');
    assert.equal(form.get('client_reference_id'),user);
-   assert.equal(form.get('success_url'),`${base}/`);
+   assert.equal(form.get('success_url'),`${base}/?billing_checkout={CHECKOUT_SESSION_ID}`,'the success return must carry the session template so the client can run the status rescue');
    assert.equal(form.get('cancel_url'),`${base}/`);
   }}];
   const response=await worker.fetch(billingRequest({action:'checkout',mode,plan},authorized),stripeEnv);

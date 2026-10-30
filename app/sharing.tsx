@@ -8,6 +8,8 @@ import {shareFlowCopy} from '../lib/share-flow-copy';
 import {clearAccountDraft} from '../lib/draft-handoff';
 import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
+import {startCheckout} from '../lib/billing-client';
+import {type BillingStatus} from '../lib/billing';
 import {EmailSignIn} from './email-sign-in';
 import {readerCopy} from '../lib/reader';
 export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void}){
@@ -32,10 +34,45 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
  </div>
  {!accountOnly&&!config.linkSharing&&<p className="quiet left">{c.linkWait}</p>}
  {!accountOnly&&url&&<div className="share-link"><p>{c.link}</p><label className="sr-only" htmlFor="published-story-link">{readerCopy[story.language].link}</label><input id="published-story-link" ref={linkField} type="url" value={url} readOnly spellCheck={false} dir="ltr" onFocus={e=>e.currentTarget.select()}/><p className="share-snapshot-note">{c.snapshot}</p><div className="sharing-actions"><button className="primary" disabled={pending} onClick={()=>void run(sendLink)}><Share2 size={17}/>{c.sendLink}</button><button className="secondary" disabled={pending} onClick={()=>void run(copyLink)}>{c.copy}</button><a className="secondary" href={url} target="_blank" rel="noreferrer">{c.openReader}</a></div><p className="share-snapshot-note">{c.readerHelp}</p><details className="share-app-help"><summary>{readerCopy[story.language].help}</summary><p>{readerCopy[story.language].helpText}</p></details><button className="text-button" disabled={pending} onClick={()=>void run(async()=>{await onChangeSharing('private');})}>{c.off}</button><small>{c.offNote}</small></div>}
- {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
+ {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><UpgradePanel billing={config.billing} language={story.language} ownerTree/><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
  <div className="sharing-actions">{onRestoreEarlier&&<button className="text-button" disabled={pending} onClick={onRestoreEarlier}>{c.earlierDraft}</button>}<button className="text-button" disabled={pending} onClick={()=>void run(async()=>{if(!confirm(c.importConfirm))return;const raw=localStorage.getItem('storypress-draft-v1:guest')||localStorage.getItem('storypress-draft-v1');if(!raw)return;const parsed=JSON.parse(raw);await onLoad(storySchema.parse(parsed.story||parsed),null);onClose?.();})}>{c.import}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmLogout))return;void run(async()=>{await onSave();await signOut();clearAccountDraft(localStorage,storageKey,user.id);});}}>{c.logout}</button></div></>}
  </>}
  {accountError&&<div><p role="alert" className="error">{sc.error} {accountError}</p>{user&&<><p>{sc.separateHelp}</p><button className="secondary" disabled={pending} onClick={()=>void run(async()=>{await onSaveSeparate();await refresh();setNotice(c.saved);})}>{sc.saveSeparate}</button></>}</div>}
  {notice&&<p role="status" className="sharing-notice"><Check size={16}/>{notice}</p>}{error&&<p role="alert" className="error">{error}</p>}
  </section>;
+}
+
+
+// Inline until the paywall copy module lands (paywall §5); then these move to
+// lib/paywall-copy.ts with the rest of the paywall strings.
+const panelCopy={en:{planHeading:'Your plan',freeUsage:'{used} of {limit} free stories used',subscriptionActive:'Unlimited stories — subscription active',lifetimeActive:'Unlimited stories — lifetime',monthly:'Monthly',annual:'Annual',lifetime:'Lifetime — one payment',checkout:'Continue to checkout',checkoutBusy:'Opening checkout…',dormant:'Online payment is not connected yet. Your stories remain fully available.'},zh:{planHeading:'你的方案',freeUsage:'已使用 {used}/{limit} 个免费故事',subscriptionActive:'无限故事——订阅已生效',lifetimeActive:'无限故事——终身有效',monthly:'按月',annual:'按年',lifetime:'终身——一次付清',checkout:'前往结账',checkoutBusy:'正在打开结账……',dormant:'在线支付尚未开通。你的故事仍然完全可用。'},es:{planHeading:'Tu plan',freeUsage:'{used} de {limit} historias gratis usadas',subscriptionActive:'Historias ilimitadas — suscripción activa',lifetimeActive:'Historias ilimitadas — de por vida',monthly:'Mensual',annual:'Anual',lifetime:'De por vida — un solo pago',checkout:'Ir al pago',checkoutBusy:'Abriendo el pago…',dormant:'El pago en línea aún no está conectado. Tus historias siguen totalmente disponibles.'}};
+
+// The upgrade surface (paywall §5): plan state first, then — only when Stripe
+// is configured and the owner is on the free plan — the subscription cadence
+// toggle and the lifetime unlock side by side. Dormant deployments keep the
+// limit legible but never show a pay button that would only error. The guard
+// is the free-forever invariant: outside the owner's Storypress tree the
+// panel renders nothing.
+export function UpgradePanel({billing,language,ownerTree}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean}){
+ const c=panelCopy[language];
+ const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');
+ const [busy,setBusy]=useState(false);
+ const [error,setError]=useState('');
+ if(!ownerTree)return null;
+ const planLine=billing.plan==='free'?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):billing.plan==='subscription'?c.subscriptionActive:c.lifetimeActive;
+ async function pay(plan:'monthly'|'annual'|'lifetime'){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
+ return <div className="upgrade-panel">
+  <p className="upgrade-plan" role="status">{planLine}</p>
+  {billing.configured&&billing.plan==='free'&&<><div className="upgrade-cadence" role="group" aria-label={c.planHeading}>
+   <button className={cadence==='monthly'?'secondary selected':'secondary'} aria-pressed={cadence==='monthly'} disabled={busy} onClick={()=>setCadence('monthly')}>{c.monthly}</button>
+   <button className={cadence==='annual'?'secondary selected':'secondary'} aria-pressed={cadence==='annual'} disabled={busy} onClick={()=>setCadence('annual')}>{c.annual}</button>
+  </div>
+  <div className="sharing-actions">
+   <button className="primary" disabled={busy} onClick={()=>void pay(cadence)}>{c.checkout}</button>
+   <button className="secondary" disabled={busy} onClick={()=>void pay('lifetime')}>{c.lifetime}</button>
+  </div>
+  {busy&&<p className="quiet left" role="status">{c.checkoutBusy}</p>}</>}
+  {!billing.configured&&<p className="quiet left">{c.dormant}</p>}
+  {error&&<p className="quiet left" role="alert">{error}</p>}
+ </div>;
 }

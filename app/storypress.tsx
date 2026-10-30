@@ -31,7 +31,8 @@ import {InviteGuest} from "./invite-guest";
 import {parseInviteToken} from "../lib/invite-client";
 import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
-import {freeStoryLimitReached} from '../lib/billing';
+import {freeStoryLimitReached,type BillingStatus} from '../lib/billing';
+import {checkoutReturnId,confirmCheckout} from '../lib/billing-client';
 import {sharingCopy} from "../lib/sharing-copy";
 import {shareGroupsCopy} from "../lib/share-groups-copy";
 import {PhotoStory} from './photo-story';
@@ -61,9 +62,9 @@ function StoryApp() {
  const flushDraft=useRef<()=>void>(()=>{});
  useEffect(()=>{let active=true,dispose=()=>{};void setupAccount(user=>{if(active){flushDraft.current();setAccount(c=>c?{...c,user}:c);}}).then(result=>{dispose=result.dispose;if(active)setAccount(result.config);else dispose();}).catch(e=>setProblem(e.message));return()=>{active=false;dispose();};},[]);
  if(!account)return <main className="account-loading"><h1>Once &amp; Ours</h1><p role="status">{problem||'Opening your story studio…'}</p>{problem&&<button className="secondary" onClick={()=>location.reload()}>Try again</button>}</main>;
- return <Storypress key={account.user?.id||'guest'} account={account} flushDraft={flushDraft}/>;
+ return <Storypress key={account.user?.id||'guest'} account={account} flushDraft={flushDraft} patchBilling={billing=>setAccount(c=>c?{...c,billing}:c)}/>;
 }
-function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:MutableRefObject<()=>void>}) {
+function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flushDraft:MutableRefObject<()=>void>;patchBilling:(billing:BillingStatus)=>void}) {
  const [storageKey,setStorageKey]=useState(account.user?accountDraftKey(account.user.id):GUEST_DRAFT_KEY);
  const [resumedDraft,setResumedDraft]=useState(false);
  const [earlierDraft,setEarlierDraft]=useState(false);
@@ -71,6 +72,7 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
  const [cloudStatus,setCloudStatus]=useState<SaveStatus>('idle');
  const [cloudError,setCloudError]=useState('');
  const [cloudErrorCode,setCloudErrorCode]=useState<string|undefined>();
+ const [checkoutNotice,setCheckoutNotice]=useState<'pending'|'confirmed'|''>('');
  const [switching,setSwitching]=useState(false);
  const [showAccount,setShowAccount]=useState(false);
  const [story, setStory] = useState<Story>(()=>({...initialStory,language:sharedEntryLanguage(location.search)||initialStory.language}));
@@ -172,6 +174,24 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);if(data.liveVoice)setMode('voice');}).catch(()=>{});
  }, []);
  useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
+ // Post-checkout return (paywall §5): the return URL mirrors the email
+ // sign-in return, carrying Stripe's session id. The boot fetch already
+ // refreshed /api/account; when the entitlement is still pending there, the
+ // session is verified server-side (action:'status') before anything is
+ // shown — webhook lag must never read as a payment failure. A stale read
+ // or an unknown visitor shows the calm pending notice; nothing says failed.
+ useEffect(()=>{
+  const sessionId=checkoutReturnId(location.search);
+  if(!sessionId)return;
+  const params=new URLSearchParams(location.search);params.delete('billing_checkout');
+  const rest=params.toString();
+  history.replaceState(null,'',`${location.pathname}${rest?`?${rest}`:''}${location.hash}`);
+  if(!account.user){setCheckoutNotice('pending');return;}
+  confirmCheckout(sessionId).then(billing=>{
+   if(billing.plan==='free'){setCheckoutNotice('pending');return;}
+   patchBilling(billing);setCheckoutNotice('confirmed');
+  }).catch(()=>setCheckoutNotice('pending'));
+ },[]);
  useEffect(()=>{if(!ready||!saver.current)return;saver.current.update({...story,draft:input});const timer=setTimeout(()=>{void saver.current?.flush().catch(()=>{});},700);return()=>clearTimeout(timer);},[story,input,ready]);
  useEffect(()=>()=>saver.current?.dispose(),[]);
  function prepareSignIn(email?:string){try{return email===undefined?prepareGoogleHandoff(localStorage,sessionStorage,currentDraft()):prepareGuestHandoff(localStorage,email,currentDraft());}catch{setSaveError(true);throw new Error(sharingCopy[story.language].handoffFailure);}}
@@ -442,6 +462,11 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&<div className={cloudStatus==='error'?'message error no-print':'message no-print'} role={cloudStatus==='error'?'alert':'status'}>{cloudStatus==='error'?sc.error:cloudStatus==='saved'?sc.saved:cloudStatus==='saving'?sc.saving:sc.waiting}{cloudStatus==='error'&&<><span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></>}</div>}
   {resumedDraft&&<div className="message no-print" role="status">{sharingCopy[story.language].resumed}<button onClick={()=>setResumedDraft(false)} aria-label={sharingCopy[story.language].close}><X size={18}/></button></div>}
+  {checkoutNotice&&<div className="message no-print" role="status">{({
+   en:checkoutNotice==='confirmed'?'Your plan is active. Thank you for supporting the studio.':'Thank you! Your payment is still being confirmed — this page will show your plan shortly. Your stories remain fully available meanwhile.',
+   zh:checkoutNotice==='confirmed'?'你的方案已生效。感谢你对工作室的支持。':'感谢你！你的付款还在确认中——页面稍后会显示你的方案。期间你的故事仍然完全可用。',
+   es:checkoutNotice==='confirmed'?'Tu plan está activo. Gracias por apoyar el estudio.':'¡Gracias! Tu pago aún se está confirmando: esta página mostrará tu plan en breve. Mientras tanto, tus historias siguen totalmente disponibles.'
+  }[story.language])}<button onClick={()=>setCheckoutNotice('')} aria-label="Dismiss message"><X size={18}/></button></div>}
   {stage === "home" && <main className="home">
    <section className="intro"><p className="eyebrow"><span/> {d.eyebrow}</p><h1>{story.language === "zh" ? <>每个人生，<br/>都值得<span>上头版。</span></> : story.language === "es" ? <>Toda vida merece<br/><span>su portada.</span></> : <>Every life has<br/>a <span>front page.</span></>}</h1><p className="intro-text">{story.language === "zh" ? "聊聊你的回忆，找回那个世界。我们一起把它变成一份值得珍藏、分享的作品。" : story.language === "es" ? "Cuenta un recuerdo. Redescubre su mundo. Juntos crearemos un recuerdo para conservar y compartir." : "Tell a memory. Rediscover its world. Together, we’ll turn it into a keepsake worth sharing."}</p>
     <StoryStart language={story.language} disabled={interactionBusy||correcting||!!account.sampleOnly} hasDraft={hasStoryContent(story)} needsSignIn={!!account.supabase&&!account.user} fromShared={!!sharedEntryLanguage(location.search)} limitReached={limitReached} freeLimit={account.billing.freeStoryLimit} onUpgrade={()=>setShowAccount(true)} onStart={(photo,prompt)=>void startFresh(photo,prompt)} onContinue={()=>story.paper?void flushThenNavigate("paper"):void begin()}>
