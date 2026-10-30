@@ -22,7 +22,7 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
  async function download(){const file=await newspaperFile(),href=URL.createObjectURL(file),a=document.createElement('a');a.href=href;a.download=file.name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(href),1000);setNotice(c.fileSaved);}
  async function send(){const file=await newspaperFile();if(navigator.canShare?.({files:[file]}))await navigator.share({files:[file],title:story.paper!.headline});else await download();}
  async function copyLink(){try{await navigator.clipboard.writeText(url);setNotice(c.copied);}catch{linkField.current?.focus();linkField.current?.select();setNotice(c.copyManual);}}
- async function sendLink(){try{if(navigator.share)await navigator.share({url,title:c.sharedTitle});else await copyLink();}catch(e){if((e as Error).name!=='AbortError')await copyLink();}}
+ async function sendLink(){try{if(navigator.share)await navigator.share({url,title:story.paper?.headline||c.sharedTitle});else await copyLink();}catch(e){if((e as Error).name!=='AbortError')await copyLink();}}
  return <section className="sharing-panel no-print" aria-label={c.account}>
  {onClose&&<button className="icon-button close" onClick={onClose} aria-label={c.close}><X size={21}/></button>}
  <p className="eyebrow">{accountOnly?c.account:'ONCE & OURS'}</p><h2>{c.title}</h2><p>{c.private}</p>
