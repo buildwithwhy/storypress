@@ -2,22 +2,29 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ArrowRight,BookOpen,ImagePlus,Lock,Sparkles,X} from 'lucide-react';
 import {startCopy} from '../lib/start-copy';
 import type {Story} from '../lib/story';
+import {paywallCopy} from '../lib/paywall-copy';
 
-export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,onStart,onContinue,children}:{
- language:Story['language'];disabled:boolean;hasDraft:boolean;needsSignIn:boolean;fromShared:boolean;
+export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,limitReached,freeLimit,onUpgrade,onStart,onContinue,children}:{
+ language:Story['language'];disabled:boolean;hasDraft:boolean;needsSignIn:boolean;fromShared:boolean;limitReached:boolean;freeLimit:number;onUpgrade:()=>void;
  onStart:(withPhoto?:boolean,prompt?:string)=>void;onContinue:()=>void;children:ReactNode;
 }) {
  const c=startCopy[language];
+ const pw=paywallCopy[language];
  const [showPrompts,setShowPrompts]=useState(false);
  return <div className="start-card story-start">
   {hasDraft&&<div className="resume-story"><div><strong>{c.resume}</strong><p>{c.resumeHelp}</p></div><button className="secondary wide" disabled={disabled} onClick={onContinue}>{c.continueLast}<ArrowRight size={18}/></button></div>}
   <h2>{c.title}</h2><p className="start-time">{c.time}</p>
+  {limitReached&&<div className="start-limit" role="status">
+   <strong>{pw.limitTitle.replace('{limit}',String(freeLimit))}</strong>
+   <p>{pw.limitBody}</p>
+   <button className="primary" onClick={onUpgrade}>{pw.limitCta}</button>
+  </div>}
   <div className="start-choices">
-   <button className="secondary wide" disabled={disabled} onClick={()=>onStart()}><BookOpen size={20}/><span>{c.memory}</span><ArrowRight size={18}/></button>
-   <button className="secondary wide" disabled={disabled} onClick={()=>onStart(true)}><ImagePlus size={20}/><span>{c.photo}</span><ArrowRight size={18}/></button>
-   <button className="secondary wide" disabled={disabled} aria-expanded={showPrompts} aria-controls="story-prompts" onClick={()=>setShowPrompts(!showPrompts)}><Sparkles size={20}/><span>{c.help}</span><ArrowRight size={18}/></button>
+   <button className="secondary wide" disabled={disabled||limitReached} onClick={()=>onStart()}><BookOpen size={20}/><span>{c.memory}</span><ArrowRight size={18}/></button>
+   <button className="secondary wide" disabled={disabled||limitReached} onClick={()=>onStart(true)}><ImagePlus size={20}/><span>{c.photo}</span><ArrowRight size={18}/></button>
+   <button className="secondary wide" disabled={disabled||limitReached} aria-expanded={showPrompts} aria-controls="story-prompts" onClick={()=>setShowPrompts(!showPrompts)}><Sparkles size={20}/><span>{c.help}</span><ArrowRight size={18}/></button>
   </div>
-  {showPrompts&&<div id="story-prompts" className="story-prompts"><p>{c.promptTitle}</p>{c.prompts.map(prompt=><button key={prompt.label} disabled={disabled} onClick={()=>onStart(false,prompt.question)}><span>{prompt.label}</span><ArrowRight size={16}/></button>)}</div>}
+  {showPrompts&&<div id="story-prompts" className="story-prompts"><p>{c.promptTitle}</p>{c.prompts.map(prompt=><button key={prompt.label} disabled={disabled||limitReached} onClick={()=>onStart(false,prompt.question)}><span>{prompt.label}</span><ArrowRight size={16}/></button>)}</div>}
   <details className="start-details"><summary>{c.details}</summary>{children}</details>
   <p className="start-privacy"><Lock size={13}/>{c.privacy}</p>
   {needsSignIn&&<p className="start-auth-note">{c.signIn}</p>}

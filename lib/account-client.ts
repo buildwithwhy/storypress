@@ -17,7 +17,10 @@ export async function setupAccount(onUser:(user:Account|null)=>void){
 export async function accountHeaders(){const {data}=client?await client.auth.getSession():{data:{session:null}};return data.session?{Authorization:`Bearer ${data.session.access_token}`} as Record<string,string>:{};}
 export async function accountRequest(body?:unknown,id?:string){
  const response=await fetch(`/api/stories${id?'?id='+encodeURIComponent(id):''}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...await accountHeaders()},body:body?JSON.stringify(body):undefined});
- const data=await response.json();if(!response.ok)throw new Error(data.error||'That change could not be saved.');return data;
+ const data=await response.json();
+ // Mirror verifyEmailCode's {code} annotation so callers can localize typed
+ // refusals (e.g. story_limit) instead of the server's English text.
+ if(!response.ok)throw Object.assign(new Error(data.error||'That change could not be saved.'),{code:data.code});return data;
 }
 export async function signIn(email:string){if(!client)throw new Error('Accounts are not connected yet.');const {error}=await client.auth.signInWithOtp({email:email.trim().toLowerCase(),options:{emailRedirectTo:location.origin+'/'}});if(error)throw error;}
 export async function verifyEmailCode(email:string,code:string){

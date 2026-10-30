@@ -29,8 +29,15 @@ const guestTurns=[{role:'user',text:'She made dumplings every Sunday.'},{role:'a
 const ownerBlob=storySchema.parse({...initialStory,name:'Wei',language:'en',turns:[{role:'user',text:'I remember her kitchen.'}],draft:'PRIVATE_DRAFT',paper,approved:true});
 const req=(path,body,auth=true)=>new Request(base+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Origin:base,...(auth?{Authorization:'Bearer test-user-token'}:{})},body:body?JSON.stringify(body):undefined});
 const original=globalThis.fetch;let queue=[];
+// Guest/reader isolation tripwire (paywall §5): when armed, ANY upstream call
+// touching an entitlement table, the reserve RPC, or a billing route fails the
+// check — the meter and entitlements are owner-only seams.
+let guardBilling=false;
 globalThis.fetch=async(url,init)=>{
- const next=queue.shift();assert.ok(next,'Unexpected upstream call to '+String(url).slice(0,140));
+ const target=String(url);
+ if(guardBilling)for(const banned of ['storypress_entitlements','storypress_story_counts','storypress_billing_events','rpc/storypress_reserve_story','/api/billing','/api/stripe-webhook'])
+  assert.ok(!target.includes(banned),'guest/reader isolation: an entitlement lookup leaked ('+banned+') into '+target.slice(0,140));
+ const next=queue.shift();assert.ok(next,'Unexpected upstream call to '+target.slice(0,140));
  next.check?.(String(url),init);return Response.json(next.data,{status:next.status||200});
 };
 const authenticated=()=>({data:{id:user,email:'fictional@example.invalid'},check:(url,init)=>{assert.ok(url.endsWith('/auth/v1/user'));assert.equal(init.headers.apikey,env.SUPABASE_PUBLISHABLE_KEY);assert.equal(init.headers.Authorization,'Bearer test-user-token');}});
@@ -148,5 +155,33 @@ assert.ok(!(await guestRoute.text()).includes(token),'The shell must not embed t
 assert.equal((await worker.fetch(new Request(base+'/i/'+'g'.repeat(64)),env)).status,404,'Malformed tokens get no route');
 assert.equal(queue.length,0);
 
+// 14. Guest and reader isolation (paywall §5): under the tripwire, the guest
+// context, guest AI follow-up, guest contribution, the /i/ shell, and the
+// /s/ reader all run to completion with ZERO entitlement lookups.
+guardBilling=true;
+queue=contextCalls();
+assert.deepEqual(await(await worker.fetch(req(`/api/invites?token=${token}`,undefined,false),env)).json(),{status:'open',question,expiresAt:future,language:'en',occasion:'life'});
+assert.equal(queue.length,0);
+queue=[...contextCalls(),{data:[{id:inviteId,story_id:storyId}]},{data:[],check:url=>{assert.ok(url.includes('scope=in.'));}},
+ usage('site:'+day),usage('invite:'+inviteId+':'+day),
+ provider(JSON.stringify(followUp))];
+assert.deepEqual(await(await worker.fetch(req('/api/invites',{action:'interview',token,turns:[{role:'user',text:'She made dumplings every Sunday.'}]},false),env)).json(),followUp);
+assert.equal(queue.length,0);
+queue=[...contextCalls(),{data:[{id:inviteId,story_id:storyId}]},{data:[{id:contributionId}]}];
+assert.deepEqual(await(await worker.fetch(req('/api/invites',{action:'contribute',token,turns:[{role:'user',text:'She made dumplings every Sunday.'}],authorLabel:'Mei (aunt)'},false),env)).json(),{id:contributionId,submitted:true});
+assert.equal(queue.length,0);
+queue=[];
+assert.equal((await worker.fetch(new Request(base+'/i/'+token),env)).status,200,'the /i/ shell serves without entitlement lookups');
+assert.equal(queue.length,0);
+const shareToken='e'.repeat(64);
+queue=[{data:[{edition:ownerBlob}]}];
+const reader=await worker.fetch(new Request(base+'/s/'+shareToken),{...env,STORYPRESS_PUBLIC_SHARING:'true'});
+assert.equal(reader.status,200,'the /s/ reader renders the shared edition');
+const readerHtml=await reader.text();
+assert.ok(readerHtml.includes('dumplings'),'the reader carries the shared keepsake content');
+assert.ok(!readerHtml.toLowerCase().includes('upgrade'),'the reader carries no upgrade surface');
+assert.equal(queue.length,0,'the reader completes with no dangling upstream calls');
+guardBilling=false;
+
 globalThis.fetch=original;
-console.log('Passed: invite creation with database defaults, token-shaped guest context (no blob reads), expiry/revocation dead ends, invite-scoped AI reservation, attributed pending contributions, revision-guarded approval retries, sign-in attribution upgrade, decline-without-story-writes, ownership guards, hardened /i/ shell and contributor bylines. Supabase responses mocked; live database activation still required.');
+console.log('Passed: invite creation with database defaults, token-shaped guest context (no blob reads), expiry/revocation dead ends, invite-scoped AI reservation, attributed pending contributions, revision-guarded approval retries, sign-in attribution upgrade, decline-without-story-writes, ownership guards, hardened /i/ shell, contributor bylines, and guest/reader isolation under a billing-lookup tripwire. Supabase responses mocked; live database activation still required.');
