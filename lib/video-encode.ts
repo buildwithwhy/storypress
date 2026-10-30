@@ -8,11 +8,12 @@
 // a refusal of the actual rung, and the one downgrade to 720x900 is explicit.
 // The ladder always ends in an artifact: the final refusal throws a typed
 // error naming the share-images rung that already shipped. Output is a client
-// blob for download or navigator.share({files}) — nothing is stored, and no
+// blob for download or a files-only share — nothing is stored, and no
 // story content leaves the device at any rung.
 import { Output, BufferTarget, Mp4OutputFormat, EncodedVideoPacketSource, EncodedAudioPacketSource, EncodedPacket } from "mediabunny";
 import { type VideoManifest } from "./video-storyboard";
 import { createCanvas, loadManifestImages, renderFrame, frameTimeline } from "./video-frames";
+import { artifactSharePayload, shareSheetAvailable } from "./share-payload";
 
 export const VIDEO_FPS = 24;
 export const FULL_VIDEO_SIZE = { width: 1080, height: 1350 };
@@ -77,6 +78,9 @@ export interface EncodeMemoryVideoOptions {
   render?: (ctx: CanvasRenderingContext2D, timeMs: number) => void;
   audio?: AudioTrackInput;
   onProgress?: (done: number, total: number) => void;
+  // Services-payload growth credit for the end card. Render config, not story
+  // content — it never enters the manifest.
+  creditUrl?: string;
 }
 
 // Drives the ladder over the real manifest. Every degradation is recorded
@@ -87,7 +91,7 @@ export async function encodeMemoryVideo(manifest: VideoManifest, options: Encode
   const slots = frameTimeline(manifest);
   const totalMs = slots[slots.length - 1].endMs;
   const images = await loadManifestImages(manifest);
-  const renderAt = options.render ?? ((ctx, timeMs) => renderFrame(ctx, manifest, timeMs, slots, images));
+  const renderAt = options.render ?? ((ctx, timeMs) => renderFrame(ctx, manifest, timeMs, slots, images, options.creditUrl));
   if (manifest.audioTrack && manifest.audioTrack.kind !== "none" && !options.audio) {
     throw new Error("This video declares narration, so the encoder needs its audio track; nothing was encoded.");
   }
@@ -312,7 +316,10 @@ export function defaultRungs(): EncodeRung[] {
 // browser can carry the file, otherwise a plain download. Nothing is stored.
 export async function deliverMemoryVideo(blob: Blob, filename: string): Promise<"shared" | "downloaded"> {
   const file = new File([blob], filename, { type: blob.type });
-  if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return "shared"; }
+  // The audited files-only builder — the video payload can never grow a url
+  // or text key, and the capability probe stays the single gate.
+  const payload = artifactSharePayload([file]);
+  if (shareSheetAvailable([file])) { await navigator.share(payload); return "shared"; }
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

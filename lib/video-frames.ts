@@ -7,7 +7,7 @@
 // content is drawn locally, full stop.
 import { type VideoManifest, type VideoScene, type KenBurns, VIDEO_WIDTH, VIDEO_HEIGHT } from "./video-storyboard";
 import { keepsakeCopy, mastheadCopy } from "./keepsake";
-import { wrapLines } from "./share-images";
+import { wrapLines, drawHeaderCredit } from "./share-images";
 
 const CREAM = "#fffaf0";
 const GREEN = "#294b3b";
@@ -91,11 +91,15 @@ function fitBlock(ctx: CanvasRenderingContext2D, text: string, width: number, st
   }
 }
 
-function drawMastheadLine(ctx: CanvasRenderingContext2D, language: VideoManifest["language"], counter?: string): void {
+// Returns the x where the masthead text ends, so a same-row draw (the end
+// card's growth credit) can stay clear of it.
+function drawMastheadLine(ctx: CanvasRenderingContext2D, language: VideoManifest["language"], counter?: string): number {
   ctx.fillStyle = GREEN;
   ctx.font = "22px system-ui";
   const masthead = mastheadCopy[language].toUpperCase();
-  ctx.fillText(counter ? `${masthead}  /  ${counter}` : masthead, LEFT, 75);
+  const text = counter ? `${masthead}  /  ${counter}` : masthead;
+  ctx.fillText(text, LEFT, 75);
+  return LEFT + ctx.measureText(text).width;
 }
 
 function footerText(manifest: VideoManifest): string {
@@ -161,9 +165,14 @@ function drawQuote(ctx: CanvasRenderingContext2D, manifest: VideoManifest, scene
   drawFooter(ctx, footerText(manifest));
 }
 
-function drawEnd(ctx: CanvasRenderingContext2D, manifest: VideoManifest): void {
+function drawEnd(ctx: CanvasRenderingContext2D, manifest: VideoManifest, creditUrl?: string): void {
   const c = keepsakeCopy[manifest.language];
-  drawMastheadLine(ctx, manifest.language);
+  // The closing frame carries the growth credit in the masthead row's empty
+  // half — the share-image header slot and primitives, one line, no other
+  // layout change. The URL is render config from the services payload; it
+  // never enters the manifest.
+  const mastheadEnd = drawMastheadLine(ctx, manifest.language);
+  if (creditUrl) drawHeaderCredit(ctx, creditUrl, c.madeWith, mastheadEnd);
   ctx.textAlign = "center";
   ctx.fillStyle = INK;
   ctx.font = serif(52);
@@ -182,7 +191,7 @@ function progressOf(slot: SceneSlot, timeMs: number): number {
 // Draws the video's frame at `timeMs` onto an already-sized 2D context. No
 // clocks, no fetch, no layout reads: the same manifest and time render
 // identically on every call, which is what the mocked-context checks own.
-export function renderFrame(ctx: CanvasRenderingContext2D, manifest: VideoManifest, timeMs: number, slots: SceneSlot[] = frameTimeline(manifest), images: LoadedImages = new Map()): void {
+export function renderFrame(ctx: CanvasRenderingContext2D, manifest: VideoManifest, timeMs: number, slots: SceneSlot[] = frameTimeline(manifest), images: LoadedImages = new Map(), creditUrl?: string): void {
   const slot = sceneAt(slots, timeMs);
   const p = progressOf(slot, timeMs);
   ctx.fillStyle = CREAM;
@@ -194,7 +203,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, manifest: VideoManife
   if (slot.scene.kind === "title") drawTitle(ctx, manifest);
   else if (slot.scene.kind === "prose") drawProse(ctx, manifest, slot, p, proseIndex + 1, proseSlots.length, images);
   else if (slot.scene.kind === "quote") drawQuote(ctx, manifest, slot.scene);
-  else drawEnd(ctx, manifest);
+  else drawEnd(ctx, manifest, creditUrl);
 }
 
 // Decodes the manifest's Ken Burns subjects once per render. Sources are
