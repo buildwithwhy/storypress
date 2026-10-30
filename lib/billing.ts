@@ -20,3 +20,12 @@ export function parseAddons(text:string|undefined):string[]{
  try{const value=JSON.parse(text??'[]');return Array.isArray(value)&&value.every(item=>typeof item==='string')?value as string[]:[];}
  catch{return[];}
 }
+
+// Client gate (paywall §5): true only when billing is configured, the owner is
+// on the free plan, and the monotonic counter has reached the allowance. While
+// Stripe is unconfigured this is always false — a founder setup step must
+// never block a writer. Pure so the UI renders the same answer the server's
+// reserve RPC would.
+export function freeStoryLimitReached(billing:BillingStatus):boolean{
+ return billing.configured&&billing.plan==='free'&&billing.storiesCreated>=billing.freeStoryLimit;
+}
