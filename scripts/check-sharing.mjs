@@ -31,6 +31,21 @@ for(const [language,action] of [['zh','讲讲我自己的故事'],['es','Crear m
  assert.ok(localized.includes(action));
 }
 assert.equal((await worker.fetch(req('/s/'+token),{...env,STORYPRESS_PUBLIC_SHARING:'false'})).status,404);
+// ---- Share/invite separation: a reader link and a contributor invite are
+// different capabilities minted by different pipelines. Sharing may only read
+// and patch the story row and answer with an /s/ URL; inviting may only verify
+// the story (read-only) and insert into the invites table to answer with an
+// /i/ URL — neither side may touch the other's tables or tokens.
+queue=[authenticated(),{data:[{data:story,share_token:null}],check:url=>{assert.ok(url.includes('storypress_stories'));assert.ok(!url.includes('storypress_invites')&&!url.includes('storypress_contributions'),'Sharing never reads the invite pipeline');}},{data:[],check:url=>{assert.ok(url.includes('storypress_stories'));}},{data:[{id}],check:(url,init)=>{assert.ok(url.includes('storypress_stories'),'The reader token is minted on the story row');assert.match(JSON.parse(init.body).share_token,/^[a-f0-9]{64}$/);}}];
+const shareLink=await(await worker.fetch(req('/api/stories',{action:'share',id,revision:1}),env)).json();
+assert.ok(shareLink.url&&shareLink.url.startsWith(base+'/s/'),'A shared reading link is an /s/ capability');
+assert.ok(!JSON.stringify(shareLink).includes('/i/'),'The share response must never carry a contributor capability');
+assert.equal(queue.length,0,'Sharing stops at the story row — no invite pipeline ride-along');
+queue=[authenticated(),{data:[{id:'44444444-4444-4444-8444-444444444444'}],check:url=>{assert.ok(url.includes('storypress_stories?')&&url.includes('select=id'),'Invite creation verifies ownership read-only');assert.ok(!url.includes('share_token'),'Invite lookups never select reader tokens');}},{data:[{id:'55555555-5555-5555-8555-555555555555',expires_at:'2026-11-30T00:00:00.000Z',question:'What was she like?'}],check:(url,init)=>{assert.ok(url.endsWith('/storypress_invites'),'Invite creation inserts into the invites table');assert.ok(!url.includes('storypress_stories'),'Invite creation never writes the story row');assert.match(JSON.parse(init.body).token,/^[a-f0-9]{64}$/);}}];
+const invite=await(await worker.fetch(req('/api/invites',{action:'create',storyId:id,question:'What was she like?'}),env)).json();
+assert.ok(invite.url&&invite.url.startsWith(base+'/i/'),'An invite is an /i/ contributor capability, never a reader link');
+assert.equal(invite.share_token,undefined,'Invite creation never returns a reader token');
+assert.equal(queue.length,0,'Invite creation never patches the story row');
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
 queue=[authenticated(),{data:[]},{data:[]}];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));assert.ok(!config.includes('sk_test'),'Billing config must not leak into the account payload');
 assert.equal(queue.length,0);
@@ -94,4 +109,4 @@ const incomplete={...env,SUPABASE_SECRET_KEY:''};
 const account=await(await worker.fetch(req('/api/account',undefined,false),incomplete)).json();assert.equal(account.storage,false);assert.equal(account.supabase,null);
 assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),incomplete)).status,503,'Missing server key must fail closed before paid model calls');
 assert.equal(queue.length,0);globalThis.fetch=original;
-console.log('Passed: verified account identity, owner filters, stale-save rejection, approval gating, private-note exclusion, escaped HTML, link revocation, no-store responses, server-only keys, quota refusal, story metering with derivative exemptions, and billing dormancy. Supabase responses mocked; live database activation still required.');
+console.log('Passed: verified account identity, owner filters, stale-save rejection, approval gating, private-note exclusion, escaped HTML, link revocation, no-store responses, share/invite pipeline separation, server-only keys, quota refusal, story metering with derivative exemptions, and billing dormancy. Supabase responses mocked; live database activation still required.');
