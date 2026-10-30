@@ -104,7 +104,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const storyGeneration=useRef(0);
  function cancelResearch(){storyGeneration.current++;researchRequest.current?.abort();researchRequest.current=null;setResearching(false);}
  const [readyToWrite,setReadyToWrite]=useState(false);
- const [services, setServices] = useState({ gemini: false, nimble: false, geminiBackend: "ai-studio", liveVoice:false, video:{enabled:false} });
+ const [services, setServices] = useState<{gemini:boolean;nimble:boolean;geminiBackend:string;liveVoice:boolean;video?:{enabled:boolean}}>({ gemini: false, nimble: false, geminiBackend: "ai-studio", liveVoice:false, video:{enabled:false} });
  const [mode, setMode] = useState<InterviewMode>("type");
  const [voicePhase, setVoicePhase] = useState<VoicePhase>("idle");
  const [elapsed, setElapsed] = useState(0);

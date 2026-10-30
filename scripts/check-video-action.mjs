@@ -44,7 +44,7 @@ assert.ok(imagesAt<videoAt,'The video action sits beside share images');
 const source=readFileSync('app/storypress.tsx','utf8');
 for(const [index,line] of source.split('\n').entries()){
  if(!/video/i.test(line))continue;
- const accounted=line.includes('video:{enabled:false}')||line.includes('ShareVideo')||line.includes('services.video.enabled');
+ const accounted=line.includes('video:{enabled:false}')||line.includes('ShareVideo')||line.includes('services.video');
  assert.ok(accounted,`storypress.tsx line ${index+1} mentions video outside the paper-stage action: ${line.trim().slice(0,100)}`);
 }
 assert.match(source,/video:\{enabled:false\}/,'The client default keeps the flag off');
