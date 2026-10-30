@@ -22,9 +22,9 @@ export function validateTranslation(input:z.infer<typeof translationInputSchema>
  if(pairs.some(([a,b])=>!!a.trim()!==!!b.trim()))throw new Error('Translation omitted or added text.');
  return result;
 }
-export function translatedStory(story:Story,targetLanguage:Story['language'],value:unknown):Story{
+export function translatedStory(story:Story,targetLanguage:Story['language'],value:unknown,originStoryId?:string):Story{
  const result=validateTranslation(translationInput(story,targetLanguage),value);let index=0;
- return {...story,paper:result.paper,paperLanguage:targetLanguage,translation:{sourceLanguage:result.sourceLanguage},photoCaption:visiblePhotoCaption(story)?result.photoCaption||undefined:story.photoCaption,sources:story.sources.map(s=>s.selected?{...s,...result.context[index++]}:{...s}),approved:false,draft:''};
+ return {...story,...(originStoryId?{originStoryId}:{}),paper:result.paper,paperLanguage:targetLanguage,translation:{sourceLanguage:result.sourceLanguage},photoCaption:visiblePhotoCaption(story)?result.photoCaption||undefined:story.photoCaption,sources:story.sources.map(s=>s.selected?{...s,...result.context[index++]}:{...s}),approved:false,draft:''};
 }
 export const translationCopy={
  en:{title:'A story that travels',help:'Make a version for someone who reads another language. Your original stays in My stories; the translation is a separate, editable keepsake.',target:'Translate into',action:'Create translated copy',working:'Translating your keepsake…',review:'Review the translation before sharing, especially names, relationships and expressions. You can edit it just like your original.',signIn:'Sign in to keep both versions',from:'Translated from',original:'Original saved in My stories.',failed:'The translation could not be completed. Your original is safe. Please try again.',retry:'Translation ready, but saving failed. Try again to save it without translating again.'},

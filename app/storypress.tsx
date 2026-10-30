@@ -340,13 +340,13 @@ function Storypress({account,flushDraft}:{account:AccountConfig;flushDraft:Mutab
   const payload=translationInput(current,target),key=JSON.stringify(payload);
   setTranslating(true);setBusy(labels.working);setError('');cancelResearch();
   try{
-   await saveCurrent();
+   const original=await saveCurrent();
    if(pendingTranslation.current?.key!==key){
     const response=await fetch('/api/story',{method:'POST',headers:{'Content-Type':'application/json',...await accountHeaders()},body:JSON.stringify({action:'translate',translation:payload})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||labels.failed);
     pendingTranslation.current={key,result:data.translation};
    }
-   const next=translatedStory(current,target,pendingTranslation.current.result);
+   const next=translatedStory(current,target,pendingTranslation.current.result,original?.id);
    let identity:SavedStory;try{identity=await saver.current.saveCopy(next);}catch{throw new Error(labels.retry);}
    setStory(next);setInput('');setSaved(identity);setEditing(false);setResumedDraft(false);setReadyToWrite(false);setSearched(false);pendingTranslation.current=null;navigate('paper');
   }finally{setBusy('');setTranslating(false);}
