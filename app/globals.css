@@ -108,3 +108,11 @@
  .paper-page{display:flex;flex-direction:column}
  .keepsake-share-actions{border:0;padding:0;margin:0 0 24px;min-width:0}
 }
+/* Edition switcher (translation fix §4): original ⇄ translation on the paper stage, one tap either way. */
+.edition-switcher{max-width:800px;margin:0 auto 20px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:center}
+.edition-switcher button{border:1px solid #d7decb;border-radius:999px;padding:9px 18px;font-size:12px;background:#fffdf8}
+.edition-switcher button:hover:not(:disabled){background:#eef1e6}
+.edition-switcher button[aria-pressed="true"]{border-color:var(--green);background:#e9eedf;color:var(--green);font-weight:600}
+/* My stories provenance note under a translated copy's title. */
+.saved-story-edition{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:2px}
+

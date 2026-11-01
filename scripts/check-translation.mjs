@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
-const bundled=await build({stdin:{contents:"export * from './lib/translation';export * from './lib/story';export * from './lib/story-saver';export * from './lib/edition';export * from './lib/keepsake';export * from './server/api';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',loader:{'.txt':'text','.jpg':'dataurl'}});
-const {translationInput,translatedStory,validateTranslation,transcriptInput,validateTranscript,applyTranscriptTranslation,storySchema,initialStory,editionSnapshot,editionHtml,keepsakeMarkup,createStorySaver,handleApi}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+const bundled=await build({stdin:{contents:"export * from './lib/translation';export * from './lib/story';export * from './lib/story-saver';export * from './lib/edition';export * from './lib/keepsake';export * from './lib/editions';export * from './server/api';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',loader:{'.txt':'text','.jpg':'dataurl'}});
+const {translationInput,translatedStory,validateTranslation,transcriptInput,validateTranscript,applyTranscriptTranslation,storySchema,initialStory,editionSnapshot,editionHtml,keepsakeMarkup,createStorySaver,handleApi,parseStoryRows,editionTargets,editionButtonLabel,editionRowNote,translationOriginId}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
 const story={...initialStory,name:'Lin',approved:true,presentation:{version:1,format:'booklet'},paper:{headline:'Grandma’s kitchen',standfirst:'A place for all of us.',paragraphs:['Grandma made dumplings.','I always wanted another.'],quote:''},photo:'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==',photoCaption:'Our kitchen',artwork:'memories',turns:[{role:'user',text:'PRIVATE_INTERVIEW'}],draft:'PRIVATE_UNSENT',artInstructions:'PRIVATE_DIRECTIONS',sources:[{id:'keep',title:'Market',description:'The market opened in 1960.',date:'June 1960',url:'https://example.org/archive',publisher:'Archive',selected:true,connection:'PRIVATE_CONNECTION',question:'PRIVATE_QUESTION'},{id:'omit',title:'PRIVATE_UNSELECTED',description:'PRIVATE_UNSELECTED',date:'',url:'https://example.org/other',publisher:'Archive',selected:false,connection:'',question:''}]};
 const result={sourceLanguage:'en',paper:{headline:'外婆的厨房',standfirst:'属于我们所有人的地方。',paragraphs:['外婆包饺子。','我总想再吃一个。'],quote:''},photoCaption:'我们的厨房',context:[{title:'集市',description:'集市于1960年开业。',date:'1960年6月'}]};
 const input=translationInput(story,'zh'),before=structuredClone(story);
@@ -25,6 +25,40 @@ let id=0,identity=null,fail=false;const rows=new Map();
 const saver=createStorySaver({save:async(value,saved)=>{if(fail)throw new Error('Offline');const next={id:saved?.id||'story-'+(++id),revision:(saved?.revision||0)+1,share_token:saved?.share_token||null};rows.set(next.id,{...next,story:structuredClone(value)});return next;},changeSharing:async(_action,saved)=>({...saved,share_token:'original-public-token'}),remove:async()=>{},onSaved:next=>{identity=next;},onStatus:()=>{}});
 saver.replace(story,null);await saver.flush();await saver.changeSharing('share');const originalIdentity=identity;fail=true;await assert.rejects(saver.saveCopy(translated),/Offline/);assert.deepEqual(identity,originalIdentity);assert.equal(rows.size,1);assert.deepEqual(rows.get(identity.id).story,story);
 fail=false;await saver.saveCopy(translated);assert.equal(rows.size,2);assert.notEqual(identity.id,originalIdentity.id);assert.equal(identity.share_token,null);assert.deepEqual(rows.get(originalIdentity.id).story,story);assert.equal(rows.get(identity.id).story.paperLanguage,'zh');
+// Edition clarity (translation fix §4): owner navigation between saved editions.
+const originalRowId='3f9d6a58-1111-4b2e-9c31-0f2a7c8d5e10',zhCopyId='5b2e8c41-2222-4c9f-8d47-1a3b9d7c6f20',esSiblingId='7c4f9d52-3333-4d18-a6b8-2c4e0f9a7d31';
+const copyWithOrigin=translatedStory(story,'zh',result,originalRowId);
+assert.equal(translationOriginId(copyWithOrigin,zhCopyId),originalRowId,'A copy of a copy links to the original, never the intermediate');
+assert.equal(translationOriginId(story,originalRowId),originalRowId);
+const esResult={sourceLanguage:'zh',paper:{headline:'La cocina de la abuela',standfirst:'Un lugar para todos nosotros.',paragraphs:['La abuela hacía dumplings.','Siempre quise otro.'],quote:''},photoCaption:'Nuestra cocina',context:[{title:'Mercado',description:'El mercado abrió en 1960.',date:'Junio de 1960'}]};
+const copyBefore=structuredClone(copyWithOrigin),originalBefore=structuredClone(story);
+const copyOfCopy=translatedStory(copyWithOrigin,'es',esResult,translationOriginId(copyWithOrigin,zhCopyId));
+assert.equal(copyOfCopy.originStoryId,originalRowId);
+assert.deepEqual(copyWithOrigin,copyBefore);assert.deepEqual(story,originalBefore,'The original story is never mutated');
+assert.deepEqual(copyOfCopy.turns,story.turns,'Interview turns stay in their own language');
+assert.equal(copyOfCopy.turns[0].text,'PRIVATE_INTERVIEW');
+const listRows=parseStoryRows([
+ {id:originalRowId,title:'Grandma’s kitchen',revision:2,updated_at:'2026-11-01T00:00:00Z',origin_story_id:null,paper_language:'en'},
+ {id:zhCopyId,title:'外婆的厨房',revision:1,updated_at:'2026-11-01T01:00:00Z',origin_story_id:originalRowId,paper_language:'zh'},
+ {id:esSiblingId,title:'La cocina de la abuela',revision:1,updated_at:'2026-11-01T02:00:00Z',origin_story_id:originalRowId,paper_language:'es'}
+]);
+assert.equal(parseStoryRows('garbage').length,0);
+const fromOriginal=editionTargets({id:originalRowId},listRows);
+assert.equal(fromOriginal.original,undefined);
+assert.deepEqual(fromOriginal.translations.map(row=>row.id),[zhCopyId,esSiblingId]);
+const fromCopy=editionTargets({id:zhCopyId,originStoryId:originalRowId},listRows);
+assert.equal(fromCopy.original?.id,originalRowId,'One tap from a copy to the original');
+assert.deepEqual(fromCopy.translations.map(row=>row.id),[esSiblingId]);
+// Switching resolves saved rows directly — never a re-translation — so the copy still carries the original-language interview turns.
+assert.deepEqual(copyWithOrigin.turns,story.turns);
+assert.equal(editionButtonLabel(listRows[1],'translation','en'),'Translation · Chinese');
+assert.equal(editionButtonLabel(listRows[0],'original','zh'),'原作 · 英语');
+assert.equal(editionRowNote(listRows[0],listRows,'en'),'');
+const zhNote=editionRowNote(listRows[1],listRows,'en');
+assert.ok(zhNote.includes('Chinese'),zhNote);assert.ok(zhNote.includes('translation of Grandma’s kitchen'),zhNote);
+assert.ok(editionRowNote(listRows[2],listRows,'es').includes('traducción de Grandma’s kitchen'));
+assert.ok(editionRowNote(listRows[1],listRows,'zh').includes('译自《Grandma’s kitchen》'));
+assert.ok(editionRowNote({...listRows[1],origin_story_id:'9e9f8e8d-4444-4e2a-9b3c-5d6e7f8a9b0c'},listRows,'en').includes('Translation'),'A copy whose original is gone still shows its language');
 // API boundary: auth, quota and one existing Cloud writer call; no private context.
 const userId='c60a25ef-f588-4df5-a89f-dcb1ea1a6470';
 const env={GEMINI_BACKEND:'vertex',GOOGLE_CLOUD_PROJECT:'fixture',VERTEX_API_KEY:'mock-cloud',GEMINI_WRITING_MODEL:'gemini-test-writing',SUPABASE_URL:'https://fixture.supabase.co',SUPABASE_PUBLISHABLE_KEY:'mock-public',SUPABASE_SECRET_KEY:'mock-secret'};
@@ -58,4 +92,4 @@ try{
  queue=[auth(),quota(true),providerTranscript()];const transcriptResponse=await handleApi(transcriptApi(),env);assert.equal(transcriptResponse.status,200);assert.equal(transcriptResponse.headers.get('cache-control'),'no-store');assert.deepEqual(await transcriptResponse.json(),{turns:['她包饺子。','  ','每个周日。']});assert.equal(queue.length,0);
  queue=[auth(),quota(true),providerTranscript({...transcriptResult,turns:[{text:'她包饺子。'},{text:'  '}]})];assert.equal((await handleApi(transcriptApi(),env)).status,502);assert.equal(queue.length,0);
 }finally{globalThis.fetch=originalFetch;}
-console.log('Passed: translation data minimization, validation, separate private copies, failed-save retention, original preservation, all three formats, translated reader/download language, auth, quota, Cloud writer routing, upstream failures, and transcript translation.');
+console.log('Passed: translation data minimization, validation, separate private copies, failed-save retention, original preservation, all three formats, translated reader/download language, auth, quota, Cloud writer routing, upstream failures, transcript translation, edition switcher navigation, labeled list rows, and no copy-of-copy chains.');
