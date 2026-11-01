@@ -37,7 +37,10 @@ export async function storiesApi(request:Request,env:Bindings){
   if(request.method==='GET'){
    const id=url.searchParams.get('id');
    if(id){uuid.parse(id);const [row]=await db(env,`storypress_stories?id=eq.${id}&${own}&select=id,data,revision,share_token,updated_at`);if(!row)return json({error:'Story not found.'},404);return json(row);}
-   return json({stories:await db(env,`storypress_stories?${own}&select=id,title,revision,updated_at&order=updated_at.desc&limit=100`)});
+   // Edition signals for owner navigation (translation fix §4): the origin
+   // link and paper language are already persisted on the row's data JSON —
+   // aliased out read-only, nothing new stored or selected privately.
+   return json({stories:await db(env,`storypress_stories?${own}&select=id,title,revision,updated_at,data->>originStoryId as origin_story_id,data->>paperLanguage as paper_language&order=updated_at.desc&limit=100`)});
   }
   if(request.method!=='POST')return json({error:'Method not allowed'},405);
   sameOrigin(request);const raw=await request.text();if(raw.length>2200000)return json({error:'This story is too large to save.'},413);
