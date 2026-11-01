@@ -39,6 +39,7 @@ import {shareGroupsCopy} from "../lib/share-groups-copy";
 import {PhotoStory} from './photo-story';
 import {photoCopy} from '../lib/photo-copy';
 import {flowCopy} from '../lib/flow-copy';
+import {interviewFetchSignal,replyProblemText,photoArrivalDuringReply} from '../lib/reply-recovery';
 import {ArtworkPicker} from './artwork-picker';
 import {artworkPath,artworkCopy,chosenArtwork,artworkCaption,artworkAlt} from '../lib/artwork';
 import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft,prepareGuestHandoff,prepareGoogleHandoff,resumeGuestHandoff,restoreAccountDraft,type DraftSnapshot} from '../lib/draft-handoff';
@@ -97,6 +98,10 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // sets the bounds.
  const pacing=useRef(0);
  const [error, setError] = useState("");
+ // A failed interview reply is reported beside the turn it failed on (never
+ // only in the top banner, which scrolls off-screen on a long page) and
+ // carries its own Retry affordance.
+ const [replyError,setReplyError]=useState('');
  const [editing, setEditing] = useState(false);
  const [searched, setSearched] = useState(false);
  const [researching,setResearching]=useState(false);
@@ -244,7 +249,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   document.addEventListener("visibilitychange", hidden); window.addEventListener("pagehide", leave);
   return () => { interviewRequest.current?.abort(); researchRequest.current?.abort(); voice.current?.cancel(); requestId.current++; document.removeEventListener("visibilitychange", hidden); window.removeEventListener("pagehide", leave); };
  }, []);
- function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); setStage(next); setError(""); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
+ function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); setStage(next); setError(""); setReplyError(''); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
  function changeMode(next: InterviewMode) { voice.current?.cancel(); setMode(next); setError(""); setVoicePaused(false); setShowText(false); if (!services.liveVoice && next === "voice" && stage === "tell") voice.current?.speak(question, story.language); }
  async function begin(preview = false) {
   let next=story;
@@ -264,7 +269,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   interviewRequest.current?.abort();const controller=new AbortController();interviewRequest.current=controller;setStreamingQuestion('');
   let spoken='';
   try{
-   const response=await fetch('/api/story',{method:'POST',headers:{'Content-Type':'application/json',...await accountHeaders()},body:JSON.stringify({action:'interview',stream:true,story:{...next,photo:undefined,generatedArt:undefined}}),signal:controller.signal});
+   const response=await fetch('/api/story',{method:'POST',headers:{'Content-Type':'application/json',...await accountHeaders()},body:JSON.stringify({action:'interview',stream:true,story:{...next,photo:undefined,generatedArt:undefined}}),signal:interviewFetchSignal(controller)});
    const result=await readInterviewResponse(response,text=>{
     if(controller.signal.aborted)return;
     setStreamingQuestion(text);
@@ -294,25 +299,28 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   submitting.current = true; voice.current?.cancel();
   const id = ++requestId.current;
   const next: Story = { ...current, draft: "", approved: false, paper: undefined, turns: [...current.turns, { role: "user", text: value.trim() }] };
-  setStory(next); setInput(""); setReviewing(false); setShowText(false); setBusy(v.thinking); setError("");
+  setStory(next); setInput(""); setReviewing(false); setShowText(false); setBusy(v.thinking); setError(""); setReplyError('');
   try { const q = await nextQuestion(next); if (id !== requestId.current) return; setStory(s=>({ ...s, researchSuggestion:q.researchSuggestion,researchQueries:[...new Set([...(s.researchQueries||[]),...q.researchQueries])].slice(-60), turns: [...next.turns, { role: "assistant", text: q.text }] })); }
-  catch(e) { if (id === requestId.current) setError(problemText(e)); }
-  finally { if (id === requestId.current) { setBusy(""); submitting.current = false; } }
+  catch(e) { if (id !== requestId.current || (e as Error).name === 'AbortError') return; setReplyError(replyProblemText(e, latest.current.story.language)); }
+  // The latch releases on every exit path — success, failure, cancellation,
+  // timeout, or supersession — so a stalled reply can never silently swallow
+  // every later Send.
+  finally { submitting.current = false; if (id === requestId.current) setBusy(""); }
  }
  sendRef.current = send;
  async function retryInterview(){
   if(interactionBusy||correcting||!canUseAi())return;
   const current=latest.current.story;if(current.turns.length>58){setError(v.maxTurns);return;}
-  setBusy(v.thinking);setError('');
+  setBusy(v.thinking);setError('');setReplyError('');
   try{const q=await nextQuestion(current);setStory(s=>({...s,researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...current.turns,{role:'assistant',text:q.text}]}));}
-  catch(e){setError(problemText(e));}finally{setBusy('');}
+  catch(e){setReplyError(replyProblemText(e,latest.current.story.language));}finally{setBusy('');}
  }
  async function skip() {
   if (interactionBusy || correcting || !canUseAi()) return;
   if (story.turns.length > 57) { setError(v.maxTurns); return; }
-  voice.current?.cancel(); setBusy(v.alternate); setError("");
+  voice.current?.cancel(); setBusy(v.alternate); setError(""); setReplyError('');
   try { const q=await nextQuestion({...story,turns:[...story.turns,{role:'user',text:'Please ask about a different, unanswered aspect of my story. I want to keep talking.'}]});patch({researchSuggestion:q.researchSuggestion,researchQueries:q.researchQueries,turns:[...story.turns,{role:'assistant',text:q.text}]}); }
-  catch(e) { setError(problemText(e)); } finally { setBusy(""); }
+  catch(e) { setReplyError(replyProblemText(e,latest.current.story.language)); } finally { setBusy(""); }
  }
  function listen() { setError(""); if (voicePhase === "speaking") voice.current?.cancel(); else voice.current?.speak(question, story.language); }
  function pauseVoice() { voice.current?.cancel(); setVoicePaused(true); }
@@ -332,16 +340,24 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   let index = story.turns.length - 1; while (index >= 0 && story.turns[index].role !== "user") index--;
   if (index < 0) return;
   const next: Story = { ...story, paper: undefined, approved: false, turns: story.turns.slice(0, index + 1).map((t, i) => i === index ? { ...t, text: correction.trim() } : t) };
-  setStory(next); setCorrecting(false); setBusy(v.thinking); setError("");
+  setStory(next); setCorrecting(false); setBusy(v.thinking); setError(""); setReplyError('');
   try { const q = await nextQuestion(next); setStory(s=>({ ...s, researchSuggestion:q.researchSuggestion,researchQueries:[...new Set([...(s.researchQueries||[]),...q.researchQueries])].slice(-60), turns: [...next.turns, { role: "assistant", text: q.text }] })); }
-  catch(e) { setError(problemText(e)); } finally { setBusy(""); }
+  catch(e) { setReplyError(replyProblemText(e,latest.current.story.language)); } finally { setBusy(""); }
  }
  function modePicker() { return <div className="interview-modes" role="group" aria-label={v.chooseMode}>{(services.liveVoice?(["voice", "type", "dictate"] as const):(["type", "dictate", "voice"] as const)).map(m => <button key={m} type="button" aria-pressed={mode === m} disabled={interactionBusy || correcting} onClick={() => changeMode(m)}>{m === "type" ? <Pencil size={18}/> : m === "dictate" ? <Mic size={18}/> : <Volume2 size={18}/>}<span>{m==='voice'&&services.liveVoice?({en:"Talk live",zh:"实时对话",es:"Hablar en directo"}[story.language]):v[m]}</span></button>)}</div>; }
  function choosePhoto(){if(interactionBusy||correcting)return;voice.current?.cancel();file.current?.click();}
  async function addPhoto(photo: File) {
   if (!/^image\/(jpeg|png|webp)$/.test(photo.type)) { setError(p.format); return; }
   if (photo.size > 12000000) { setError(p.size); return; }
-  voice.current?.cancel();const id=++requestId.current;setBusy(p.preparing);setError('');
+  // A photo arriving while a reply is in flight is an explicit cancel, never
+  // a silent supersession: abort the pending fetch and release the send
+  // latch here — the aborted send's own finally releases again idempotently,
+  // so the latch can never leak (the old requestId bump dropped the reply
+  // AND left `submitting` set, swallowing every later Send).
+  const preemption=photoArrivalDuringReply(submitting.current,!!interviewRequest.current);
+  if(preemption.abortReply){interviewRequest.current?.abort();interviewRequest.current=null;}
+  if(preemption.releaseLatch)submitting.current=false;
+  voice.current?.cancel();const id=++requestId.current;setBusy(p.preparing);setError('');setReplyError('');
   const url=URL.createObjectURL(photo);
   try{
    const image=new window.Image();await new Promise<void>((resolve,reject)=>{image.onload=()=>resolve();image.onerror=()=>reject(new Error(p.invalid));image.src=url;});
@@ -507,9 +523,9 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
    </section>}
    {editorVisible(mode,showText,reviewing,!!input,correcting) && <div className="answer-editor">{reviewing && <div className="transcript-heading"><h2>{v.reviewTitle}</h2><p>{v.reviewHelp}</p></div>}<label className="sr-only" htmlFor="story-answer">{v.memory}</label><textarea id="story-answer" ref={textArea} className="story-input" placeholder={c.placeholder} value={input} maxLength={12000} onChange={e => { setInput(e.target.value); patch({draft:e.target.value}); }} disabled={interactionBusy}/><div className="answer-actions"><button className="primary" onClick={() => void send()} disabled={!input.trim() || interactionBusy}>{busy ? <LoaderCircle className="spin" size={18}/> : <ArrowRight size={18}/>} {reviewing ? v.continue : c.send}</button></div></div>}
    {mode === "type" && busy && <p className="working" role="status">{busy}</p>}
+   {replyError&&<div className="reply-error no-print" role="alert"><p>{replyError}</p><button className="text-button" onClick={()=>void retryInterview()} disabled={interactionBusy||correcting}><RotateCcw size={15}/>{f.retry}</button></div>}
    <ResearchThread story={story} disabled={interactionBusy||correcting} canSearch={services.nimble} searching={researching} searched={searched} onSearch={query=>void discover(undefined,query)} onDismiss={()=>patch({researchSuggestion:null})} onExplore={exploreSource} onUpdateSource={updateSource}/>
    {(words.length>0||!!input.trim())&&!story.sample&&<section className="finish-interview" aria-label={f.ready}><div><h2>{f.ready}</h2><p>{readyToWrite?f.readyNote:f.finish}</p></div><button className="primary" onClick={()=>void makePaper()} disabled={interactionBusy||correcting}><Newspaper size={18}/>{c.create}</button></section>}
-   {error&&words.length>0&&!story.sample&&<button className="text-button" disabled={interactionBusy||correcting} onClick={()=>void retryInterview()}>{f.retry}</button>}
    {words.length > 0 && <section className="latest-transcript"><div><h2>{v.transcript}</h2>{!correcting && <button className="text-button" onClick={editLastWords} disabled={interactionBusy || !!input}><Pencil size={15}/>{v.edit}</button>}</div>{correcting ? <><textarea aria-label={v.edit} value={correction} maxLength={12000} onChange={e => setCorrection(e.target.value)}/><div className="correction-actions"><button className="primary" onClick={saveCorrection} disabled={!correction.trim() || interactionBusy}>{v.save}</button><button className="text-button" onClick={() => setCorrecting(false)}>{v.discard}</button></div></> : <p>{words.at(-1)}</p>}</section>}
    <button className="text-button skip-question" onClick={skip} disabled={interactionBusy || correcting || story.sample}>{readyToWrite?f.continue:c.skip}<ArrowRight size={15}/></button>
    {!services.gemini && !story.sample && <p className="offline-note">{f.offline}</p>}
