@@ -17,7 +17,7 @@ import {compactImage} from "../lib/compact-image";
 import { ResearchThread } from "./research-thread";
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { Asterisk, ArrowRight, ArrowLeft, Mic, Square, Volume2, ImagePlus, Check, X, Search, Newspaper, BookOpen, Sparkles, Download, Settings, ExternalLink, Pencil, RotateCcw, LoaderCircle, Heart, Plus, FileText, Share2, Users } from "lucide-react";
-import { openingQuestion, modeDescriptions } from "../lib/story-modes";
+import { openingQuestion, modeDescriptions, bootInputMode, editorVisible, type InputMode } from "../lib/story-modes";
 import { initialStory, languages, originalWords, safeSourceUrl, type Story, type Source, type Paper, type PhotoAnalysis } from "../lib/story";
 
 import { createSampleStory, presentation, sampleEditions } from "../lib/presentation";
@@ -45,7 +45,7 @@ import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft
 import {tellStageActions,mobileActionCopy} from '../lib/mobile-actions';
 import {MobileActionBar} from './mobile-action-bar';
 
-type InterviewMode = "type" | "dictate" | "voice";
+type InterviewMode = InputMode;
 type Stage = "home" | "tell" | "discover" | "paper";
 const copy = {
  en: { tell: "Your story", discover: "A little discovery", paper: "Your newspaper", start: "Start my story", sample: "Explore a sample", name: "What should we call you?", optional: "Your first name (optional)", question: "Take your time. The little details matter.", placeholder: "Start anywhere. A place, a person, a moment…", send: "Save & continue", record: "Tell it out loud", stop: "Finish recording", listen: "Hear the question", skip: "Ask something else", discovery: "Find a connection", create: "Make my newspaper", saved: "Saved on this device", own: "In your own words", back: "Back to my story", photo: "Add a photograph", continue: "Continue my story", fresh: "Start a new story", edit: "Edit my newspaper", print: "Print / save PDF", done: "Done editing", include: "Include in my newspaper", familiar: "Looks familiar", unsure: "Not sure", unfamiliar: "Not my memory", prompt: "Tell me more about this", no: "Continue without history", review: "I’ve read this and it feels true to my story.", your: "A story by", context: "The world around your story" },
@@ -134,6 +134,9 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const sendRef = useRef<(text: string) => Promise<void>>(async () => {});
  const file = useRef<HTMLInputElement>(null);
  const textArea = useRef<HTMLTextAreaElement>(null);
+ // The mode restored from a resumed snapshot, if any — the boot services
+ // fetch consults it so the voice-first default never clobbers it.
+ const restoredMode = useRef<InputMode | null>(null);
  const question = streamingQuestion || [...story.turns].reverse().find(t => t.role === "assistant")?.text || openingQuestion(story);
  const k=keepsakeCopy[story.language];
  const c = {...copy[story.language],create:k.create,edit:k.edit,paper:({en:"Your keepsake",zh:"你的纪念作品",es:"Tu recuerdo"}[story.language])};
@@ -168,11 +171,11 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
    setStorageKey(loaded.key);setSaveError(loaded.failed);
    if(account.user)saver.current?.replace(loaded.snapshot?.story||initialStory,loaded.snapshot?.saved||null);
    if(loaded.snapshot){setStory(loaded.snapshot.story);setInput(loaded.snapshot.story.draft||'');setSaved(loaded.snapshot.saved);}
-   if(loaded.resumed&&loaded.snapshot){const resumeStage=loaded.snapshot.stage||'tell';setStage(resumeStage==='paper'&&!loaded.snapshot.story.paper?'tell':resumeStage==='home'?'tell':resumeStage);setMode(loaded.snapshot.mode||'type');setVoicePaused(true);setResumedDraft(true);}
+   if(loaded.resumed&&loaded.snapshot){const resumeStage=loaded.snapshot.stage||'tell';setStage(resumeStage==='paper'&&!loaded.snapshot.story.paper?'tell':resumeStage==='home'?'tell':resumeStage);restoredMode.current=loaded.snapshot.mode||'type';setMode(loaded.snapshot.mode||'type');setVoicePaused(true);setResumedDraft(true);}
    if(!loaded.failed){const snapshot=loaded.snapshot;const resumeStage=snapshot?.stage||'tell';lastWrittenDraft.current=JSON.stringify({story:{...(snapshot?.story||initialStory),draft:snapshot?.story.draft||''},saved:snapshot?.saved||null,stage:loaded.resumed?(resumeStage==='paper'&&!snapshot?.story.paper?'tell':resumeStage==='home'?'tell':resumeStage):'home',mode:loaded.resumed?snapshot?.mode||'type':'type'});}
    if(account.user)setEarlierDraft(loaded.key!==accountDraftKey(account.user.id)&&!!readDraft(localStorage,accountDraftKey(account.user.id)));
   }catch{setSaveError(true);}
-  setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);if(data.liveVoice)setMode('voice');}).catch(()=>{});
+  setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);setMode(bootInputMode(restoredMode.current,data.liveVoice));}).catch(()=>{});
  }, []);
  useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
  // Post-checkout return (paywall §5): the return URL mirrors the email

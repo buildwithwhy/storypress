@@ -38,6 +38,25 @@ const openings = {
  },
 } satisfies Record<Story['language'], Record<Story['occasion'], string>>;
 
+// Input modes for the tell stage; a draft snapshot stores the mode the
+// narrator last used so a resumed session returns them to it.
+export type InputMode = "type" | "dictate" | "voice";
+
+// Boot input-mode decision: a resumed snapshot owns the mode it was saved
+// with. The voice-first default belongs to fresh sessions only — live voice
+// being enabled must never clobber a mode restored from a snapshot.
+export function bootInputMode(restoredMode: InputMode | null, liveVoice: boolean): InputMode {
+ if(restoredMode)return restoredMode;
+ return liveVoice ? "voice" : "type";
+}
+
+// The typed editor is visible on the tell stage exactly when it renders.
+// Shared by the render condition and the resume-focus effect so the two
+// cannot drift: focus lands on the editor only when it is actually on screen.
+export function editorVisible(mode: InputMode, showText: boolean, reviewing: boolean, hasInput: boolean, correcting: boolean): boolean {
+ return (mode !== "voice" || showText || reviewing || !!hasInput) && !correcting;
+}
+
 export function openingQuestion(story: Pick<Story, 'language' | 'occasion' | 'intention'>) {
  if(story.intention?.kind==='message')return {en:'Who is this for, and what would you like them to know?',zh:'你想写给谁？有什么想让对方知道的？',es:'¿Para quién es y qué te gustaría decirle?'}[story.language];
  return openings[story.language][story.occasion];
