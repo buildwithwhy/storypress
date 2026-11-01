@@ -177,6 +177,19 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   }catch{setSaveError(true);}
   setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);setMode(bootInputMode(restoredMode.current,data.liveVoice));}).catch(()=>{});
  }, []);
+ // A resumed session returns the narrator to their typing spot: focus the
+ // editor and bring it into view once it renders. Runs once per resume —
+ // later mode toggles are the narrator's own navigation, not resume.
+ const resumeFocusDone=useRef(false);
+ useEffect(()=>{
+  if(!resumedDraft||!ready){resumeFocusDone.current=false;return;}
+  if(resumeFocusDone.current)return;
+  if(!editorVisible(mode,showText,reviewing,!!input,correcting))return;
+  const area=textArea.current;if(!area)return;
+  resumeFocusDone.current=true;
+  area.focus({preventScroll:true});
+  area.scrollIntoView({behavior:'smooth',block:'center'});
+ },[resumedDraft,ready,mode,showText,reviewing,input,correcting]);
  useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
  // Post-checkout return (paywall §5): the return URL mirrors the email
  // sign-in return, carrying Stripe's session id. The boot fetch already
@@ -492,7 +505,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
     {mode === "voice" && <label className="checkbox review-voice"><input type="checkbox" checked={reviewVoice} disabled={interactionBusy} onChange={e => setReviewVoice(e.target.checked)}/>{v.review}</label>}
     <p className="mic-note">{v.micNote}</p>
    </section>}
-   {(mode !== "voice" || showText || reviewing || !!input) && !correcting && <div className="answer-editor">{reviewing && <div className="transcript-heading"><h2>{v.reviewTitle}</h2><p>{v.reviewHelp}</p></div>}<label className="sr-only" htmlFor="story-answer">{v.memory}</label><textarea id="story-answer" ref={textArea} className="story-input" placeholder={c.placeholder} value={input} maxLength={12000} onChange={e => { setInput(e.target.value); patch({draft:e.target.value}); }} disabled={interactionBusy}/><div className="answer-actions"><button className="primary" onClick={() => void send()} disabled={!input.trim() || interactionBusy}>{busy ? <LoaderCircle className="spin" size={18}/> : <ArrowRight size={18}/>} {reviewing ? v.continue : c.send}</button></div></div>}
+   {editorVisible(mode,showText,reviewing,!!input,correcting) && <div className="answer-editor">{reviewing && <div className="transcript-heading"><h2>{v.reviewTitle}</h2><p>{v.reviewHelp}</p></div>}<label className="sr-only" htmlFor="story-answer">{v.memory}</label><textarea id="story-answer" ref={textArea} className="story-input" placeholder={c.placeholder} value={input} maxLength={12000} onChange={e => { setInput(e.target.value); patch({draft:e.target.value}); }} disabled={interactionBusy}/><div className="answer-actions"><button className="primary" onClick={() => void send()} disabled={!input.trim() || interactionBusy}>{busy ? <LoaderCircle className="spin" size={18}/> : <ArrowRight size={18}/>} {reviewing ? v.continue : c.send}</button></div></div>}
    {mode === "type" && busy && <p className="working" role="status">{busy}</p>}
    <ResearchThread story={story} disabled={interactionBusy||correcting} canSearch={services.nimble} searching={researching} searched={searched} onSearch={query=>void discover(undefined,query)} onDismiss={()=>patch({researchSuggestion:null})} onExplore={exploreSource} onUpdateSource={updateSource}/>
    {(words.length>0||!!input.trim())&&!story.sample&&<section className="finish-interview" aria-label={f.ready}><div><h2>{f.ready}</h2><p>{readyToWrite?f.readyNote:f.finish}</p></div><button className="primary" onClick={()=>void makePaper()} disabled={interactionBusy||correcting}><Newspaper size={18}/>{c.create}</button></section>}
