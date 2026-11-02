@@ -31,4 +31,32 @@ const keepsake=page.indexOf('<KeepsakeView'),share=page.indexOf('keepsake-share-
 assert.ok(keepsake>-1&&share>-1,'keepsake view and share actions both render on the paper page');
 assert.ok(keepsake<share,'keepsake must precede share actions in the DOM');
 
-console.log('Passed: paper stage order — keepsake before share/collaborate actions at every viewport, no CSS order overrides, mobile action bar intact.');
+// Keepsake-first (spec item 3 goal): above the keepsake sit only the slim top
+// row and the edition switcher. The format picker, artwork picker and story-art
+// studio render after the keepsake (with the review bar) so the top of the
+// keepsake is visible in a 375px first viewport. DOM order only — no CSS
+// `order:` anywhere.
+const firstBelow=Math.min(...['<FormatPicker','<ArtworkPicker','<StoryArt','review-bar'].map(s=>page.indexOf(s)).filter(i=>i>-1));
+assert.ok(keepsake<firstBelow,'keepsake (or editor) must precede the format/art modules and review bar in the DOM');
+
+// Slim top row (spec item 3): the toolbar is one compact row of icon-button
+// circles — back / edit / print, each with a localized aria-label and title —
+// and the intro (eyebrow + single-line h1) shares that row so nothing sits
+// above the keepsake but one slim line. The h1 stays in the DOM for the
+// document outline; the description paragraph only renders in the editor state.
+const toolbarBlock=page.match(/<div className="paper-toolbar no-print">[\s\S]*?paper-toolbar-actions[\s\S]*?<\/div><\/div>/)?.[0];
+assert.ok(toolbarBlock,'paper toolbar renders as the paper page\'s first block, with the intro inside it');
+
+
+const iconButtons=[...toolbarBlock.matchAll(/<button className="icon-button"[\s\S]*?<\/button>/g)];
+assert.equal(iconButtons.length,3,'back/edit/print are exactly three icon-button circles');
+for(const icon of iconButtons){
+  assert.ok(icon[0].includes('aria-label=')&&icon[0].includes('title='),
+    'every toolbar icon button carries a localized aria-label and title');
+}
+assert.ok(!/className="(?:primary|secondary|text-button)"/.test(toolbarBlock),'no labeled text buttons remain in the paper toolbar');
+const introBlock=page.match(/<div className="paper-intro">[\s\S]*?<h1>/)?.[0];
+assert.ok(introBlock,'the intro h1 stays in the DOM (document outline) inside the toolbar row');
+assert.ok(page.includes('{editing&&<p>{k.draftHelp}</p>}'),'the description paragraph renders only in the editor state');
+
+console.log('Passed: paper stage order — slim icon toolbar and one-line intro above the keepsake, keepsake before format/art modules and share/collaborate actions at every viewport, no CSS order overrides.');
