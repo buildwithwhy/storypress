@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
 import {build} from 'esbuild';
 import worker from '../dist/server/index.js';
 
@@ -182,6 +183,39 @@ assert.ok(readerHtml.includes('dumplings'),'the reader carries the shared keepsa
 assert.ok(!readerHtml.toLowerCase().includes('upgrade'),'the reader carries no upgrade surface');
 assert.equal(queue.length,0,'the reader completes with no dangling upstream calls');
 guardBilling=false;
+
+// 15. Owner textarea re-seed rule (spec art_z9pItTE1 item 1): the suggested
+// question follows the story language while untouched, never re-seeds after
+// the owner types, and created invites keep their frozen question (guest
+// replay above, §2/§14, reads the stored row — unchanged).
+// Network helpers are stubbed: only the question seeding logic is under test.
+const stubNet={name:'stub-invite-net',setup(b){b.onLoad({filter:/lib\/(invite-client|account-client)\.ts$/},()=>({contents:"export const inviteApi=async()=>({invites:[],contributions:[]});export const accountRequest=async()=>null;export const accountHeaders=async()=>({});export const parseInviteToken=()=>null;export const inviteDraftKey=()=>'draft';export const inviteSentKey=()=>'sent';export const GUEST_TURNS_OCTET_LIMIT=40000;export const guestTurnsOctets=()=>0;",loader:'ts'}));}};
+const inviteBundle=await build({stdin:{contents:"import {Invites} from './app/invites.tsx';import {suggestedQuestion} from './lib/invite-copy.ts';export {Invites,suggestedQuestion};",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external',plugins:[stubNet]});
+const inviteCheckPath=new URL('../work/invite-question-check.mjs',import.meta.url);
+await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});
+await fs.writeFile(inviteCheckPath,inviteBundle.outputFiles[0].text);
+const inviteCheck=await import(inviteCheckPath.href);
+const {default:React}=await import('react');
+const {default:TestRenderer,act}=await import('react-test-renderer');
+const saved={id:storyId,revision:2,share_token:null};
+const props=over=>({...over,saved,onSave:async()=>null,onLoad:async()=>{}});
+const textareaOf=tr=>tr.root.findAll(node=>node.type==='textarea').find(node=>node.props.className==='invite-question-input');
+let tr;
+await act(async()=>{tr=TestRenderer.create(React.createElement(inviteCheck.Invites,props({language:'en',occasion:'life',storyName:'Wei'})));});
+assert.equal(textareaOf(tr).props.value,inviteCheck.suggestedQuestion('en','life','Wei'),'en seed renders');
+assert.ok(textareaOf(tr).props.value.includes('never forgotten'),'en seed is the en question');
+// Untouched: a language change re-seeds, in zh and es.
+await act(async()=>{tr.update(React.createElement(inviteCheck.Invites,props({language:'zh',occasion:'life',storyName:'Wei'})));});
+assert.equal(textareaOf(tr).props.value,inviteCheck.suggestedQuestion('zh','life','Wei'),'zh re-seed while untouched');
+await act(async()=>{tr.update(React.createElement(inviteCheck.Invites,props({language:'es',occasion:'life',storyName:'Wei'})));});
+assert.equal(textareaOf(tr).props.value,inviteCheck.suggestedQuestion('es','life','Wei'),'es re-seed while untouched');
+assert.ok(textareaOf(tr).props.value.includes('¿Hay un momento'),'es seed is the es question');
+// Owner types: no language change may overwrite their words.
+await act(async()=>{textareaOf(tr).props.onChange({target:{value:'Tell me about the kitchen.'}});});
+await act(async()=>{tr.update(React.createElement(inviteCheck.Invites,props({language:'en',occasion:'life',storyName:'Wei'})));});
+await act(async()=>{tr.update(React.createElement(inviteCheck.Invites,props({language:'zh',occasion:'life',storyName:'Wei'})));});
+assert.equal(textareaOf(tr).props.value,'Tell me about the kitchen.','an edited question never re-seeds');
+tr.unmount();
 
 globalThis.fetch=original;
 console.log('Passed: invite creation with database defaults, token-shaped guest context (no blob reads), expiry/revocation dead ends, invite-scoped AI reservation, attributed pending contributions, revision-guarded approval retries, sign-in attribution upgrade, decline-without-story-writes, ownership guards, hardened /i/ shell, contributor bylines, and guest/reader isolation under a billing-lookup tripwire. Supabase responses mocked; live database activation still required.');
