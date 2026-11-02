@@ -116,3 +116,17 @@
 /* My stories provenance note under a translated copy's title. */
 .saved-story-edition{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:2px}
 
+/* Interview action width contract (spec art_z9pItTE1 item 5): the tell-stage
+   action rows — question view (send + skip) and ready view (create + keep
+   talking) — share one width rule per breakpoint, set once here rather than
+   per label, so en/zh/es labels of any length render equal-width buttons.
+   Mobile: both stretch to the full row width. Desktop: one shared minimum,
+   so short labels still produce matching boxes. */
+.answer-actions .primary,.finish-interview>.primary,.skip-question{min-width:240px;justify-content:center}
+.skip-question{display:flex}
+@media(max-width:800px){
+ .answer-actions .primary,.finish-interview>.primary,.skip-question{width:100%;min-width:0}
+ .finish-interview{flex-direction:column;align-items:stretch;padding-left:0;padding-right:0;border-left:0;border-right:0}
+ .finish-interview>div{padding:0 20px}
+}
+
