@@ -11,7 +11,20 @@
 
 .share-link>input{width:100%;margin:12px 0 0;color:var(--green);background:#fffdf6}.share-link>.text-button{margin-top:14px}.share-link>small{display:block;color:var(--muted)}.share-app-help{font-size:13px;line-height:1.7;margin:14px 0}.share-app-help summary{cursor:pointer;min-height:36px}.share-app-help p{padding:8px 0}.sharing-actions>a.secondary{min-height:44px;text-align:center;justify-content:center}@media(max-width:600px){.sharing-actions>a.secondary{flex:1 1 190px}.share-link>input{font-size:16px}}
 
-.translation-studio{background:#f1f3e9;border:1px solid #d6ddcc;border-radius:16px;padding:25px 28px;margin:24px 0;color:#29382d}.translation-heading{display:flex;align-items:center;gap:12px}.translation-heading h2{font-family:Georgia,'Songti SC',serif;font-weight:400;font-size:25px;margin:0}.translation-studio>p{font-size:14px;line-height:1.7;margin:10px 0;color:#5c6957;max-width:70ch}.translation-controls{display:flex;align-items:flex-end;gap:16px;margin:20px 0}.translation-controls label{display:grid;gap:7px;font-size:13px;font-weight:500}.translation-controls select{min-width:180px;border:1px solid #bac5ad;border-radius:8px;padding:11px 35px 11px 12px;background:#fffdf5;color:#29382d;font:inherit}.translation-studio .translation-review{font-size:12px}.translation-origin{border-left:3px solid #b89247;padding-left:12px}@media(max-width:600px){.translation-studio{padding:22px 20px}.translation-controls{align-items:stretch;flex-direction:column}.translation-controls select{width:100%}.translation-controls button{justify-content:center;white-space:normal}}
+.translation-studio{background:#f1f3e9;border:1px solid #d6ddcc;border-radius:16px;padding:25px 28px;margin:24px 0;color:#29382d}.translation-heading{display:flex;align-items:center;gap:12px}.translation-heading h2{font-family:Georgia,'Songti SC',serif;font-weight:400;font-size:25px;margin:0}.translation-studio>p{font-size:14px;line-height:1.7;margin:10px 0;color:#5c6957;max-width:70ch}.translation-controls{display:flex;align-items:flex-end;gap:16px;margin:20px 0}.translation-controls label{display:grid;gap:7px;font-size:13px;font-weight:500}.translation-controls select{min-width:180px;border:1px solid #bac5ad;border-radius:8px;padding:11px 35px 11px 12px;background:#fffdf5;color:#29382d;font:inherit}.translation-studio .translation-review{font-size:12px}.translation-origin{border-left:3px solid #b89247;padding-left:12px}
+/* Translation pull-up panel (wave 3 fix 5): the studio opens from a labeled
+   entry button in the paper page's module slot — bottom sheet on mobile,
+   centered dialog on desktop. Closed by default; entry button and panel are
+   print-hidden via .no-print. Open-state is owned by the paper page. */
+.translation-entry{width:100%;max-width:900px;margin:24px auto;display:flex}
+.translation-panel{width:min(680px,100%)}
+.translation-panel .translation-studio{background:none;border:0;padding:0;margin:0}
+.translation-panel .translation-heading h2{font-size:25px;margin:0}
+@media(max-width:800px){
+  .translation-backdrop{place-items:end stretch;padding:0}
+  .translation-panel{width:100%;max-width:none;border-radius:18px 18px 0 0;max-height:86vh;animation:translation-sheet .22s ease-out}
+}
+@keyframes translation-sheet{from{transform:translateY(28px);opacity:.4}to{transform:translateY(0);opacity:1}}@media(max-width:600px){.translation-studio{padding:22px 20px}.translation-controls{align-items:stretch;flex-direction:column}.translation-controls select{width:100%}.translation-controls button{justify-content:center;white-space:normal}}
 
 .keepsake-share-actions{border:0;padding:0;margin:0;min-width:0}
 /* Share-vs-invite: two labeled zones. Showing a creation stays open on the
