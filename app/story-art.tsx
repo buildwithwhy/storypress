@@ -43,17 +43,21 @@ const copy={
 type StoryArtProps={
  story:Story;
  busy:boolean;
+ // Whether an illustration request is in flight — distinct from `busy`
+ // (which only disables the controls): the auto-run draws without locking
+ // the page, and the progress card must still show for it.
+ drawing:boolean;
  onGenerate:(style:'illustration'|'comic')=>void;
  onInstructions:(value:string)=>void;
  onSelect:()=>void;
  onRemove:()=>void;
 };
 
-export function StoryArt({story,busy,onGenerate,onInstructions,onSelect,onRemove}:StoryArtProps){
+export function StoryArt({story,busy,drawing,onGenerate,onInstructions,onSelect,onRemove}:StoryArtProps){
  const c=copy[story.language],art=story.generatedArt;
  const selected=story.artwork==='generated';
  const disabled=busy||story.sample;
- return <section className="story-art" lang={story.language} aria-label={c.title} aria-busy={busy}>
+ return <section className="story-art" lang={story.language} aria-label={c.title} aria-busy={drawing}>
   <h2>{c.title}</h2>
   <p className="story-art-hint">{art?c.redrawHint:c.hint}</p>
   {!story.sample&&<div className="story-art-direction"><label htmlFor="art-direction">{c.direction}</label><textarea id="art-direction" rows={2} maxLength={600} value={story.artInstructions||''} disabled={busy} placeholder={c.directionPlaceholder} onChange={e=>onInstructions(e.target.value)} aria-describedby="art-direction-hint"/><span id="art-direction-hint" className="story-art-hint">{c.directionHint}</span></div>}
@@ -62,7 +66,7 @@ export function StoryArt({story,busy,onGenerate,onInstructions,onSelect,onRemove
    <button type="button" className="secondary" disabled={disabled} onClick={()=>onGenerate('comic')}><BookOpen size={19} aria-hidden="true"/>{art?c.redrawComic:c.comic}</button>
   </div>
   {story.sample&&<p className="story-art-hint">{c.sample}</p>}
-  {busy&&<div className="story-art-progress" role="status"><LoaderCircle size={20} aria-hidden="true"/><div><p>{c.working}</p><p className="story-art-hint">{c.wait}</p></div></div>}
+  {drawing&&<div className="story-art-progress" role="status"><LoaderCircle size={20} aria-hidden="true"/><div><p>{c.working}</p><p className="story-art-hint">{c.wait}</p></div></div>}
   {art&&<div className="story-art-result">
    <figure><img src={art.data} alt={art.style==='comic'?c.comicAlt:c.illustrationAlt} decoding="async"/><figcaption>{c.interpretation}</figcaption></figure>
    <div className="story-art-actions">

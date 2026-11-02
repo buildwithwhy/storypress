@@ -52,7 +52,11 @@ try {
     assert.equal(queue.length, 0);
   }
   queue = [auth(), quota(false)]; const beforeQuota = calls.length;
-  assert.equal((await handleApi(request(), env)).status, 429);
+  const refused = await handleApi(request(), env);
+  assert.equal(refused.status, 429);
+  const refusal = await refused.json();
+  assert.match(refusal.error, /daily AI preview allowance has been reached/);
+  assert.equal(refusal.image, undefined, 'Quota refusal provides no image — the client degrades to the keepsake as it was');
   assert.equal(calls.length, beforeQuota + 2, 'Quota refusal must not call the image provider');
   assert.equal(queue.length, 0);
 
@@ -77,5 +81,32 @@ try {
   assert.equal(failure.image, undefined, 'Failure provides no replacement image');
   assert.deepEqual(story, oldStory, 'Original paper and artwork remain unchanged');
   assert.equal(queue.length, 0);
+
+  // Default-illustration degradation (spec item 4): the first-visit auto-run
+  // treats every refusal or failure as "keep the keepsake as it was" — no
+  // error on screen, existing art untouched. The server half of that contract
+  // is a localized, actionable error with no image payload. Two shapes: no
+  // AI connection at all (503 after identity, before quota), and text AI
+  // configured while the image backend is not (503 after identity and quota,
+  // before any model call).
+  const bareEnv = { ...env, GEMINI_BACKEND: 'ai-studio', GEMINI_API_KEY: undefined, VERTEX_API_KEY: undefined, GOOGLE_CLOUD_PROJECT: undefined };
+  queue = [auth()]; const beforeBare = calls.length;
+  const bare = await handleApi(request(), bareEnv);
+  assert.equal(bare.status, 503);
+  const bareProblem = await bare.json();
+  assert.match(bareProblem.error, /not connected yet/);
+  assert.equal(bareProblem.image, undefined, 'Unconnected editor provides no image — the client degrades silently');
+  assert.equal(calls.length, beforeBare + 1, 'An unconnected editor stops after identity verification, before quota');
+  assert.equal(queue.length, 0);
+
+  const noImageEnv = { ...env, GEMINI_BACKEND: 'ai-studio', GEMINI_API_KEY: 'mock-gemini' };
+  queue = [auth(), quota(true)]; const beforeImage = calls.length;
+  const noImage = await handleApi(request(), noImageEnv);
+  assert.equal(noImage.status, 503);
+  const noImageProblem = await noImage.json();
+  assert.match(noImageProblem.error, /existing artwork are kept/);
+  assert.equal(noImageProblem.image, undefined, 'Missing image backend provides no image — the client degrades silently');
+  assert.equal(calls.length, beforeImage + 2, 'The image-config refusal stops after quota, before any model call');
+  assert.equal(queue.length, 0);
 } finally { globalThis.fetch = originalFetch; }
-console.log('Passed: illustration API authentication, original-story requirements, durable three-unit quota gating, one Cloud request, private context exclusion, no-store response, and preserved-art failure.');
+console.log('Passed: illustration API authentication, original-story requirements, durable three-unit quota gating, one Cloud request, private context exclusion, no-store response, and preserved-art failure on every refusal (quota, unconfigured backend, provider error).');
