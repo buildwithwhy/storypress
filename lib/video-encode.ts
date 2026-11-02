@@ -65,7 +65,7 @@ export interface EncodeRung {
 export class VideoEncodeUnavailableError extends Error {
   readonly path: string[];
   constructor(path: string[]) {
-    super(`No video encoder could be prepared on this device (${path.join(" -> ")}); share images remain available.`);
+    super(`No video encoder could be prepared on this device (${path.join(" -> ")}); keepsake cards remain available.`);
     this.name = "VideoEncodeUnavailableError";
     this.path = path;
   }
