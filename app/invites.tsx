@@ -1,4 +1,4 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {Check,Share2,Users,X} from 'lucide-react';
 import {storySchema,type Story} from '../lib/story';
 import {type SavedStory} from '../lib/story-saver';
@@ -18,7 +18,12 @@ export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{langu
  const c=inviteCopy[language];
  const [invites,setInvites]=useState<InviteRow[]>([]);
  const [contributions,setContributions]=useState<ContributionRow[]>([]);
- const [question,setQuestion]=useState(()=>suggestedQuestion(language,occasion,storyName));
+ const seed=suggestedQuestion(language,occasion,storyName);
+ const [question,setQuestion]=useState(seed);
+ // Re-seed on language change only while the owner has not typed. Once they
+ // edit the text, their words win; created invites keep their frozen question.
+ const touchedRef=useRef(false);
+ useEffect(()=>{if(!touchedRef.current)setQuestion(seed);},[seed]);
  const [name,setName]=useState(''),[link,setLink]=useState(''),[expires,setExpires]=useState('');
  const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
  async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setPending(false);}}
@@ -46,7 +51,7 @@ export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{langu
  return <section className="sharing-panel no-print invite-panel" aria-label={c.title}>
   <p className="eyebrow">ONCE &amp; OURS</p><h2>{c.title}</h2><p>{c.help}</p>
   <div className="sharing-actions">
-   <label>{c.questionLabel}<textarea className="invite-question-input" value={question} maxLength={600} onChange={e=>setQuestion(e.target.value)}/></label>
+   <label>{c.questionLabel}<textarea className="invite-question-input" value={question} maxLength={600} onChange={e=>{touchedRef.current=true;setQuestion(e.target.value);}}/></label>
    <label>{c.contributorLabel}<input value={name} maxLength={80} placeholder={c.contributorPlaceholder} onChange={e=>setName(e.target.value)}/></label>
   </div>
   <div className="sharing-actions">
