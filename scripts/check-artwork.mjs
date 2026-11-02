@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 const bundled=await build({stdin:{contents:"export * from './lib/edition.ts';export * from './lib/artwork-data.ts';export * from './lib/artwork.ts';",resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm'});
-const {editionHtml,editionSnapshot,editionArtwork,chosenArtwork,artHeadroom,ART_HEADROOM_MIN}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
+const {editionHtml,editionSnapshot,editionArtwork,chosenArtwork,artHeadroom,ART_HEADROOM_MIN,shouldAutoIllustrate}=await import('data:text/javascript;base64,'+Buffer.from(bundled.outputFiles[0].text).toString('base64'));
 const story={name:'Fictional narrator',language:'en',occasion:'life',turns:[{role:'user',text:'PRIVATE_WORDS'}],artInstructions:'PRIVATE_ART_DIRECTION',draft:'PRIVATE_DRAFT',researchSuggestion:{query:'PRIVATE_QUERY',reason:'PRIVATE_REASON'},researchQueries:['PRIVATE_HISTORY'],sources:[],sample:false,approved:true,paper:{headline:'A small memory',standfirst:'A keepsake.',paragraphs:['We made tea.'],quote:''}};
 for(const key of [undefined,'memories','together','journey','none','generated'])for(const format of ['newspaper','booklet','letter']){
  const old={...story,artwork:key,presentation:{version:1,format}};
@@ -41,4 +41,26 @@ assert.ok(artHeadroom(story)>ART_HEADROOM_MIN,'a small story has room for artwor
 assert.ok(artHeadroom(story)<=300000,'headroom never promises more than the image schema allows');
 assert.equal(artHeadroom({...story,generatedArt:generated}),artHeadroom(story),'headroom ignores any existing generated artwork');
 assert.ok(artHeadroom({...story,turns:[{role:'user',text:'x'.repeat(3000000)}]})<ART_HEADROOM_MIN,'a story over the draft budget refuses artwork');
-console.log('Passed: legacy stock-art removal in every format and export, private art directions, generated artwork, default-illustrated resolution with silent degradation, text-only/photo precedence, approval gate, storage headroom, and private interview/research exclusion.');
+// Default-illustration trigger (wave-3 fix 1): the page's auto-run calls this
+// one pure predicate. A legacy story stored artwork:'none' as "nothing chosen
+// yet" (no opt-out marker), so it default-illustrates once on its next paper
+// entry; an explicit 'no illustration' choice records artworkOptedOut and
+// never triggers. All wave-2 guardrails hold: only on the paper stage of a
+// non-sample draft keepsake with words, signed in and under the daily limit,
+// no artwork yet, not approved, not mid-request, and the once-per-story latch
+// burns on dispatch so a refusal never loops.
+const trigger={...story,approved:false,artwork:'none'};
+const ctx={editing:false,busy:false,paper:true,eligible:true,tried:false};
+assert.ok(shouldAutoIllustrate(trigger,ctx),'a legacy story (artwork none, no marker) default-illustrates once');
+assert.ok(!shouldAutoIllustrate(trigger,{...ctx,tried:true}),'the once-per-story latch holds');
+assert.ok(!shouldAutoIllustrate({...trigger,artworkOptedOut:true},ctx),'an explicit no-illustration choice never auto-illustrates');
+assert.ok(!shouldAutoIllustrate({...trigger,artwork:'generated',generatedArt:generated},ctx),'a story with artwork never re-illustrates');
+assert.ok(!shouldAutoIllustrate({...trigger,approved:true},ctx),'approved keepsakes are never re-illustrated');
+assert.ok(!shouldAutoIllustrate({...trigger,sample:true},ctx),'samples never auto-illustrate');
+assert.ok(!shouldAutoIllustrate(trigger,{...ctx,paper:false}),'no trigger off the paper stage');
+assert.ok(!shouldAutoIllustrate({...trigger,turns:[]},ctx),'a keepsake with no words has nothing to illustrate');
+assert.ok(!shouldAutoIllustrate(trigger,{...ctx,eligible:false}),'the daily-limit/eligibility gate holds');
+assert.ok(!shouldAutoIllustrate(trigger,{...ctx,busy:true}),'no trigger while another request runs');
+assert.ok(!shouldAutoIllustrate(trigger,{...ctx,editing:true}),'no trigger while editing the draft');
+assert.equal(editionSnapshot({...trigger,artworkOptedOut:true,approved:true}).artworkOptedOut,undefined,'the opt-out marker never reaches shared editions');
+console.log('Passed: legacy stock-art removal in every format and export, private art directions, generated artwork, default-illustrated resolution with silent degradation, text-only/photo precedence, approval gate, storage headroom, private interview/research exclusion, and the legacy default-illustration trigger.');

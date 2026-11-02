@@ -1,20 +1,15 @@
-/* The demoted illustration module (spec item 4): one collapsed card under the
-   keepsake, in the visual language of the other keepsake-first modules. The
-   generated-art result inside the module is a thumbnail (200px cap at every
+/* The illustration panel's content (wave 3 fix 2): the artwork choice and the
+   generation studio inside the paper page's pull-up panel (the entry button,
+   open state, and sheet/dialog chrome live in keepsake-studio.css and the
+   page). The generated-art result stays a thumbnail (200px cap at every
    viewport); the keepsake's own figure keeps its sizes (lib/keepsake.ts)
    untouched. */
-.art-studio{max-width:900px;margin:0 auto 28px;border:1px solid #d1d8c6;border-radius:11px;background:#eff2e8;color:var(--ink);overflow-wrap:anywhere}
-.art-studio>summary{display:flex;align-items:center;gap:9px;padding:15px 22px;cursor:pointer;font-size:15px;font-weight:600;list-style:none}
-.art-studio>summary::-webkit-details-marker{display:none}
-.art-studio>summary svg{flex-shrink:0}
-.art-studio>summary::after{content:'+';margin-left:auto;font-size:22px;line-height:1;color:#66725d;font-weight:400}
-.art-studio[open]>summary::after{content:'–'}
-.art-studio-body{padding:0 22px 20px}
-.art-studio .artwork-picker{border-top:1px solid #d0d7c3;margin:0;padding:16px 0 0}
-.art-studio .story-art{margin:0;padding:0;border:0;background:transparent}
-.art-studio .story-art h2{font-size:22px;margin:16px 0 7px}
-.art-studio .story-art-result{margin-top:15px;padding-top:15px}
-.art-studio .story-art-result img{max-height:200px}
+.art-studio-body{min-width:0}
+.art-panel .artwork-picker{border-top:0;margin:0;padding:0}
+.art-panel .story-art{margin:0;padding:0;border:0;background:transparent}
+.art-panel .story-art h2{font-size:22px;margin:16px 0 7px}
+.art-panel .story-art-result{margin-top:15px;padding-top:15px}
+.art-panel .story-art-result img{max-height:200px}
 .story-art h2{font-family:var(--serif);font-weight:400;font-size:30px;line-height:1.25;margin:0 0 9px}
 .story-art .story-art-hint{font-size:13px;line-height:1.65;color:#66725d;margin:0}
 .story-art-create{display:flex;flex-wrap:wrap;gap:12px;margin:17px 0 10px}
@@ -32,10 +27,10 @@
 .story-art-selected>svg{flex-shrink:0}
 .story-art-actions .text-button{min-height:44px;font-size:13px;line-height:1.5;text-align:left}
 .story-art:lang(zh) h2{font-size:27px;line-height:1.5}
-.art-studio:lang(zh) .story-art h2{font-size:21px;line-height:1.5}
+.art-panel:lang(zh) .story-art h2{font-size:21px;line-height:1.5}
 @keyframes story-art-spin{to{transform:rotate(360deg)}}
-@media(max-width:600px){.art-studio{margin-bottom:22px}.art-studio>summary{padding:13px 16px}.art-studio-body{padding:0 16px 16px}.story-art h2{font-size:24px}.story-art-create{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.story-art-create .secondary{width:100%;justify-content:flex-start;font-size:16px;min-height:52px}.story-art-actions{align-items:flex-start}.story-art-actions .text-button{font-size:14px}.story-art:lang(zh) h2{font-size:22px}}
+@media(max-width:600px){.story-art h2{font-size:24px}.story-art-create{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.story-art-create .secondary{width:100%;justify-content:flex-start;font-size:16px;min-height:52px}.story-art-actions{align-items:flex-start}.story-art-actions .text-button{font-size:14px}.story-art:lang(zh) h2{font-size:22px}}
 @media(prefers-reduced-motion:reduce){.story-art-progress>svg{animation:none}}
-@media print{.art-studio,.story-art{display:none}}
+@media print{.art-panel,.story-art{display:none}}
 
 .story-generated-art img{aspect-ratio:auto!important;object-fit:contain!important;height:auto!important;max-height:none!important}@media print{.story-generated-art img{max-height:105mm!important}}
