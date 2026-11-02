@@ -36,8 +36,24 @@ assert.ok(keepsake<share,'keepsake must precede share actions in the DOM');
 // studio render after the keepsake (with the review bar) so the top of the
 // keepsake is visible in a 375px first viewport. DOM order only — no CSS
 // `order:` anywhere.
-const firstBelow=Math.min(...['<FormatPicker','<ArtworkPicker','<StoryArt','review-bar'].map(s=>page.indexOf(s)).filter(i=>i>-1));
+const firstBelow=Math.min(...['<FormatPicker','<ArtStudio','review-bar'].map(s=>page.indexOf(s)).filter(i=>i>-1));
 assert.ok(keepsake<firstBelow,'keepsake (or editor) must precede the format/art modules and review bar in the DOM');
+
+// Compact collapsed illustration module (spec item 4): ArtStudio folds the
+// artwork picker and the generation studio into one <details> card that
+// renders after the review bar and before share/collaborate actions,
+// collapsed by default, print-hidden, and never reordered with CSS.
+const artStudio=page.indexOf('<ArtStudio');
+assert.ok(artStudio>-1,'the compact art module renders on the paper page');
+assert.ok(artStudio>page.indexOf('review-bar'),'the art module follows the review bar');
+assert.ok(artStudio<page.indexOf('keepsake-share-actions'),'the art module must precede share actions in the DOM');
+const studioTsx=readFileSync('app/art-studio.tsx','utf8');
+assert.ok(studioTsx.includes('useState(false)')&&/open=\{open\}/.test(studioTsx),'the art module is collapsed by default (details open state starts false)');
+const artCss=readFileSync('app/story-art.css','utf8');
+assert.ok(/@media print\{\.art-studio,\.story-art\{display:none\}\}/.test(artCss),'the art module is print-hidden alongside the studio');
+assert.ok(/\.art-studio \.story-art-result img\{max-height:200px\}/.test(artCss),'the module result is a thumbnail (200px cap) at every viewport');
+assert.ok(!new RegExp(String.raw`[^{}]*\.art-studio\s*\{[^}]*\border\s*:`).test(artCss),'the art module is never reordered with CSS `order:`');
+assert.ok(/\.art-studio\s*\{[^}]*max-width:900px/.test(artCss),'the art module keeps the paper page\'s module width');
 
 // Slim top row (spec item 3): the toolbar is one compact row of icon-button
 // circles — back / edit / print, each with a localized aria-label and title —
@@ -59,4 +75,4 @@ const introBlock=page.match(/<div className="paper-intro">[\s\S]*?<h1>/)?.[0];
 assert.ok(introBlock,'the intro h1 stays in the DOM (document outline) inside the toolbar row');
 assert.ok(page.includes('{editing&&<p>{k.draftHelp}</p>}'),'the description paragraph renders only in the editor state');
 
-console.log('Passed: paper stage order — slim icon toolbar and one-line intro above the keepsake, keepsake before format/art modules and share/collaborate actions at every viewport, no CSS order overrides.');
+console.log('Passed: paper stage order — slim icon toolbar and one-line intro above the keepsake, keepsake before the collapsed illustration module before format picker and share/collaborate actions at every viewport, module collapsed and print-hidden, no CSS order overrides.');

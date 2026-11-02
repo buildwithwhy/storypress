@@ -11,10 +11,10 @@ import fs from 'node:fs/promises';
 // network, no paid calls, anywhere in the render path.
 
 const bundle = await build({
-  stdin: { contents: "export {buildStoryboard,buildVideoManifest,videoManifestSchema,audioTrackSchema,VIDEO_WIDTH,VIDEO_HEIGHT} from './lib/video-storyboard.ts'; export {wrapLines} from './lib/share-images.ts'; export {keepsakeCopy,mastheadCopy} from './lib/keepsake.ts'; export {samplePaper} from './lib/story.ts';", resolveDir: process.cwd() },
+  stdin: { contents: "export {buildStoryboard,buildVideoManifest,videoManifestSchema,audioTrackSchema,VIDEO_WIDTH,VIDEO_HEIGHT} from './lib/video-storyboard.ts'; export {wrapLines} from './lib/share-images.ts'; export {keepsakeCopy,mastheadCopy} from './lib/keepsake.ts'; export {samplePaper} from './lib/story.ts'; export {editionSnapshot} from './lib/edition.ts';", resolveDir: process.cwd() },
   bundle: true, write: false, platform: 'node', format: 'esm',
 });
-const { buildStoryboard, buildVideoManifest, videoManifestSchema, audioTrackSchema, VIDEO_WIDTH, VIDEO_HEIGHT, wrapLines, keepsakeCopy, mastheadCopy, samplePaper } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const { buildStoryboard, buildVideoManifest, videoManifestSchema, audioTrackSchema, VIDEO_WIDTH, VIDEO_HEIGHT, wrapLines, keepsakeCopy, mastheadCopy, samplePaper, editionSnapshot } = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 
 // Privacy guard: the fetch mock counts every network touch. The render path
 // must close with zero — story content never leaves the device.
@@ -46,6 +46,11 @@ const esPaper = {
   quote: 'La abuela no dejaba de traer platos de comida, como si los astronautas fueran a venir a cenar.',
 };
 const esStory = { ...enStory, language: 'es', paper: esPaper };
+// Default-illustrated fixture (spec item 4): an absent artwork choice — a
+// fresh story with no explicit text-only opt-out — must resolve to the
+// illustration through the same approved-snapshot boundary the app's video
+// uses (buildVideoManifest(editionSnapshot(story), lang)).
+const defaultArtStory = { ...enStory, artwork: undefined, photo: undefined, generatedArt: { data: `data:image/jpeg;base64,${jpeg}`, style: 'illustration', model: 'gemini-3.1-flash-lite-image', sourceKey: 'fixture' } };
 
 // Conservative 40px-font measure: CJK-family code points 40px, everything
 // else 20px — the seam the frame renderer must keep overflow-free.
@@ -101,6 +106,19 @@ try {
       assert.ok(lines.length <= 12, `${lang} ${scene.kind} must stay inside the card's prose area, got ${lines.length} lines`);
     }
   }
+
+  // A default-illustrated keepsake feeds its illustration to the Ken Burns
+  // subject — the video treats the absent artwork choice exactly like an
+  // explicitly chosen one, once the snapshot has resolved it.
+  const defaultSnapshot = editionSnapshot(defaultArtStory);
+  assert.equal(defaultSnapshot.photo, undefined, 'the absent artwork choice resolves to the illustration, not the photo');
+  assert.equal(defaultSnapshot.generatedArt.data, defaultArtStory.generatedArt.data);
+  const defaultProse = buildStoryboard(defaultSnapshot, 'en').filter(s => s.kind === 'prose');
+  assert.ok(defaultProse.length >= 4 && defaultProse.length <= 8, `a default-illustrated keepsake still yields its prose cards, got ${defaultProse.length}`);
+  assert.ok(defaultProse.every(s => s.image === defaultArtStory.generatedArt.data), 'a default-illustrated keepsake carries its illustration as the Ken Burns subject');
+  const defaultManifest = videoManifestSchema.parse(buildVideoManifest(defaultSnapshot, 'en'));
+  assert.equal(defaultManifest.language, 'en');
+  assert.ok(defaultManifest.scenes.filter(s => s.kind === 'prose').every(s => s.image === defaultArtStory.generatedArt.data), 'the default-illustrated manifest carries the illustration');
 
   // Manifest schema: shape, per-language copy, and the empty narration seam.
   const manifest = buildVideoManifest(zhStory, 'zh');
@@ -362,4 +380,4 @@ try {
 } finally { globalThis.fetch = originalFetch; }
 
 assert.equal(fetchCalls, 0, 'the whole render path must make zero network calls');
-console.log('Passed: scene derivation for en/zh/es fixtures, 4-8 prose cards, 45-75s pacing band, deterministic Ken Burns, 900px measure hold, manifest schema, the empty audioTrack narration seam, frame rendering with Ken Burns cover-fit, the end-card growth credit (localized, config-sourced, end-card only, manifest-free), the encoder seam (manifest received exactly once), explicit ladder degradation to a typed share-images refusal, the real muxer producing an MP4 container, probe-verified MediaRecorder candidates, and zero network calls across the whole render path.');
+console.log('Passed: scene derivation for en/zh/es fixtures, the default-illustrated keepsake resolving to its illustration as Ken Burns subject, 4-8 prose cards, 45-75s pacing band, deterministic Ken Burns, 900px measure hold, manifest schema, the empty audioTrack narration seam, frame rendering with Ken Burns cover-fit, the end-card growth credit (localized, config-sourced, end-card only, manifest-free), the encoder seam (manifest received exactly once), explicit ladder degradation to a typed share-images refusal, the real muxer producing an MP4 container, probe-verified MediaRecorder candidates, and zero network calls across the whole render path.');
