@@ -52,7 +52,7 @@
 .keepsake-actions .format-picker-compact>button:hover:not(:disabled),.keepsake-actions .art-entry:hover:not(:disabled),.keepsake-actions .translation-entry:hover:not(:disabled){background:#e9ebe1}
 .keepsake-actions .format-picker-compact>button>svg,.keepsake-actions .art-entry>svg,.keepsake-actions .translation-entry>svg{width:40px;height:40px;padding:11px}
 .keepsake-actions .format-picker-compact>button[aria-pressed=true]{outline:2px solid #315444;background:#edf1e5}
-@media(max-width:500px){.keepsake-actions,.keepsake-actions .format-picker-compact{gap:2px 7px}.keepsake-actions .format-picker-compact>button,.keepsake-actions .art-entry,.keepsake-actions .translation-entry{font-size:10px}}
+@media(max-width:500px){.keepsake-actions,.keepsake-actions .format-picker-compact{gap:2px 5px}.keepsake-actions .format-picker-compact>button,.keepsake-actions .art-entry,.keepsake-actions .translation-entry{font-size:10px}}
 
 .keepsake-share-actions{border:0;padding:0;margin:0;min-width:0}
 /* Share-vs-invite: two labeled zones. Showing a creation stays open on the
