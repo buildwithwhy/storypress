@@ -1,7 +1,8 @@
 // Paper stage order: the keepsake leads the paper page at every viewport.
 // Above it sit only the slim toolbar, the edition switcher, and ONE compact
-// action row (wave 4: format icons + Illustrate + Translate); below it the
-// review bar, the art/translation panels, and share/collaborate actions. That
+// action row (wave 4: format icons + Illustrate + Translate); the editor form
+// replaces the keepsake while editing (one slot, mutually exclusive); below
+// it the art/translation panels and share/collaborate actions. That
 // means no CSS `order:` reordering of .keepsake-share-actions or .paper-toolbar
 // anywhere (the ≤800px media query used to hoist them), and the keepsake
 // element must precede those blocks in the DOM, which every viewport inherits.
@@ -36,7 +37,7 @@ assert.ok(keepsake<share,'keepsake must precede share actions in the DOM');
 // One compact action row (wave 4 change 2): above the keepsake sit only the
 // slim toolbar, the edition switcher, and ONE compact row holding the compact
 // format picker plus the Illustrate and Translate entries. The keepsake still
-// precedes the review bar, the art/translation panels, and the share actions.
+// precedes the art/translation panels and the share actions.
 // DOM order only — no CSS `order:` anywhere.
 const row=page.indexOf('keepsake-actions');
 assert.ok(row>-1&&row<keepsake,'one compact action row (formats + Illustrate + Translate) sits above the keepsake');
@@ -47,19 +48,27 @@ assert.ok(rowBlock.includes('disabled={interactionBusy||editing}'),'the row keep
 assert.ok(page.indexOf('<FormatPicker',keepsake)===-1,'no format picker renders below the keepsake');
 const above=page.slice(0,keepsake);
 assert.ok(above.includes('paper-toolbar')&&above.includes('edition-switcher'),'the toolbar and edition switcher keep their lines above the keepsake');
-for(const below of ['review-bar','modal-backdrop','<ArtStudio','<TranslationStudio','keepsake-share-actions']){
+for(const below of ['modal-backdrop','<ArtStudio','<TranslationStudio','keepsake-share-actions']){
   assert.ok(!above.includes(below),`${below} must render below the keepsake`);
 }
-assert.ok(keepsake<page.indexOf('review-bar'),'keepsake precedes the review bar');
+assert.ok(keepsake<page.indexOf('keepsake-share-actions'),'keepsake precedes the share actions');
+
+// Implicit approval (wave 4 change 3): the review bar and its approval
+// checkbox are gone; the editor form replaces the keepsake while editing and
+// the compare link lives inside it, below the quote field.
+assert.ok(!page.includes('review-bar')&&!page.includes('c.review'),'the review bar and its approval checkbox are gone (approval is implicit)');
+assert.ok(page.includes('{editing ? <section className="editor-form no-print">')&&page.includes(': <KeepsakeView story={story}/>'),'the editor form and the keepsake share one slot (editing replaces the view)');
+const keepsakeSlot=page.indexOf(': <KeepsakeView story={story}/>'),compare=page.indexOf('d.compare');
+assert.ok(compare>page.indexOf('d.quote')&&compare<keepsakeSlot,'the compare link renders inside the editor form, below the quote field');
 assert.ok(keepsake<page.indexOf('art-backdrop')&&keepsake<page.indexOf('translation-backdrop'),'keepsake precedes the art and translation panels');
 
 // Pull-up illustration panel (wave 3 fix 2): the paper page renders a labeled
 // entry button and the ArtStudio content inside a modal panel that renders
-// after the review bar and before share/collaborate actions, closed by
-// default, print-hidden, and never reordered with CSS.
+// after the keepsake/editor slot and before share/collaborate actions, closed
+// by default, print-hidden, and never reordered with CSS.
 const artStudio=page.indexOf('<ArtStudio');
 assert.ok(artStudio>-1,'the compact art module renders on the paper page');
-assert.ok(artStudio>page.indexOf('review-bar'),'the art module follows the review bar');
+assert.ok(artStudio>keepsakeSlot,'the art module follows the keepsake slot');
 assert.ok(artStudio<page.indexOf('keepsake-share-actions'),'the art module must precede share actions in the DOM');
 assert.ok(page.includes('className="secondary art-entry no-print"'),'the art panel opens from a labeled, print-hidden entry button');
 assert.ok(/const \[artOpen,setArtOpen\]=useState\(false\)/.test(tsx),'the art panel is closed by default (open state owned by the paper page)');
@@ -93,4 +102,4 @@ const introBlock=page.match(/<div className="paper-intro">[\s\S]*?<h1>/)?.[0];
 assert.ok(introBlock,'the intro h1 stays in the DOM (document outline) inside the toolbar row');
 assert.ok(page.includes('{editing&&<p>{k.draftHelp}</p>}'),'the description paragraph renders only in the editor state');
 
-console.log('Passed: paper stage order — slim icon toolbar, edition switcher, and one compact action row above the keepsake; keepsake before the review bar, art/translation panels and share/collaborate actions at every viewport; art studio content-only; panel closed by default and print-hidden; no CSS order overrides.');
+console.log('Passed: paper stage order — slim icon toolbar, edition switcher, and one compact action row above the keepsake; review bar gone (implicit approval) with the compare link inside the editor form; keepsake before the art/translation panels and share/collaborate actions at every viewport; art studio content-only; panel closed by default and print-hidden; no CSS order overrides.');

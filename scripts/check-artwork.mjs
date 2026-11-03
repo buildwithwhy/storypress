@@ -41,21 +41,25 @@ assert.ok(artHeadroom(story)>ART_HEADROOM_MIN,'a small story has room for artwor
 assert.ok(artHeadroom(story)<=300000,'headroom never promises more than the image schema allows');
 assert.equal(artHeadroom({...story,generatedArt:generated}),artHeadroom(story),'headroom ignores any existing generated artwork');
 assert.ok(artHeadroom({...story,turns:[{role:'user',text:'x'.repeat(3000000)}]})<ART_HEADROOM_MIN,'a story over the draft budget refuses artwork');
-// Default-illustration trigger (wave-3 fix 1): the page's auto-run calls this
-// one pure predicate. A legacy story stored artwork:'none' as "nothing chosen
-// yet" (no opt-out marker), so it default-illustrates once on its next paper
-// entry; an explicit 'no illustration' choice records artworkOptedOut and
-// never triggers. All wave-2 guardrails hold: only on the paper stage of a
-// non-sample draft keepsake with words, signed in and under the daily limit,
-// no artwork yet, not approved, not mid-request, and the once-per-story latch
-// burns on dispatch so a refusal never loops.
+// Default-illustration trigger (wave-3 fix 1, re-keyed by wave 4 change 3):
+// the page's auto-run calls this one pure predicate. A legacy story stored
+// artwork:'none' as "nothing chosen yet" (no opt-out marker), so it
+// default-illustrates once on its next paper entry; an explicit 'no
+// illustration' choice records artworkOptedOut and never triggers. With
+// approval implicit (the declaration checkbox is gone), freshness is "no
+// artwork decision yet" — any explicit artwork pick (photo or stock) blocks a
+// re-illustrate. All other guardrails hold: only on the paper stage of a
+// non-sample keepsake with words, signed in and under the daily limit, no
+// existing artwork, not mid-request, and the once-per-story latch burns on
+// dispatch so a refusal never loops.
 const trigger={...story,approved:false,artwork:'none'};
 const ctx={editing:false,busy:false,paper:true,eligible:true,tried:false};
 assert.ok(shouldAutoIllustrate(trigger,ctx),'a legacy story (artwork none, no marker) default-illustrates once');
 assert.ok(!shouldAutoIllustrate(trigger,{...ctx,tried:true}),'the once-per-story latch holds');
 assert.ok(!shouldAutoIllustrate({...trigger,artworkOptedOut:true},ctx),'an explicit no-illustration choice never auto-illustrates');
 assert.ok(!shouldAutoIllustrate({...trigger,artwork:'generated',generatedArt:generated},ctx),'a story with artwork never re-illustrates');
-assert.ok(!shouldAutoIllustrate({...trigger,approved:true},ctx),'approved keepsakes are never re-illustrated');
+assert.ok(!shouldAutoIllustrate({...trigger,artwork:'memories'},ctx),'keepsakes with an explicit artwork choice are never re-illustrated');
+assert.ok(!shouldAutoIllustrate({...trigger,artwork:'together'},ctx),'a stock-art pick also counts as an artwork decision');
 assert.ok(!shouldAutoIllustrate({...trigger,sample:true},ctx),'samples never auto-illustrate');
 assert.ok(!shouldAutoIllustrate(trigger,{...ctx,paper:false}),'no trigger off the paper stage');
 assert.ok(!shouldAutoIllustrate({...trigger,turns:[]},ctx),'a keepsake with no words has nothing to illustrate');

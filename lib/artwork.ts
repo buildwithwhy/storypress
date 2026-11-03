@@ -15,15 +15,19 @@ export function chosenArtwork(story:Story):Artwork{
 // story: the page stage, the interactive locks, AI eligibility, and the
 // once-per-story latch.
 export type AutoArtContext={editing:boolean;busy:boolean;paper:boolean;eligible:boolean;tried:boolean};
-// Default-illustration auto-run eligibility (wave 3 fix 1): the pure core of
-// the paper-page effect. Legacy stories stored artwork:'none' as "nothing
-// chosen yet" — without the explicit artworkOptedOut marker they qualify; an
-// active opt-out never does. Every wave-2 guardrail holds here: only before
-// keepsake approval, no existing artwork, words present, AI-eligible, and
-// storage headroom for a new illustration.
+// Default-illustration auto-run eligibility (wave 3 fix 1, re-keyed by wave 4
+// change 3): the pure core of the paper-page effect. Legacy stories stored
+// artwork:'none' as "nothing chosen yet" — without an explicit artworkOptedOut
+// marker they qualify; an active opt-out never does. Approval is implicit
+// since the declaration checkbox was removed, so "unapproved" no longer marks
+// a fresh keepsake — the freshness gate is the absence of any artwork decision
+// instead: no existing illustration, no photo/stock pick ('memories',
+// 'together', 'journey'), no opt-out. Every other guardrail holds here: words
+// present, AI-eligible, and storage headroom for a new illustration.
 export function shouldAutoIllustrate(story:Story,context:AutoArtContext):boolean{
  if(context.tried||!context.paper||context.editing||context.busy)return false;
- if(story.sample||story.approved||story.generatedArt||story.artworkOptedOut)return false;
+ if(story.sample||story.generatedArt||story.artworkOptedOut)return false;
+ if(story.artwork&&story.artwork!=='none')return false;
  if(!originalWords(story).length)return false;
  return context.eligible&&artHeadroom(story)>=ART_HEADROOM_MIN;
 }
