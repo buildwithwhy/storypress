@@ -9,8 +9,12 @@ import {buildVideoManifest} from '../lib/video-storyboard';
 import {encodeMemoryVideo,FULL_VIDEO_SIZE,VideoEncodeUnavailableError} from '../lib/video-encode';
 import {artifactSharePayload,shareSheetAvailable} from '../lib/share-payload';
 export function KeepsakeView({story}:{story:Story}){return <><style>{keepsakeStyles}</style><div dangerouslySetInnerHTML={{__html:keepsakeMarkup(story)}}/></>;}
-export function FormatPicker({story,onChange,disabled=false}:{story:Story;onChange:(format:KeepsakeFormat)=>void;disabled?:boolean}){
+export function FormatPicker({story,onChange,disabled=false,compact=false}:{story:Story;onChange:(format:KeepsakeFormat)=>void;disabled?:boolean;compact?:boolean}){
  const c=keepsakeCopy[story.language];
+ // Compact variant (paper page only): ~40px icon buttons with a tiny localized
+ // label beneath — phones have no hover, so the small words carry the meaning,
+ // not tooltips. The setup screen and sample preview keep the card layout.
+ if(compact)return <div className="format-picker-compact no-print" role="group" aria-label={c.choose}>{(['newspaper','booklet','letter'] as const).map((format,i)=>{const Icon=[Newspaper,BookOpen,Mail][i];return <button key={format} disabled={disabled} aria-pressed={formatOf(story)===format} aria-label={c[format]} title={c[format]} onClick={()=>onChange(format)}><Icon size={18}/>{c[format]}</button>;})}</div>;
  return <section className="format-studio no-print" aria-label={c.choose}><div><h2>{c.title}</h2><p>{c.help}</p></div><div className="format-options">{(['newspaper','booklet','letter'] as const).map((format,i)=>{const Icon=[Newspaper,BookOpen,Mail][i];return <button key={format} disabled={disabled} aria-pressed={formatOf(story)===format} onClick={()=>onChange(format)}><span className={`format-thumbnail format-${format}`}><Icon size={30}/><span/><span/></span><strong>{c[format]}</strong><small>{c.descriptions[i]}</small></button>;})}</div></section>;
 }
 export function IntentionPicker({story,disabled,onChange}:{story:Story;disabled:boolean;onChange:(intention:NonNullable<Story['intention']>)=>void}){
