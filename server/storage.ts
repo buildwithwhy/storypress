@@ -17,10 +17,32 @@ export async function identity(request:Request,env:Bindings){
  const user=await response.json() as {id?:string;email?:string};return user.id&&z.string().uuid().safeParse(user.id).success?{id:user.id,email:user.email||''}:null;
 }
 export async function owner(request:Request,env:Bindings){const user=await identity(request,env);if(!user)throw new ServiceError('Sign in to use AI or save your stories. You can still explore the sample.',401);return user.id;}
+// Machine storage codes (wave 5 change 3): a non-OK Supabase response used to
+// collapse into one opaque 503 that discarded the PostgREST error body — the
+// one artifact that names the missing table, function, or bad key (art_VetIBa76).
+// Known shapes map to a code the client can localize and a founder report can
+// diagnose from a screenshot.
+type StorageCode='SCHEMA_MISSING'|'AUTH'|'QUOTA'|'UNKNOWN';
+function storageCodeFor(status:number,code:string):StorageCode{
+ if(code==='PGRST205'||code==='PGRST202')return 'SCHEMA_MISSING'; // missing table or function — an unapplied migration
+ if(status===401||status===403)return 'AUTH'; // bad or revoked secret key
+ if(status===429)return 'QUOTA';
+ return 'UNKNOWN';
+}
 // Modern secret keys belong only in apikey; Authorization is reserved for user JWTs.
 export async function db(env:Bindings,path:string,method='GET',body?:unknown,opts?:{prefer?:string}){
  const response=await fetch(`${supabase(env)}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SECRET_KEY!,'User-Agent':'Storypress-Server/1.0','Content-Type':'application/json',Prefer:opts?.prefer??'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
- if(!response.ok)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
+ if(!response.ok){
+  const text=await response.text().catch(()=>'');
+  let postgrest:{code?:string;message?:string;hint?:string}|undefined;
+  try{postgrest=JSON.parse(text) as {code?:string;message?:string;hint?:string};}catch{/* not PostgREST JSON (a proxy page, an empty body) — the raw status still logs */}
+  // Zero logging existed on this path before (art_VetIBa76 §5); this line is
+  // what makes a red error in the UI self-diagnosing in the server log.
+  console.error(JSON.stringify({event:'storage_upstream_error',status:response.status,path,postgrest:{code:postgrest?.code,message:postgrest?.message,hint:postgrest?.hint}}));
+  const code=storageCodeFor(response.status,postgrest?.code??'');
+  const message=code==='SCHEMA_MISSING'?'Your account storage isn’t set up for this yet. Your device draft is kept.':'Your account storage could not complete that step. Your device draft is kept.';
+  throw new ServiceError(message,503,code);
+ }
  return response.status===204?null:response.json();
 }
 export function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Once & Ours directly.',403);}
@@ -113,7 +135,9 @@ export async function reserveStory(userId:string,env:Bindings){
  const allowance=freeStoryLimit(env);
  const results=await db(env,'rpc/storypress_reserve_story','POST',{p_user:userId,p_limit:allowance}) as {ok?:boolean;reason?:string}[]|null;
  const [result]=Array.isArray(results)?results:[];
- if(!result)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503);
+ // An empty RPC result is its own machine code (wave 5 change 3): db() answered,
+ // the reserve function returned nothing usable — distinct from a missing RPC.
+ if(!result)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503,'RESERVE_EMPTY');
  if(result.ok!==true)throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
 }
 // The account payload's billing block (§4): the Stripe flag plus the signed-in

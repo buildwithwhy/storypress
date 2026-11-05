@@ -1,6 +1,44 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {build} from 'esbuild';
+
+// Opt-in live probe (wave 5 change 3, art_VetIBa76 §5): with `--live` and
+// SUPABASE_URL + SUPABASE_SECRET_KEY in the environment, probe the real
+// project and exit. The default run below stays fully mocked — CI needs no
+// Supabase credentials.
+if(process.argv.includes('--live')){
+ const url=process.env.SUPABASE_URL?.replace(/\/$/,''),key=process.env.SUPABASE_SECRET_KEY;
+ if(!url||!key){console.error('Live mode needs SUPABASE_URL and SUPABASE_SECRET_KEY in the environment; nothing was probed.');process.exit(1);}
+ const advice=(body,status)=>{
+  if(body?.code==='PGRST205')return '  -> table missing: apply the migration that creates it (see supabase/migrations/) in the Supabase SQL editor';
+  if(body?.code==='PGRST202')return '  -> function missing: apply its migration in the Supabase SQL editor';
+  if(status===401||status===403)return '  -> the SUPABASE_SECRET_KEY looks wrong or revoked';
+  return '';
+ };
+ // Table probes are reads. RPC probes POST an empty argument set: a missing
+ // function answers 404 PGRST202; a present one refuses the empty call
+ // without executing, so no counters or rows are touched.
+ const probe=async(label,resource,init,hint)=>{
+  let response;
+  try{response=await fetch(`${url}/rest/v1/${resource}`,{...init,headers:{apikey:key,Authorization:`Bearer ${key}`,...(init.headers||{})}});}
+  catch(error){console.log(`${label}: NETWORK FAILURE (${error.message})`);return false;}
+  if(response.ok){console.log(`${label}: ok (${response.status})`);return true;}
+  const body=await response.json().catch(()=>null);
+  console.log(`${label}: HTTP ${response.status}${body?.code?` ${body.code}`:''}${body?.message?` — ${body.message}`:''}`);
+  console.log(advice(body,response.status)||`  -> ${hint}`);
+  return false;
+ };
+ const migrationHint='run the Oct-30 migration files from supabase/migrations/ per docs/SUPABASE-SETUP.md';
+ const results=[
+  await probe('storypress_invites','storypress_invites?select=id&limit=1',{},migrationHint),
+  await probe('storypress_contributions','storypress_contributions?select=id&limit=1',{},migrationHint),
+  await probe('rpc storypress_reserve_ai','rpc/storypress_reserve_ai',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},'apply supabase/migrations/202610110001_storypress.sql'),
+  await probe('rpc storypress_reserve_story','rpc/storypress_reserve_story',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'},'apply supabase/migrations/202610300002_billing.sql before switching on Stripe'),
+ ];
+ console.log(results.every(Boolean)?'Live check passed: tables and quota RPCs are present on the live project.':'Live check FAILED: fix the items above, then re-run.');
+ process.exit(results.every(Boolean)?0:1);
+}
+
 import worker from '../dist/server/index.js';
 
 // Keepsake bylines credit approved contributors in the owner's language.

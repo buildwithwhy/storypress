@@ -5,6 +5,7 @@ import {type SavedStory} from '../lib/story-saver';
 import {accountRequest} from '../lib/account-client';
 import {inviteApi} from '../lib/invite-client';
 import {inviteCopy,suggestedQuestion,formatEndDate} from '../lib/invite-copy';
+import {storageErrorText} from '../lib/storage-copy';
 
 type InviteRow={id:string;question:string;status:'open'|'expired'|'revoked';expiresAt:string;createdAt:string};
 type ContributionRow={id:string;inviteId:string|null;authorLabel:string;contributorUserId:string|null;turns:{role:'user'|'assistant';text:string}[];status:'pending'|'approved'|'declined';createdAt:string;reviewedAt:string|null};
@@ -26,7 +27,7 @@ export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{langu
  useEffect(()=>{if(!touchedRef.current)setQuestion(seed);},[seed]);
  const [name,setName]=useState(''),[link,setLink]=useState(''),[expires,setExpires]=useState('');
  const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('');
- async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){setError((e as Error).message);}finally{setPending(false);}}
+ async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){const err=e as Error&{code?:string};setError(storageErrorText(language,err.code,err.message));}finally{setPending(false);}}
  async function refresh(){const data=await inviteApi(undefined,`story_id=${encodeURIComponent(saved.id)}`) as {invites:InviteRow[];contributions:ContributionRow[]};setInvites(data.invites);setContributions(data.contributions);}
  useEffect(()=>{void run(refresh);},[saved.id]);
  async function create(){const data=await inviteApi({action:'create',storyId:saved.id,question:question.trim(),contributorName:name.trim()||undefined}) as {url:string;expiresAt:string};setLink(data.url);setExpires(data.expiresAt);setName('');await refresh();}

@@ -39,6 +39,10 @@ Before Supabase is configured, the existing owner-private pilot continues to use
 
 `node scripts/check-sharing.mjs`
 
+`node scripts/check-storage-errors.mjs`
+
+With `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the environment, `node scripts/check-invite-flow.mjs --live` probes the real project instead of the mocks: it reads one row from `storypress_invites` and `storypress_contributions` and verifies both quota RPCs exist — without touching any rows or counters. Run it after applying migrations to a project; a `PGRST205` or `PGRST202` answer names the migration that is missing (the expected cause of the recurring "Your account storage could not complete that step" error — see `docs/` history, wave 5).
+
 ## Why the server key is used
 
 The publishable key plus a user session is enough for basic Supabase sign-in and operations allowed by RLS. This backend deliberately reserves story writes, publication snapshots and quota mutations for the trusted server. Its anonymous share route reads only the approved edition selected by a valid share token. These operations use `SUPABASE_SECRET_KEY` after the app’s authorization checks (or capability-token check for a shared edition).
