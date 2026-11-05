@@ -71,4 +71,9 @@
 .share-group .sharing-panel{border:0;background:none;border-radius:0;padding:22px 0 0;margin:22px 0 0;border-top:1px solid #d5d5c6}
 .share-group h2,.share-group .sharing-panel h2{font:22px Georgia,serif;margin:0 0 8px}
 @media(max-width:500px){.share-group{padding:18px}.share-group .sharing-panel{margin-top:16px;padding-top:16px}}
+/* Wave 5 share row: the group's one actions row carries the card trigger plus
+   send and download; the global 190px flex-basis wrap would push a control to
+   a second line on phones, so this row's buttons share one line down to 375px.
+   Direct-child scope keeps the share-link row's own wrap behavior. */
+@media(max-width:600px){.share-group .sharing-panel>.sharing-actions>button{flex:1 1 0;min-width:0;padding-left:10px;padding-right:10px}}
 @media(max-width:800px){.invite-group{margin-top:26px;padding:16px}.share-group-title{font-size:15px}}
