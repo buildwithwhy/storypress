@@ -32,16 +32,30 @@ assert.ok(!idle.includes('<video ')&&!idle.includes('Save video'),'Idle state sh
 // Language follows the artifact, the same rule the editions follow.
 assert.match(markup({...base,language:'zh'},true),/制作回忆视频/);
 assert.match(markup({...base,language:'es'},true),/Crear video de recuerdos/);
-// Beside share images: both actions render, video placed after the images.
+// Beside share images (component level): both actions render, video placed
+// after the images. Wave 5 share row: the card-creation trigger left the
+// share-images section — the section keeps its heading and preview, and a
+// single "Create keepsake cards" string proves the prepare button now renders
+// in the sharing panel's actions row instead of here.
 const both=ReactDOMServer.renderToStaticMarkup(h('div',null,h(ShareImages,{story:base}),h(ShareVideo,{story:base,enabled:true})));
 const imagesAt=both.indexOf('share-images'),videoAt=both.indexOf('share-video');
 assert.ok(imagesAt>-1&&videoAt>-1,'Both actions render together');
 assert.ok(imagesAt<videoAt,'The video action sits beside share images');
+assert.equal((both.match(/Create keepsake cards/g)||[]).length,1,'Wave 5: the card trigger left the share-images section for the one actions row');
+
+// Paper-page placement (wave 5 share row): inside the share group the order
+// is share images → sharing panel (which owns the one actions row via the
+// cardsTrigger prop) → the video entry, below the row.
+const source=readFileSync('app/storypress.tsx','utf8');
+const group=source.slice(source.indexOf('keepsake-share-actions'));
+const imgAt=group.indexOf('<ShareImages'),panelAt=group.indexOf('<Sharing '),vidAt=group.indexOf('<ShareVideo');
+assert.ok(imgAt>-1&&panelAt>-1&&vidAt>-1,'Wave 5: images, sharing panel, and video entry all render in the share group');
+assert.ok(imgAt<panelAt&&panelAt<vidAt,'Wave 5: the video entry follows the sharing panel that owns the actions row');
+assert.ok(group.includes('cardsTrigger='),'Wave 5: the card trigger is handed into the sharing panel row');
 
 // Walkthrough: the component is the only surface. storypress touches video
 // only through the services state, the import, and the paper-stage action —
 // any other mention (a navigation entry, a tell-stage surface) fails here.
-const source=readFileSync('app/storypress.tsx','utf8');
 for(const [index,line] of source.split('\n').entries()){
  if(!/video/i.test(line))continue;
  const accounted=line.includes('video:{enabled:false}')||line.includes('ShareVideo')||line.includes('services.video');
