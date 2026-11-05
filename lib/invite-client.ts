@@ -18,7 +18,9 @@ export function guestTurnsOctets(turns:Turn[]){return new TextEncoder().encode(J
 
 export async function inviteApi(body?:unknown,query?:string){
  const response=await fetch(`/api/invites${query?`?${query}`:''}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...await accountHeaders()},body:body===undefined?undefined:JSON.stringify(body)});
- const data=await response.json() as {error?:string};
- if(!response.ok)throw new Error(data.error||'That step did not finish. Please try again.');
+ const data=await response.json() as {error?:string;code?:string};
+ // Mirror accountRequest's {code} annotation (wave 5 change 3) so the invite
+ // panel can localize machine storage codes instead of raw server English.
+ if(!response.ok)throw Object.assign(new Error(data.error||'That step did not finish. Please try again.'),{code:data.code});
  return data;
 }

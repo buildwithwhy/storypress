@@ -31,6 +31,7 @@ import {InviteGuest} from "./invite-guest";
 import {parseInviteToken} from "../lib/invite-client";
 import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
+import {storageErrorText} from '../lib/storage-copy';
 import {freeStoryLimitReached,type BillingStatus} from '../lib/billing';
 import {checkoutReturnId,confirmCheckout} from '../lib/billing-client';
 import {paywallCopy} from '../lib/paywall-copy';
@@ -554,12 +555,14 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const limitReached=freeStoryLimitReached(account.billing);
  // A metered-save refusal is localized (paywall §2, the autosave trap): the
  // code from the API picks the copy, so the autosave error is legible instead
- // of the server's English text. Other failures keep the server message.
+ // of the server's English text. Machine storage codes (wave 5 change 3) get
+ // the same treatment — SCHEMA_MISSING reads as "not set up yet", not a
+ // mystery failure — and every code is appended so one screenshot diagnoses.
  const saveErrorText=cloudErrorCode==='story_limit'?{
   en:`You have used all ${account.billing.freeStoryLimit} free stories. Your draft is kept on this device — upgrade in My stories to keep telling new stories.`,
   zh:`你已经用完 ${account.billing.freeStoryLimit} 个免费故事。草稿保留在此设备上——在“我的故事”中升级后可以继续创作新故事。`,
   es:`Has usado tus ${account.billing.freeStoryLimit} historias gratis. El borrador se guarda en este dispositivo: mejora tu plan en Mis historias para seguir creando historias nuevas.`
- }[story.language]:cloudError;
+ }[story.language]:storageErrorText(story.language,cloudErrorCode,cloudError);
  async function startFresh(withPhoto=false,prompt?:string){if(account.sampleOnly){setShowSample(true);return;}if(freeStoryLimitReached(account.billing)){setShowAccount(true);return;}if(pendingRecordings.length){setError({en:'Choose whether to keep or discard your recordings before starting another story.',zh:'开始新故事前，请先选择保留或删除录音。',es:'Elige si conservar o descartar las grabaciones antes de empezar otra historia.'}[story.language]);return;}cancelResearch();requestId.current++;autoArtTried.current=false;if(interactionBusy||correcting)return;if(!account.user&&hasStoryContent(currentDraft().story)){persistDraft();setError(sc.guestNew);setShowAccount(true);return;}setSwitching(true);try{if(account.user)await saveCurrent();const next:Story={...initialStory,name:story.sample&&setupName===story.name?'':setupName,language:story.language,occasion:setupOccasion,intention:setupIntention,presentation:setupPresentation,turns:[{role:'assistant',text:prompt||openingQuestion({language:story.language,occasion:setupOccasion,intention:setupIntention})}]};saver.current?.replace(next,null);setSaved(null);setStory(next);setInput('');setReviewing(false);setCorrecting(false);setReadyToWrite(false);setSearched(false);setResumedDraft(false);setShowAccount(false);navigate('tell');if(withPhoto)choosePhoto();}catch(problem){setError((problem as Error).message);}finally{setSwitching(false);}}
  // Second mobile control surface (≤800 px): the tell stage's primary action and skip,
  // pinned to the bottom edge. Composition logic lives in lib/mobile-actions.ts.
