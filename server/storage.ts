@@ -135,6 +135,24 @@ export async function reserveAi(userId:string,env:Bindings,action:string){
 // Paywall metering (§2): the free allowance and its Stripe configuration gate.
 export function billingConfigured(env:Bindings){return !!env.STRIPE_SECRET_KEY;}
 export function freeStoryLimit(env:Bindings){const raw=env.STORYPRESS_FREE_STORIES?.trim(),limit=Number(raw);return raw&&Number.isInteger(limit)&&limit>=0?limit:3;}
+// Wave 8 pricing (§1): the subscription's calendar-month cap and the pack
+// credit sizes — env-tunable without a code release, same malformed-value
+// rule as freeStoryLimit (unset or non-integer falls back to the spec
+// default). A zero cap is a legitimate kill switch; a pack must carry at
+// least one credit.
+export function subscriptionMonthlyCap(env:Bindings){const raw=env.STORYPRESS_SUBSCRIPTION_MONTHLY_CAP?.trim(),cap=Number(raw);return raw&&Number.isInteger(cap)&&cap>=0?cap:50;}
+export function pack30Credits(env:Bindings){const raw=env.STORYPRESS_PACK_30_CREDITS?.trim(),size=Number(raw);return raw&&Number.isInteger(size)&&size>0?size:30;}
+export function pack100Credits(env:Bindings){const raw=env.STORYPRESS_PACK_100_CREDITS?.trim(),size=Number(raw);return raw&&Number.isInteger(size)&&size>0?size:100;}
+// Maps a Stripe price ID to the pack credits it grants (the webhook's paid
+// payment-mode sessions read this). An unrecognized price returns null —
+// the caller must fail closed rather than invent a credit amount.
+export function packCreditsForPrice(env:Bindings,priceId:string):number|null{
+ const id=priceId?.trim();
+ if(!id)return null;
+ if(id===(env.STRIPE_PRICE_PACK_30??'').trim())return pack30Credits(env);
+ if(id===(env.STRIPE_PRICE_PACK_100??'').trim())return pack100Credits(env);
+ return null;
+}
 // The only real gate: called from the save-without-id seam before a self-started
 // original inserts, never for derivatives, revisions, deletes, or reads. While
 // Stripe is unconfigured this no-ops — a founder setup step must never block a
@@ -143,7 +161,7 @@ export function freeStoryLimit(env:Bindings){const raw=env.STORYPRESS_FREE_STORI
 export async function reserveStory(userId:string,env:Bindings){
  if(!billingConfigured(env))return;
  const allowance=freeStoryLimit(env);
- const results=await db(env,'rpc/storypress_reserve_story','POST',{p_user:userId,p_limit:allowance}) as {ok?:boolean;reason?:string}[]|null;
+ const results=await db(env,'rpc/storypress_reserve_story','POST',{p_user:userId,p_limit:allowance,p_cap:subscriptionMonthlyCap(env)}) as {ok?:boolean;reason?:string}[]|null;
  const [result]=Array.isArray(results)?results:[];
  // An empty RPC result is its own machine code (wave 5 change 3): db() answered,
  // the reserve function returned nothing usable — distinct from a missing RPC.
