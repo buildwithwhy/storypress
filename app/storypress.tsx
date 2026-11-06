@@ -577,10 +577,24 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const limitReached=freeStoryLimitReached(account.billing);
  // A metered-save refusal is localized (paywall §2, the autosave trap): the
  // code from the API picks the copy, so the autosave error is legible instead
- // of the server's English text. Machine storage codes (wave 5 change 3) get
- // the same treatment — SCHEMA_MISSING reads as "not set up yet", not a
- // mystery failure — and every code is appended so one screenshot diagnoses.
- const saveErrorText=cloudErrorCode==='story_limit'?{
+ // of the server's English text. Wave 8 adds the cap and pack refusals
+ // alongside the free-tier limit ('limit' reads as the legacy code): the cap
+ // message interpolates the payload's cap and points at a pack, the
+ // no-credits message points at subscribe-or-pack. Machine storage codes
+ // (wave 5 change 3) get the same treatment — SCHEMA_MISSING reads as "not
+ // set up yet", not a mystery failure — and every code is appended so one
+ // screenshot diagnoses.
+ const saveErrorText=cloudErrorCode==='cap'?{
+  en:`You have used all ${account.billing.subscriptionMonthlyCap} stories this month. Everything you have made stays yours — a pack in View plans adds credits that never expire.`,
+  zh:`本月 ${account.billing.subscriptionMonthlyCap} 个故事已用完。你创作的一切都仍然属于你——在“查看方案”中购买故事包，点数永不过期。`,
+  es:`Has usado las ${account.billing.subscriptionMonthlyCap} historias de este mes. Todo lo que creaste sigue siendo tuyo: un paquete en Ver planes añade créditos que nunca caducan.`
+ }[story.language]
+  :cloudErrorCode==='no_credits'?{
+  en:`Your pack credits are used up. Subscribe or grab a pack in View plans to keep telling new stories.`,
+  zh:`你的故事包点数已用完。在“查看方案”中订阅或购买故事包，即可继续创作新故事。`,
+  es:`Tus créditos de paquete están agotados. Suscríbete o compra un paquete en Ver planes para seguir creando historias nuevas.`
+ }[story.language]
+  :cloudErrorCode==='story_limit'||cloudErrorCode==='limit'?{
   en:`You have used all ${account.billing.freeStoryLimit} free stories. Your draft is kept on this device — upgrade in My stories to keep telling new stories.`,
   zh:`你已经用完 ${account.billing.freeStoryLimit} 个免费故事。草稿保留在此设备上——在“我的故事”中升级后可以继续创作新故事。`,
   es:`Has usado tus ${account.billing.freeStoryLimit} historias gratis. El borrador se guarda en este dispositivo: mejora tu plan en Mis historias para seguir creando historias nuevas.`
@@ -620,7 +634,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
    <section className="hero-preview" aria-label={d.previewAria}><div className="preview-label">{d.previewLabel} <span>↘</span></div><div className="paper-stack"><NewspaperView story={{...initialStory,language:story.language,name:sample.name,sample:true,paper:sample.paper,sources:[{...sample.source,selected:true}]}} miniature/><div className="paper-sticker"><Heart size={19}/>{d.stickerTop}<br/><strong>{d.stickerBottom}</strong></div></div><div className="preview-caption"><span className="tiny-line"/> {d.caption}</div></section>
    <section className="how-strip">{d.steps.map((step,i)=><div key={i}><span>{String(i+1).padStart(2,"0")}</span><div><h3>{step.title}</h3><p>{step.description}</p></div></div>)}</section>
   </main>}
-  {stage === "pricing" && <main className="pricing-page"><h1>{paywallCopy[story.language].pricingTitle}</h1><p className="pricing-intro">{paywallCopy[story.language].pricingIntro}</p><PricingPanel billing={account.billing} language={story.language}/></main>}
+  {stage === "pricing" && <main className="pricing-page"><h1>{paywallCopy[story.language].pricingTitle}</h1><p className="pricing-intro">{paywallCopy[story.language].pricingIntro}</p><PricingPanel billing={account.billing} pricing={account.pricing} language={story.language}/></main>}
   {showSample&&<SamplePreview language={story.language} onClose={()=>setShowSample(false)}><FormatPicker story={{...createSampleStory(story.language),presentation:{version:1,format:sampleFormat}}} onChange={setSampleFormat}/><KeepsakeView story={{...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}],presentation:{version:1,format:sampleFormat}}}/></SamplePreview>}
   {stage === "tell" && <main className={`workspace interview-${mode}`}><section className="conversation">
    {modePicker()}

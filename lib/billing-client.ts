@@ -1,7 +1,11 @@
 import {billingStatusSchema,type BillingStatus} from './billing';
 import {accountHeaders} from './account-client';
 
-export type CheckoutPlan='monthly'|'annual'|'lifetime';
+// Wave 8: the two subscriptions plus the two one-time story packs. 'lifetime'
+// is gone from the checkout surface entirely (its archived Stripe product stays
+// archived; legacy entitlement ROWS still read as entitled through the billing
+// status schema).
+export type CheckoutPlan='monthly'|'annual'|'pack30'|'pack100';
 
 // POSTs to the same-origin billing API with the owner's identity headers —
 // no external host ever enters the client bundle (the check-client-hosts
@@ -26,7 +30,7 @@ export function checkoutReturnId(search:string):string|undefined{
 // Opens Stripe checkout and returns the session URL; the component navigates.
 // Dormant deployments refuse from the server (503) and the panel says so.
 export async function startCheckout(plan:CheckoutPlan):Promise<string>{
- return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='lifetime'?'payment':'subscription',plan:plan==='annual'?'annual':'monthly'})).url;
+ return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan})).url;
 }
 
 // Webhook-lag rescue (paywall §5): the session is verified SERVER-side before

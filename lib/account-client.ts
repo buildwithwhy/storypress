@@ -1,7 +1,10 @@
 import {createClient,type SupabaseClient} from '@supabase/supabase-js';
-import type {BillingStatus} from './billing';
+import type {BillingStatus,Pricing} from './billing';
 export type Account={id:string;email?:string};
-export type AccountConfig={user:Account|null;supabase:{url:string;key:string}|null;storage:boolean;linkSharing:boolean;dailyUnits:number|null;sampleOnly?:boolean;billing:BillingStatus};
+// pricing: the server's Stripe-cached price payload (wave 8 §3) — null while
+// dormant or when Stripe is unreachable with no cache; the pricing page hides
+// amounts rather than inventing numbers.
+export type AccountConfig={user:Account|null;supabase:{url:string;key:string}|null;storage:boolean;linkSharing:boolean;dailyUnits:number|null;sampleOnly?:boolean;billing:BillingStatus;pricing:Pricing|null};
 let client:SupabaseClient|null=null;
 export async function setupAccount(onUser:(user:Account|null)=>void){
  const response=await fetch('/api/account');if(!response.ok)throw new Error('Account connection unavailable. Reload to try again.');
