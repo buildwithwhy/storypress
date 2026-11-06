@@ -18,7 +18,11 @@ export async function serveVercel(request, pathname, env = process.env) {
       const p100Raw = String(env.STORYPRESS_PACK_100_CREDITS ?? '').trim(), pack100 = Number(p100Raw);
       const pack100Credits = p100Raw && Number.isInteger(pack100) && pack100 > 0 ? pack100 : 100;
       return Response.json({user:null,supabase:null,storage:false,linkSharing:false,dailyUnits:null,sampleOnly:true,
-        billing:{configured:!!env.STRIPE_SECRET_KEY,plan:'free',addons:[],storiesCreated:0,freeStoryLimit,subscriptionMonthlyCap,pack30Credits,pack100Credits,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}},
+        billing:{configured:!!env.STRIPE_SECRET_KEY,plan:'free',addons:[],storiesCreated:0,freeStoryLimit,subscriptionMonthlyCap,pack30Credits,pack100Credits,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},
+        // Dormant deployments have no Stripe key, so there is no price payload
+        // to vouch for amounts — the pricing page falls back to its labeled
+        // dormant copy instead of rendering numbers from here.
+        pricing:null},
         {headers:{'Cache-Control':'no-store'}});
     }
     return Response.json({error:'Account services are not connected yet. The sample is still available.'},

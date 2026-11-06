@@ -9,7 +9,7 @@ import {clearAccountDraft} from '../lib/draft-handoff';
 import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {editionRowNote,parseStoryRows,type StoryListRow} from '../lib/editions';
-import {startCheckout} from '../lib/billing-client';
+import {startCheckout,type CheckoutPlan} from '../lib/billing-client';
 import {type BillingStatus} from '../lib/billing';
 import {paywallCopy} from '../lib/paywall-copy';
 import {EmailSignIn} from './email-sign-in';
@@ -60,30 +60,35 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
 }
 
 
-// The upgrade surface (paywall §5): plan state first, then — only when Stripe
-// is configured and the owner is on the free plan — the subscription cadence
-// toggle and the lifetime unlock side by side. Dormant deployments keep the
-// limit legible but never show a pay button that would only error. The guard
-// is the free-forever invariant: outside the owner's Storypress tree the
-// panel renders nothing.
+// The upgrade surface (paywall §5, reworked wave 8 §3): the usage panel —
+// plan state, this month's usage against the cap, and remaining pack credits
+// — then, only when Stripe is configured and the owner is on the free plan,
+// the subscription cadence toggle and its checkout CTA. Packs live on the
+// /pricing page (View plans); a cap-hit refusal there points at them. Dormant
+// deployments keep the usage legible but never show a pay button that would
+// only error. Legacy 'lifetime' entitlement rows read as entitled and render
+// the same plan/usage state as subscribers. The guard is the free-forever
+// invariant: outside the owner's Storypress tree the panel renders nothing.
 export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean;onViewPlans?:()=>void}){
  const c=paywallCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
  if(!ownerTree)return null;
- const planLine=billing.plan==='free'?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):billing.plan==='subscription'?c.subscriptionActive:c.lifetimeActive;
- async function pay(plan:'monthly'|'annual'|'lifetime'){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
+ const free=billing.plan==='free';
+ const planLine=free?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):c.entitledActive;
+ async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
  return <div className="upgrade-panel">
   <p className="upgrade-plan" role="status">{planLine}</p>
+  {!free&&<p className="upgrade-plan upgrade-usage" role="status">{c.monthlyUsage.replace('{used}',String(billing.subscriptionStoriesThisMonth)).replace('{cap}',String(billing.subscriptionMonthlyCap))}</p>}
+  {billing.packCreditsRemaining>0&&<p className="upgrade-plan upgrade-usage" role="status">{c.packCredits.replace('{size}',String(billing.packCreditsRemaining))}</p>}
   {onViewPlans&&<button className="secondary view-plans" onClick={onViewPlans}>{c.viewPlans}<ArrowRight size={17}/></button>}
-  {billing.configured&&billing.plan==='free'&&<><div className="upgrade-cadence" role="group" aria-label={c.planHeading}>
+  {billing.configured&&free&&<><div className="upgrade-cadence" role="group" aria-label={c.planHeading}>
    <button className={cadence==='monthly'?'secondary selected':'secondary'} aria-pressed={cadence==='monthly'} disabled={busy} onClick={()=>setCadence('monthly')}>{c.monthly}</button>
    <button className={cadence==='annual'?'secondary selected':'secondary'} aria-pressed={cadence==='annual'} disabled={busy} onClick={()=>setCadence('annual')}>{c.annual}</button>
   </div>
   <div className="sharing-actions">
    <button className="primary" disabled={busy} onClick={()=>void pay(cadence)}>{c.checkout}</button>
-   <button className="secondary" disabled={busy} onClick={()=>void pay('lifetime')}>{c.lifetime}</button>
   </div>
   {busy&&<p className="quiet left" role="status">{c.checkoutBusy}</p>}</>}
   {!billing.configured&&<p className="quiet left">{c.dormant}</p>}

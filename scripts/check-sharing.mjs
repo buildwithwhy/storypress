@@ -53,7 +53,7 @@ assert.equal(queue.length,0);
 // reserves against the monotonic story counter before inserting a self-started
 // original. The strict queue proves the reserve RPC fires exactly once per
 // self-started create — and never for derivatives, revisions, or deletes.
-const meteredEnv={...env,STRIPE_SECRET_KEY:'sk_test_mock'},insertedAt='2026-10-30T00:00:00.000Z',copyId='33333333-3333-4333-8333-333333333333';
+const meteredEnv={...env,STRIPE_SECRET_KEY:'sk_test_mock',STRIPE_PRICE_SUBSCRIPTION_MONTHLY:'price_monthly_mock',STRIPE_PRICE_SUBSCRIPTION_ANNUAL:'price_annual_mock',STRIPE_PRICE_PACK_30:'price_pack30_mock',STRIPE_PRICE_PACK_100:'price_pack100_mock'},insertedAt='2026-10-30T00:00:00.000Z',copyId='33333333-3333-4333-8333-333333333333';
 const reserve=(ok,reason)=>({data:[{ok,reason}],check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_story'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_limit:3,p_cap:50},'The reserve RPC receives the owner, the default allowance, and the default monthly cap');}});
 const inserted=id=>({data:[{id,revision:1,share_token:null,updated_at:insertedAt}]});
 queue=[authenticated(),reserve(false,'limit')];
@@ -90,8 +90,18 @@ queue=[authenticated(),inserted(id)];
 assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),env)).status,200,'Without Stripe env, story creation is never blocked');
 assert.equal(queue.length,0,'The reserve RPC must not even be called while billing is dormant');
 queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{sum:30}]},{data:[{count:3}]}];
+// Wave 8 §3: the pricing payload rides the account response only while billing
+// is configured. A failed Stripe refetch with no cache hides amounts (null)
+// instead of inventing numbers — tested before the success scenario so the
+// module-scope cache is still cold.
+const stripePrice=amount=>({data:{currency:'usd',unit_amount:amount},check:url=>{assert.ok(url.startsWith('https://api.stripe.com/v1/prices/'),'the pricing payload fetches the configured Stripe price objects');assert.ok(['price_monthly_mock','price_annual_mock','price_pack30_mock','price_pack100_mock'].some(id=>url.endsWith(id)),'the pricing payload fetches exactly the configured price IDs');}});
+queue=[authenticated(),{data:[{plan:'subscription',addons:'[]'}]},{data:[{stories_created:0}]},{data:[{stories_created:0}]},{data:[{sum:null}]},{data:[{count:0}]},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}}];
+const unpricedAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
+assert.deepEqual(unpricedAccount.pricing,null,'A failed Stripe refetch with no cache hides amounts instead of inventing them');
+queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{sum:30}]},{data:[{count:3}]},stripePrice(999),stripePrice(5900),stripePrice(1200),stripePrice(2900)];
 const paid=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:27},'The account payload reports the entitlement, the counter, and the wave-8 owner state');
+assert.deepEqual(paid.pricing,{currency:'usd',monthly:{amount:999},annual:{amount:5900},pack30:{amount:1200},pack100:{amount:2900}},'The account payload carries the Stripe price amounts in minor units');
 queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
 const freeAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'Missing billing rows read as a free account');

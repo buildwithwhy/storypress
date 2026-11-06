@@ -5,6 +5,10 @@ import {multilingualSnapshot, editionHtml} from '../lib/edition';
 import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
 import {timedDbCall} from '../lib/call-log';
+// Stripe-backed pricing payload for the account response (wave 8 §3). The
+// import is one-directional: pricing.ts takes Bindings as a type-only import,
+// so no runtime cycle with this module.
+import {stripePricing} from './pricing';
 export type Bindings=Record<string,string|undefined>;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export {json};
@@ -59,7 +63,7 @@ export function sameOrigin(request:Request){const origin=request.headers.get('or
 const uuid=z.string().uuid();
 export async function accountApi(request:Request,env:Bindings){
  if(request.method!=='GET')return json({error:'Method not allowed'},405);
- try{const user=await identity(request,env);return json({user,supabase:configured(env)?{url:env.SUPABASE_URL,key:env.SUPABASE_PUBLISHABLE_KEY}:null,storage:configured(env),linkSharing:env.STORYPRESS_PUBLIC_SHARING==='true',dailyUnits:configured(env)?40:null,billing:await billingStatus(env,user?.id??null)});}
+ try{const user=await identity(request,env);return json({user,supabase:configured(env)?{url:env.SUPABASE_URL,key:env.SUPABASE_PUBLISHABLE_KEY}:null,storage:configured(env),linkSharing:env.STORYPRESS_PUBLIC_SHARING==='true',dailyUnits:configured(env)?40:null,billing:await billingStatus(env,user?.id??null),pricing:billingConfigured(env)?await stripePricing(env):null});}
  catch{return json({error:'Could not load your account.'},503)}
 }
 export async function storiesApi(request:Request,env:Bindings){
@@ -166,7 +170,18 @@ export async function reserveStory(userId:string,env:Bindings){
  // An empty RPC result is its own machine code (wave 5 change 3): db() answered,
  // the reserve function returned nothing usable — distinct from a missing RPC.
  if(!result)throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503,'RESERVE_EMPTY');
- if(result.ok!==true)throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
+ if(result.ok!==true){
+  // Distinct 402 refusal codes per the RPC v2 draw order (wave 8 §3): the
+  // client localizes by code (lib/account-client.ts pattern) — 'cap' points
+  // subscribers at a pack, 'no_credits' at subscribe-or-pack, and the legacy
+  // 'story_limit' keeps the free-tier contract (check-sharing pins it).
+  // Refusals never consume anything; unrecognized reasons are a structural
+  // surprise and fail closed as a storage error, never as a meter refusal.
+  if(result.reason==='cap')throw new ServiceError(`You have used all ${subscriptionMonthlyCap(env)} stories this month. Everything you have made stays yours to read, print and share — a pack in your account adds credits that never expire.`,402,'cap');
+  if(result.reason==='no_credits')throw new ServiceError('Your pack credits are used up. Subscribe or grab a pack in your account to keep telling new stories.',402,'no_credits');
+  if(result.reason==='limit')throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
+  throw new ServiceError('Your account storage could not complete that step. Your device draft is kept.',503,'RESERVE_REASON');
+ }
 }
 // The account payload's billing block (§4): the Stripe flag plus the signed-in
 // owner's entitlement, monotonic story counter, and wave-8 owner state — this
