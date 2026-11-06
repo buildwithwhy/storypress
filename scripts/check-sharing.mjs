@@ -47,7 +47,7 @@ assert.ok(invite.url&&invite.url.startsWith(base+'/i/'),'An invite is an /i/ con
 assert.equal(invite.share_token,undefined,'Invite creation never returns a reader token');
 assert.equal(queue.length,0,'Invite creation never patches the story row');
 queue=[authenticated(),{data:false,check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_ai'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_action:'write'});}}];assert.equal((await worker.fetch(req('/api/story',{action:'write',story}),env)).status,429,'Quota refusal must stop before provider calls');
-queue=[authenticated(),{data:[]},{data:[]}];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));assert.ok(!config.includes('sk_test'),'Billing config must not leak into the account payload');
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];const config=await(await worker.fetch(req('/api/account'),env)).text();assert.ok(!config.includes(env.SUPABASE_SECRET_KEY));assert.ok(!config.includes('provider-test-key'));assert.ok(!config.includes('sk_test'),'Billing config must not leak into the account payload');
 assert.equal(queue.length,0);
 // ---- Paywall metering (§2): with Stripe configured, the save-without-id seam
 // reserves against the monotonic story counter before inserting a self-started
@@ -89,19 +89,19 @@ assert.equal((await afterDelete.json()).code,'story_limit');
 queue=[authenticated(),inserted(id)];
 assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),env)).status,200,'Without Stripe env, story creation is never blocked');
 assert.equal(queue.length,0,'The reserve RPC must not even be called while billing is dormant');
-queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]}];
+queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{sum:30}]},{data:[{count:3}]}];
 const paid=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
-assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3},'The account payload reports the entitlement and monotonic counter');
-queue=[authenticated(),{data:[]},{data:[]}];
+assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:27},'The account payload reports the entitlement, the counter, and the wave-8 owner state');
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
 const freeAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
-assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3},'Missing billing rows read as a free account');
+assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'Missing billing rows read as a free account');
 queue=[authenticated(),{status:503,data:{error:'relation does not exist'}}];
 const degraded=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
-assert.deepEqual(degraded.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3},'A broken billing table must not take down the account payload');
-queue=[authenticated(),{data:[]},{data:[]}];
+assert.deepEqual(degraded.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'A broken billing table must not take down the account payload');
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
 const generous=await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'5'})).json();
 assert.equal(generous.billing.freeStoryLimit,5,'STORYPRESS_FREE_STORIES raises the reported allowance');
-queue=[authenticated(),{data:[]},{data:[]}];
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
 assert.equal((await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'not-a-number'})).json()).billing.freeStoryLimit,3,'A malformed allowance env falls back to 3');
 assert.equal(queue.length,0);
 // Wave 8 §1: the subscription cap rides the same reserve call, env-tuned

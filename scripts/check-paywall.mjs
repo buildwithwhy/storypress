@@ -134,12 +134,12 @@ globalThis.fetch=async(url,init)=>{
  assert.equal(url,'/api/billing','billing requests stay same-origin');
  return {ok:true,status:200,json:async()=>requestBody.action==='checkout'
   ?{url:'https://checkout.stripe.com/pay/mock'}
-  :{billing:{configured:true,plan:'lifetime',addons:[],storiesCreated:4,freeStoryLimit:3}}};
+  :{billing:{configured:true,plan:'lifetime',addons:[],storiesCreated:4,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}}};
 };
 assert.equal(await startCheckout('annual'),'https://checkout.stripe.com/pay/mock');
 assert.deepEqual(requestBody,{action:'checkout',mode:'subscription',plan:'annual'},'the checkout request names the cadence');
 const rescued=await confirmCheckout('cs_test_a1b2C3d4');
-assert.deepEqual(rescued,{configured:true,plan:'lifetime',addons:[],storiesCreated:4,freeStoryLimit:3},'the rescue parses the server-verified billing block');
+assert.deepEqual(rescued,{configured:true,plan:'lifetime',addons:[],storiesCreated:4,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'the rescue parses the server-verified billing block');
 assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the rescue asks the server to verify the session');
 globalThis.fetch=originalFetch;
 

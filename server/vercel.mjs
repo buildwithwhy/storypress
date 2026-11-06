@@ -7,6 +7,8 @@ export async function serveVercel(request, pathname, env = process.env) {
       // Mirror of freeStoryLimit()/subscriptionMonthlyCap()/pack30Credits()/
       // pack100Credits() in server/storage.ts (kept in sync by hand —
       // this file runs unbundled on Vercel and cannot import built TS).
+      // Owner state (this month's draws, remaining pack credits) is zero
+      // here: dormant deployments have no database to read it from.
       const raw = String(env.STORYPRESS_FREE_STORIES ?? '').trim(), limit = Number(raw);
       const freeStoryLimit = raw && Number.isInteger(limit) && limit >= 0 ? limit : 3;
       const capRaw = String(env.STORYPRESS_SUBSCRIPTION_MONTHLY_CAP ?? '').trim(), cap = Number(capRaw);
@@ -16,7 +18,7 @@ export async function serveVercel(request, pathname, env = process.env) {
       const p100Raw = String(env.STORYPRESS_PACK_100_CREDITS ?? '').trim(), pack100 = Number(p100Raw);
       const pack100Credits = p100Raw && Number.isInteger(pack100) && pack100 > 0 ? pack100 : 100;
       return Response.json({user:null,supabase:null,storage:false,linkSharing:false,dailyUnits:null,sampleOnly:true,
-        billing:{configured:!!env.STRIPE_SECRET_KEY,plan:'free',addons:[],storiesCreated:0,freeStoryLimit,subscriptionMonthlyCap,pack30Credits,pack100Credits}},
+        billing:{configured:!!env.STRIPE_SECRET_KEY,plan:'free',addons:[],storiesCreated:0,freeStoryLimit,subscriptionMonthlyCap,pack30Credits,pack100Credits,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}},
         {headers:{'Cache-Control':'no-store'}});
     }
     return Response.json({error:'Account services are not connected yet. The sample is still available.'},

@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {db,identity,sameOrigin,billingConfigured,billingStatus,supabase,json,type Bindings} from './storage';
+import {db,identity,sameOrigin,billingConfigured,billingStatus,supabase,json,packCreditsForPrice,type Bindings} from './storage';
 import {ServiceError} from '../lib/providers';
 
 // Paywall §3 — the money path: checkout sessions, the webhook-lag status
@@ -11,10 +11,13 @@ import {ServiceError} from '../lib/providers';
 
 const STRIPE_API='https://api.stripe.com';
 const uuid=z.string().uuid();
-// The entitlement columns a webhook or rescue may write. The upsert below
-// never touches the addons column: add-ons arrive as separate one-time
-// unlocks and a plan change must not erase them.
-export type EntitlementWrite={plan:'free'|'subscription'|'lifetime';subscription_status?:string;current_period_end?:string|null;stripe_customer_id?:string|null};
+// The entitlement columns a webhook or rescue may write. Legacy 'lifetime'
+// rows stay readable everywhere (the read schema and the reserve RPC keep
+// treating them as entitled), but since the lifetime unlock retired no
+// webhook or rescue may ever write the plan — payment mode grants pack
+// credits instead. The upsert never touches the addons column: add-ons
+// arrive as separate one-time unlocks and a plan change must not erase them.
+export type EntitlementWrite={plan:'free'|'subscription';subscription_status?:string;current_period_end?:string|null;stripe_customer_id?:string|null};
 
 async function applyEntitlement(env:Bindings,ownerId:string,write:EntitlementWrite){
  await db(env,'storypress_entitlements?on_conflict=owner_id','POST',{owner_id:ownerId,...write},{prefer:'return=representation, resolution=merge-duplicates'});
@@ -22,17 +25,23 @@ async function applyEntitlement(env:Bindings,ownerId:string,write:EntitlementWri
 
 // ---- Checkout sessions ----
 
-const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual']).default('monthly')});
+// Payment mode is pack-only since the lifetime unlock retired (wave 8 §2):
+// a payment/subscription-plan combination has no price and must never reach
+// Stripe, so the legacy client shape (mode:'payment',plan:'monthly') is
+// refused here rather than mispriced later.
+const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual','pack30','pack100']).default('monthly')}).superRefine((input,ctx)=>{
+ if(input.mode==='payment'?(input.plan!=='pack30'&&input.plan!=='pack100'):(input.plan!=='monthly'&&input.plan!=='annual'))ctx.addIssue({code:z.ZodIssueCode.custom,message:`${input.mode} checkout does not carry plan ${input.plan}`});
+});
 const statusInput=z.object({action:z.literal('status'),sessionId:z.string().trim().min(1).max(200)});
 const billingInput=z.union([checkoutInput,statusInput]);
 
-function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'annual'){
- const price=mode==='payment'?env.STRIPE_PRICE_LIFETIME:plan==='annual'?env.STRIPE_PRICE_SUBSCRIPTION_ANNUAL:env.STRIPE_PRICE_SUBSCRIPTION_MONTHLY;
+function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100'){
+ const price=mode==='payment'?(plan==='pack30'?env.STRIPE_PRICE_PACK_30:env.STRIPE_PRICE_PACK_100):plan==='annual'?env.STRIPE_PRICE_SUBSCRIPTION_ANNUAL:env.STRIPE_PRICE_SUBSCRIPTION_MONTHLY;
  if(!price?.trim())throw new ServiceError('Online checkout is not set up yet. Please try again soon.',503);
  return price.trim();
 }
 
-async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual',origin:string){
+async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100',origin:string){
  // Stripe accepts form-encoded parameters; no stripe-node SDK — the worker
  // bundle targets platform:'browser'. The success return carries Stripe's
  // {CHECKOUT_SESSION_ID} template so the client can trigger the §5 rescue;
@@ -47,16 +56,55 @@ async function createCheckoutSession(env:Bindings,userId:string,email:string,mod
 
 // ---- Status rescue (§5): the webhook-lag path ----
 
-const checkoutSessionShape=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional()});
+const checkoutSessionShape=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),line_items:z.unknown().optional()});
 
 async function retrieveCheckoutSession(env:Bindings,sessionId:string){
- const response=await fetch(`${STRIPE_API}/v1/checkout/sessions/${encodeURIComponent(sessionId)}`,{headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`},signal:AbortSignal.timeout(15000)});
+ // line_items expands in the same fetch so a payment-mode session's price is
+ // resolvable without a second round trip; webhook events carry no line
+ // items and fetch the dedicated endpoint instead (applyPackGrantForSession).
+ const response=await fetch(`${STRIPE_API}/v1/checkout/sessions/${encodeURIComponent(sessionId)}?expand[]=line_items`,{headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`},signal:AbortSignal.timeout(15000)});
  if(!response.ok)throw new ServiceError('Payment could not be verified. Please try again shortly.',502);
  return checkoutSessionShape.parse(await response.json().catch(()=>null));
 }
 
-function sessionToWrite(session:{mode:'subscription'|'payment';customer?:string|null}):EntitlementWrite{
- return {plan:session.mode==='subscription'?'subscription':'lifetime',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})};
+// Only subscription sessions reach the entitlement write — payment mode is
+// pack-only and grants credits instead, never touching the plan.
+function sessionToWrite(session:{customer?:string|null}):EntitlementWrite{
+ return {plan:'subscription',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})};
+}
+
+// The line-items payload a session carries (expanded inline on the rescue's
+// fetch, or the body of Stripe's session line-items endpoint). Tolerant of
+// the price being a bare id or an expanded price object — the shape differs
+// across Stripe API versions; anything else parses as unresolvable.
+const lineItemsShape=z.object({data:z.array(z.object({price:z.union([z.string(),z.object({id:z.string()})]).nullable().optional()}).nullable().optional()).nullable().optional()}).nullable().optional();
+function priceIdFromLineItems(lineItems:unknown):string|null{
+ const parsed=lineItemsShape.safeParse(lineItems);
+ if(!parsed.success)return null;
+ const price=parsed.data?.data?.[0]?.price;
+ return typeof price==='string'?price:price?.id??null;
+}
+
+// Grants the pack credits a paid payment-mode session carries, keyed on the
+// session id: the grants table's unique checkout_session_id makes the effect
+// exactly-once across both checkout event types and their redeliveries, while
+// the webhook's per-event claim stays exactly-once per event. The price is
+// resolved from inline line items when the caller has them (the rescue's
+// expand) and fetched from Stripe otherwise. No resolvable pack price fails
+// closed — a logged, stateless skip; the plan is never written.
+async function applyPackGrantForSession(env:Bindings,ownerId:string,sessionId:string,lineItems?:unknown){
+ const inline=priceIdFromLineItems(lineItems);
+ const priceId=inline??priceIdFromLineItems(await retrieveStripeJson(env,`checkout/sessions/${encodeURIComponent(sessionId)}/line_items`));
+ const credits=priceId==null?null:packCreditsForPrice(env,priceId);
+ if(credits===null){
+  // The session id is the Stripe-side anchor a founder searches for when
+  // investigating a skipped grant; owner ids and emails never enter logs.
+  console.error(JSON.stringify({event:'pack_grant_skipped',reason:priceId?'unknown_price':'price_unresolved',session:sessionId}));
+  return;
+ }
+ // A sibling event's grant (or a redelivery) conflicts on checkout_session_id
+ // and reads back empty — the no-op is the exactly-once guarantee at work.
+ await db(env,'storypress_pack_grants?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,credits},{prefer:'return=representation, resolution=ignore-conflicts'});
 }
 
 export async function billingApi(request:Request,env:Bindings){
@@ -74,11 +122,15 @@ export async function billingApi(request:Request,env:Bindings){
   }
   if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,new URL(request.url).origin)});
   // The rescue verifies the session server-side; a paid session belonging to
-  // this owner flips the plan immediately. The browser's report of success is
-  // never trusted — only what Stripe itself confirms here.
+  // this owner flips the plan (subscription) or grants its pack credits
+  // (payment). The browser's report of success is never trusted — only what
+  // Stripe itself confirms here.
   const session=await retrieveCheckoutSession(env,input.sessionId);
   const sessionOwner=uuid.safeParse(session.metadata?.userId);
-  if(session.payment_status==='paid'&&sessionOwner.success&&sessionOwner.data===user.id)await applyEntitlement(env,user.id,sessionToWrite(session));
+  if(session.payment_status==='paid'&&sessionOwner.success&&sessionOwner.data===user.id){
+   if(session.mode==='subscription')await applyEntitlement(env,user.id,sessionToWrite(session));
+   else await applyPackGrantForSession(env,user.id,session.id,session.line_items);
+  }
   return json({billing:await billingStatus(env,user.id)});
  }catch(error){
   if(error instanceof ServiceError)return json({error:error.message,code:error.code},error.status);
@@ -124,7 +176,7 @@ export async function verifyStripeSignature(raw:string,header:string|null,secret
 }
 
 const webhookEvent=z.object({id:z.string().min(1).max(500),type:z.string().min(1).max(200),data:z.object({object:z.record(z.unknown())})});
-const checkoutSessionObject=z.object({mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),customer_details:z.object({email:z.string().nullable().optional()}).nullable().optional(),metadata:z.record(z.string()).nullable().optional(),subscription:z.string().nullable().optional()});
+const checkoutSessionObject=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),customer_details:z.object({email:z.string().nullable().optional()}).nullable().optional(),metadata:z.record(z.string()).nullable().optional(),subscription:z.string().nullable().optional()});
 const subscriptionObject=z.object({status:z.string(),current_period_end:z.number().optional(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),items:z.object({data:z.array(z.object({current_period_end:z.number().optional()}))}).nullable().optional()});
 const invoiceObject=z.object({subscription:z.string().nullable().optional(),customer:z.string().nullable().optional(),customer_email:z.string().nullable().optional(),lines:z.object({data:z.array(z.object({period:z.object({end:z.number().optional()}).optional(),current_period:z.object({end:z.number().optional()}).optional()}))}).nullable().optional()});
 // Statuses that end access; everything else stays a subscription in good
@@ -132,27 +184,31 @@ const invoiceObject=z.object({subscription:z.string().nullable().optional(),cust
 const CLOSING_STATUSES=['canceled','unpaid','incomplete_expired'];
 const stripeTime=(seconds:number)=>new Date(seconds*1000).toISOString();
 
-// Pure mapping from a webhook event to the entitlement columns it writes —
-// null means the event has no entitlement effect (unknown types, sessions
-// still unpaid). Never touches stories: the write targets storypress_
-// entitlements only, so a downgrade cannot delete or lock anything.
-function entitlementWriteFor(type:string,obj:Record<string,unknown>):EntitlementWrite|null{
+// Pure mapping from a webhook event to its billing effect — an entitlement
+// write, a pack grant keyed on the checkout session, or null (no effect:
+// unknown types, sessions still unpaid). Payment-mode sessions never write
+// the plan: the session's price decides between a pack grant and a logged,
+// stateless skip (fail closed, wave 8 §2). Never touches stories: writes
+// target billing tables only, so a downgrade cannot delete or lock anything.
+type BillingEffect={kind:'entitlement';write:EntitlementWrite}|{kind:'pack';sessionId:string}|null;
+function effectForEvent(type:string,obj:Record<string,unknown>):BillingEffect{
  if(type==='checkout.session.completed'||type==='checkout.session.async_payment_succeeded'){
   const session=checkoutSessionObject.parse(obj);
   if(session.payment_status!=='paid'&&session.payment_status!=='no_payment_required')return null;
-  return {plan:session.mode==='subscription'?'subscription':'lifetime',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})};
+  if(session.mode==='subscription')return {kind:'entitlement',write:{plan:'subscription',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})}};
+  return {kind:'pack',sessionId:session.id};
  }
  if(type==='customer.subscription.updated'){
   const subscription=subscriptionObject.parse(obj);
   const periodEnd=subscription.current_period_end??subscription.items?.data?.[0]?.current_period_end;
-  return {plan:CLOSING_STATUSES.includes(subscription.status)?'free':'subscription',subscription_status:subscription.status,...(periodEnd!==undefined?{current_period_end:stripeTime(periodEnd)}:{})};
+  return {kind:'entitlement',write:{plan:CLOSING_STATUSES.includes(subscription.status)?'free':'subscription',subscription_status:subscription.status,...(periodEnd!==undefined?{current_period_end:stripeTime(periodEnd)}:{})}};
  }
- if(type==='customer.subscription.deleted')return {plan:'free',subscription_status:'canceled',current_period_end:null};
+ if(type==='customer.subscription.deleted')return {kind:'entitlement',write:{plan:'free',subscription_status:'canceled',current_period_end:null}};
  if(type==='invoice.paid'){
   const invoice=invoiceObject.parse(obj);
   if(!invoice.subscription)return null;
   const period=invoice.lines?.data?.[0]?.period?.end??invoice.lines?.data?.[0]?.current_period?.end;
-  return {plan:'subscription',subscription_status:'active',...(period!==undefined?{current_period_end:stripeTime(period)}:{})};
+  return {kind:'entitlement',write:{plan:'subscription',subscription_status:'active',...(period!==undefined?{current_period_end:stripeTime(period)}:{})}};
  }
  return null;
 }
@@ -209,8 +265,8 @@ export async function stripeWebhook(request:Request,env:Bindings){
   if(raw.length>1000000)return json({error:'This webhook payload is too large.'},413);
   await verifyStripeSignature(raw,request.headers.get('stripe-signature'),env.STRIPE_WEBHOOK_SECRET);
   const event=webhookEvent.parse(JSON.parse(raw));
-  const write=entitlementWriteFor(event.type,event.data.object);
-  if(!write)return json({received:true,ignored:event.type});
+  const effect=effectForEvent(event.type,event.data.object);
+  if(!effect)return json({received:true,ignored:event.type});
   // Idempotency claim: the insert conflicts on event_id for redeliveries, so
   // a replay consumes nothing and writes nothing (§ acceptance: single
   // entitlement write per event).
@@ -221,11 +277,15 @@ export async function stripeWebhook(request:Request,env:Bindings){
    // An owner that cannot be resolved is final (transient lookups throw
    // instead) — acknowledge without effects and keep the claim.
    if(!owner)return json({received:true,unmatched:true});
-   await applyEntitlement(env,owner,write);
+   if(effect.kind==='entitlement')await applyEntitlement(env,owner,effect.write);
+   else await applyPackGrantForSession(env,owner,effect.sessionId);
   }catch(error){
-   // Release the claim so Stripe's redelivery reprocesses instead of
-   // skipping. Best-effort: if the release itself fails the checkout status
-   // rescue still repairs the dominant money path.
+   // A swallowed 500 on the money path is an invisible bug: log the failure
+   // (session id only — no owner ids or emails), then release the claim so
+   // Stripe's redelivery reprocesses instead of skipping. Best-effort: if the
+   // release itself fails, the checkout status rescue still repairs the
+   // dominant money path.
+   console.error(JSON.stringify({event:'stripe_webhook_error',type:event.type,session:event.data.object&&(event.data.object as {id?:unknown}).id}));
    try{await db(env,`storypress_billing_events?event_id=eq.${encodeURIComponent(event.id)}`,'DELETE');}
    catch{/* claim release failed; the primary error below still returns 5xx */}
    throw error;
