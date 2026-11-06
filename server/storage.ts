@@ -169,18 +169,34 @@ export async function reserveStory(userId:string,env:Bindings){
  if(result.ok!==true)throw new ServiceError(`You have used all ${allowance} free stories. Everything you have made stays yours to read, edit, print and share — upgrade in your account to keep telling new stories.`,402,'story_limit');
 }
 // The account payload's billing block (§4): the Stripe flag plus the signed-in
-// owner's entitlement and monotonic story counter. Read failures degrade to
-// free-tier defaults — a missing or broken billing table must never take down
-// the account panel; the save-seam reserve is the enforcement path.
+// owner's entitlement, monotonic story counter, and wave-8 owner state — this
+// month's subscription-window draws and the remaining pack balance. Read
+// failures degrade to free-tier defaults — a missing or broken billing table
+// must never take down the account panel; the save-seam reserve is the
+// enforcement path. The read order below is fixed (entitlements, counts,
+// month draws, pack grants, pack draws) — the check suites' fetch mocks queue
+// responses in exactly that order.
 export async function billingStatus(env:Bindings,userId:string|null):Promise<BillingStatus>{
- const fallback=()=>({configured:billingConfigured(env),plan:'free' as const,addons:[] as string[],storiesCreated:0,freeStoryLimit:freeStoryLimit(env)});
+ // Env-tuned sizes ride the payload so the UI interpolates them; the dormant
+ // mirror in server/vercel.mjs hand-copies this shape — keep the two in sync.
+ const sizes={subscriptionMonthlyCap:subscriptionMonthlyCap(env),pack30Credits:pack30Credits(env),pack100Credits:pack100Credits(env)};
+ const fallback=()=>({configured:billingConfigured(env),plan:'free' as const,addons:[] as string[],storiesCreated:0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:0,packCreditsRemaining:0});
  if(!configured(env)||!userId)return fallback();
  try{
   const entitlementRows=await db(env,`storypress_entitlements?owner_id=eq.${userId}&select=plan,addons`) as {plan?:string;addons?:string}[]|null;
   const entitlement=Array.isArray(entitlementRows)?entitlementRows[0]:undefined;
   const countRows=await db(env,`storypress_story_counts?owner_id=eq.${userId}&select=stories_created`) as {stories_created?:number}[]|null;
   const count=Array.isArray(countRows)?countRows[0]:undefined;
-  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan??'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env)});
+  // The window row matches the RPC's UTC calendar month; the pack balance is
+  // granted credits minus drawn rows (draws never exceed grants under the
+  // reserve lock; the clamp keeps a transient skew from displaying negative).
+  const drawRows=await db(env,`storypress_subscription_draws?owner_id=eq.${userId}&period_month=eq.${new Date().toISOString().slice(0,7)}-01&select=stories_created`) as {stories_created?:number}[]|null;
+  const grantRows=await db(env,`storypress_pack_grants?owner_id=eq.${userId}&select=sum(credits)`) as {'sum'?:number|null}[]|null;
+  const packDrawRows=await db(env,`storypress_pack_draws?owner_id=eq.${userId}&select=count(*)`) as {count?:number}[]|null;
+  const drawRow=Array.isArray(drawRows)?drawRows[0]:undefined;
+  const granted=Array.isArray(grantRows)?grantRows[0]?.sum:undefined;
+  const drawn=Array.isArray(packDrawRows)?packDrawRows[0]?.count:undefined;
+  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan??'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:Math.max(0,(granted??0)-(drawn??0))});
   return parsed.success?parsed.data:fallback();
  }catch{return fallback();}
 }

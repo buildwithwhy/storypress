@@ -20,7 +20,7 @@ try{
   for(const missing of [{}, {...env,SUPABASE_SECRET_KEY:undefined}]){
     const sample=await serveVercel(request('/api/account'),'/api/account',missing);
     assert.equal(sample.status,200);
-    assert.deepEqual(await sample.json(),{user:null,supabase:null,storage:false,linkSharing:false,dailyUnits:null,sampleOnly:true,billing:{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100}});
+    assert.deepEqual(await sample.json(),{user:null,supabase:null,storage:false,linkSharing:false,dailyUnits:null,sampleOnly:true,billing:{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}});
     assert.equal((await serveVercel(request('/api/account',{}),'/api/account',missing)).status,503);
     assert.equal((await serveVercel(request('/api/stories'),'/api/stories',missing)).status,503);
   }

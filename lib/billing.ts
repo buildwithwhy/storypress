@@ -1,15 +1,22 @@
 import {z} from 'zod';
 
 // The billing block the account payload carries (paywall §4): the Stripe
-// configuration flag plus the signed-in owner's entitlement state and
-// monotonic story counter. The services payload reuses the configured flag
+// configuration flag plus the signed-in owner's entitlement state, monotonic
+// story counter, and wave-8 owner state — this month's subscription-window
+// draws and the remaining pack balance — next to the env-tuned cap and pack
+// sizes the UI interpolates. The services payload reuses the configured flag
 // alone, next to the other capability flags.
 export const billingStatusSchema=z.object({
  configured:z.boolean(),
  plan:z.enum(['free','subscription','lifetime']),
  addons:z.array(z.string()),
  storiesCreated:z.number().int().min(0),
- freeStoryLimit:z.number().int().min(0)
+ freeStoryLimit:z.number().int().min(0),
+ subscriptionMonthlyCap:z.number().int().min(0),
+ pack30Credits:z.number().int().min(1),
+ pack100Credits:z.number().int().min(1),
+ subscriptionStoriesThisMonth:z.number().int().min(0),
+ packCreditsRemaining:z.number().int().min(0)
 });
 export type BillingStatus=z.infer<typeof billingStatusSchema>;
 export const billingFlagSchema=z.object({configured:z.boolean()});

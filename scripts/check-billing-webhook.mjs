@@ -19,7 +19,8 @@ const stripeEnv={
  STRIPE_WEBHOOK_SECRET:'mock-webhook-secret',
  STRIPE_PRICE_SUBSCRIPTION_MONTHLY:'mock-price-monthly',
  STRIPE_PRICE_SUBSCRIPTION_ANNUAL:'mock-price-annual',
- STRIPE_PRICE_LIFETIME:'mock-price-lifetime',
+ STRIPE_PRICE_PACK_30:'mock-price-pack-30',
+ STRIPE_PRICE_PACK_100:'mock-price-pack-100',
 };
 const base='https://story.test';
 
@@ -47,6 +48,31 @@ const entitlementUpsert=expected=>({data:[{owner_id:expected.owner_id}],check:(u
  assert.ok(!('addons'in body),`A plan write must never touch the addons column (got ${init.body})`);
  assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
 }});
+// The session's line items as Stripe's dedicated endpoint returns them (the
+// webhook path; the rescue fetch expands line items inline instead).
+const lineItemsFor=(sessionId,price)=>({data:{object:'list',data:[{price:{id:price,object:'price'}}]},check:(url,init)=>{
+ assert.ok(url.includes(`/v1/checkout/sessions/${sessionId}/line_items`),`line items lookup expected, got ${url}`);
+ assert.equal(init.headers.Authorization,`Bearer ${stripeEnv.STRIPE_SECRET_KEY}`);
+}});
+// A pack grant insert: keyed on the checkout session, credits from the price
+// mapping, and never an entitlement write. rows=[] models the unique-
+// constraint conflict a sibling event (or redelivery) hits — the no-op.
+const grantInsert=(sessionId,credits,rows=[{checkout_session_id:sessionId}])=>({data:rows,check:(url,init)=>{
+ assert.ok(url.includes('storypress_pack_grants?on_conflict=checkout_session_id'),`Pack grant insert expected, got ${url}`);
+ assert.match(String(init.headers.Prefer),/ignore-conflicts/);
+ assert.deepEqual(JSON.parse(init.body),{owner_id:user,checkout_session_id:sessionId,credits});
+ assert.ok(!url.includes('storypress_entitlements'),`A pack grant must never write the plan (got ${url})`);
+ assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
+}});
+// The five billing reads billingStatus performs for a signed-in owner, in its
+// fixed order: entitlements, story counts, this month's draws, pack grants
+// sum, pack draws count.
+const ownerState=(state={})=>[
+ {data:state.entitlements??[]},
+ {data:state.counts??[]},
+ {data:state.draws??[]},
+ {data:state.grants??[{sum:null}]},
+ {data:state.packDraws??[{count:0}]}];
 const checkoutEvent=(id,overrides={})=>({id,type:'checkout.session.completed',data:{object:{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',customer_details:{email:'fictional@example.invalid'},metadata:{userId:user},...overrides}}});
 
 try{
@@ -128,12 +154,70 @@ try{
   assert.equal(queue.length,0);
  }
  {
-  // Lifetime checkout flips to the terminal lifetime plan.
-  queue=[claimInsert,entitlementUpsert({owner_id:user,plan:'lifetime',subscription_status:'active'})];
-  const body=subscriptionEvent('evt_lifetime_1','checkout.session.completed',{mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  // A pack checkout grants credits exactly once per session and never touches
+  // the plan: the price decides the effect, not the payment mode.
+  queue=[claimInsert,lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_mock',30)];
+  const body=subscriptionEvent('evt_pack_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'a pack grant must not write entitlements');
+ }
+ {
+  // The 100-pack maps from its own price env, via the async event type.
+  queue=[claimInsert,lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_100),grantInsert('cs_mock',100)];
+  const body=subscriptionEvent('evt_pack_2','checkout.session.async_payment_succeeded',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.equal(queue.length,0);
+ }
+ {
+  // One session, two event ids (completed and async): both event claims land,
+  // but the grants table's unique checkout_session_id makes the effect
+  // exactly-once — the second insert reads back empty and nothing else is
+  // written. The event-id claim alone cannot provide this: the two events
+  // carry different ids.
+  const session={id:'cs_dup',mode:'payment',payment_status:'paid',metadata:{userId:user}};
+  const body1=subscriptionEvent('evt_pack_a','checkout.session.completed',session);
+  const body2=subscriptionEvent('evt_pack_b','checkout.session.async_payment_succeeded',session);
+  queue=[claimInsert,lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30),
+         claimInsert,lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30,[])];
+  const first=await worker.fetch(webhookRequest(body1,sign(body1)),stripeEnv);
+  assert.equal(first.status,200);
+  assert.deepEqual(await first.json(),{received:true});
+  const second=await worker.fetch(webhookRequest(body2,sign(body2)),stripeEnv);
+  assert.equal(second.status,200);
+  assert.deepEqual(await second.json(),{received:true},'the sibling event is acknowledged, not failed');
+  assert.equal(queue.length,0,'two event ids for one session must grant exactly once');
+ }
+ {
+  // Redelivery of a pack event: the claim conflicts → no lookup, no grant.
+  queue=[{...claimInsert,data:[]}];
+  const body=subscriptionEvent('evt_pack_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true,duplicate:true});
+  assert.equal(queue.length,0,'a replayed pack event must not grant again');
+ }
+ {
+  // A price that maps to no pack — the retired lifetime price lands here —
+  // fails closed: a logged skip, no grant, and no entitlement write of any
+  // kind. A payment-mode session can never flip the plan.
+  queue=[claimInsert,lineItemsFor('cs_mock','mock-price-retired')];
+  const body=subscriptionEvent('evt_pack_unknown_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'an unrecognized pack price must write nothing');
+ }
+ {
+  // Line items that cannot be fetched (Stripe 404s) fail closed the same way.
+  queue=[claimInsert,{status:404,data:null}];
+  const body=subscriptionEvent('evt_pack_nolines_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'unresolvable line items must write nothing');
  }
 
  // --- Owner resolution beyond session metadata ---
@@ -212,7 +296,8 @@ try{
  for(const [mode,plan,price] of [
   ['subscription','monthly',stripeEnv.STRIPE_PRICE_SUBSCRIPTION_MONTHLY],
   ['subscription','annual',stripeEnv.STRIPE_PRICE_SUBSCRIPTION_ANNUAL],
-  ['payment','monthly',stripeEnv.STRIPE_PRICE_LIFETIME],
+  ['payment','pack30',stripeEnv.STRIPE_PRICE_PACK_30],
+  ['payment','pack100',stripeEnv.STRIPE_PRICE_PACK_100],
  ]){
   queue=[auth(),{data:{id:'cs_mock',url:'https://checkout.stripe.com/pay/mock'},check:(url,init)=>{
    assert.equal(url,'https://api.stripe.com/v1/checkout/sessions');
@@ -238,25 +323,57 @@ try{
   assert.equal(queue.length,0);
  }
  {
+  // The retired lifetime client shape (payment mode without a pack plan) is
+  // refused before any Stripe call — there is no price to mis-grant with.
+  queue=[auth()];
+  const response=await worker.fetch(billingRequest({action:'checkout',mode:'payment',plan:'monthly'},authorized),stripeEnv);
+  assert.equal(response.status,400,'a payment checkout without a pack plan must be refused');
+  assert.equal(queue.length,0);
+ }
+ {
   // Webhook-lag rescue: a paid session for this owner, verified server-side,
-  // flips the plan and the returned status reflects it.
+  // flips the plan and the returned status reflects it — including the wave-8
+  // owner state (this month's draws, remaining pack credits).
   const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
   queue=[auth(),
-   {data:session,check:url=>{assert.ok(url.endsWith('/v1/checkout/sessions/cs_mock'),`session lookup expected, got ${url}`);}},
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
-   {data:[{plan:'subscription',addons:'[]'}]},
-   {data:[{stories_created:3}]}];
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{sum:30}],packDraws:[{count:1}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3});
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29});
   assert.equal(queue.length,0);
+ }
+ {
+  // The rescue grants packs identically: the expanded line items resolve the
+  // price, the grant keys on the session id, and the plan never flips.
+  const session={id:'cs_pack',mode:'payment',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},line_items:{data:[{price:{id:stripeEnv.STRIPE_PRICE_PACK_30}}]}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_pack?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   grantInsert('cs_pack',30),
+   ...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}],grants:[{sum:30}]})];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_pack'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).billing.plan,'free','a pack grant must not flip the plan');
+  assert.equal(queue.length,0,'the rescue must not write entitlements for a pack');
+ }
+ {
+  // Fail closed on the rescue too: a payment-mode session whose price maps to
+  // no pack grants and writes nothing (its inline price resolves, so no
+  // line-items fetch happens).
+  const session={id:'cs_retired',mode:'payment',payment_status:'paid',metadata:{userId:user},line_items:{data:[{price:'mock-price-retired'}]}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_retired?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   ...ownerState()];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_retired'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).billing.plan,'free');
+  assert.equal(queue.length,0,'an unrecognized pack price must write nothing on the rescue path');
  }
  {
   // Someone else's session must not flip this owner's plan.
   const session={id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:other}};
-  queue=[auth(),{data:session},
-   {data:[{plan:'free',addons:'[]'}]},
-   {data:[{stories_created:3}]}];
+  queue=[auth(),{data:session},...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.equal((await response.json()).billing.plan,'free');
@@ -265,20 +382,19 @@ try{
  {
   // An unpaid session grants nothing.
   const session={id:'cs_mock',mode:'subscription',payment_status:'unpaid',metadata:{userId:user}};
-  queue=[auth(),{data:session},{data:[{plan:'free',addons:'[]'}]},{data:[{stories_created:3}]}];
+  queue=[auth(),{data:session},...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.equal((await response.json()).billing.plan,'free');
   assert.equal(queue.length,0);
  }
  {
-  // Dormant status: free tier reported without Stripe env.
-  queue=[auth(),
-   {data:[]},
-   {data:[]}];
+  // Dormant status: free tier reported without Stripe env. Supabase reads
+  // still happen (identity is live) — only the Stripe flag flips off.
+  queue=[auth(),...ownerState()];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),{...stripeEnv,STRIPE_SECRET_KEY:undefined});
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3});
+  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0});
   assert.equal(queue.length,0);
  }
  {
@@ -293,7 +409,7 @@ try{
   assert.equal(response.status,405,'GET /api/billing must be refused');
  }
 
- console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout and lifetime flips, replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, checkout identity and price variants, webhook-lag rescue with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
+ console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout flips and price-mapped pack grants exactly-once per session across sibling events and redeliveries (fail-closed on unknown prices and missing line items), replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, checkout identity and price variants (payment mode pack-only), webhook-lag rescue granting packs identically with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
  process.exitCode=0;
 }catch(error){
  // Full object — a failing check must show its stack and location.
