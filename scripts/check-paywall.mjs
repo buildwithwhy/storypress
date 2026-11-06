@@ -1,6 +1,7 @@
 // Paywall client-gate checks (paywall §5): renders StoryStart's three locked
-// states (sample-disabled, needs-sign-in, limit-reached) and the UpgradePanel
-// (plan state, dormant, entitled, owner-tree guard) in every language, and
+// states (sample-disabled, needs-sign-in, limit-reached), the UpgradePanel
+// (plan state, dormant, entitled, owner-tree guard), and the wave-6 pricing
+// panel (four plans, copy-carried amounts, dormant-safe) in every language, and
 // asserts the pure gate helper matches what the server's reserve RPC would
 // decide. React renders server-side with everything mocked — no network, no
 // billing lookups from the client bundle.
@@ -11,17 +12,19 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {StoryStart} from './app/story-start.tsx';
 import {UpgradePanel} from './app/sharing.tsx';
+import {PricingPanel} from './app/pricing.tsx';
 import {freeStoryLimitReached} from './lib/billing.ts';
 import {checkoutReturnId,startCheckout,confirmCheckout} from './lib/billing-client.ts';
 import {paywallCopy} from './lib/paywall-copy.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(StoryStart,props));
 export const renderPanel=props=>renderToStaticMarkup(React.createElement(UpgradePanel,props));
+export const renderPricing=props=>renderToStaticMarkup(React.createElement(PricingPanel,props));
 export {freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy};
 `,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
 // Resolve React from this repository while importing the generated check.
 import fs from 'node:fs/promises';
 const path=new URL('../work/paywall-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {render,renderPanel,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
+const {render,renderPanel,renderPricing,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
 
 const base={disabled:false,hasDraft:false,needsSignIn:false,fromShared:false,freeLimit:3,onUpgrade:()=>{},onStart:()=>{},onContinue:()=>{},children:null};
 
@@ -89,6 +92,25 @@ assert.ok(!entitledPanel.includes('Ir al pago')&&!entitledPanel.includes('Mensua
 
 assert.equal(renderPanel({...panelBase,billing:freeUnder,ownerTree:false}),'','the guard renders nothing outside the owner tree');
 
+// ---- PricingPanel (wave 6 §3): four plans, amounts as copy, dormant-safe ----
+const priced=renderPricing({language:'en',billing:freeUnder});
+assert.ok(priced.includes('Free')&&priced.includes('Monthly')&&priced.includes('Annual')&&priced.includes('Lifetime'),'the pricing page lists all four options');
+assert.ok(priced.includes('$6 / month')&&priced.includes('$60 / year')&&priced.includes('$120 once'),'displayed amounts come from copy, never fetched');
+assert.ok(priced.includes('3 free stories'),'the free allowance renders from the billing payload, never a hard-coded count');
+assert.ok(priced.includes('Continue to checkout'),'the subscription CTA renders when billing is configured');
+assert.ok(priced.includes('aria-pressed="true"'),'the folded monthly/annual cadence selection is announced');
+const dormantPricing=renderPricing({language:'en',billing:dormant});
+assert.ok(dormantPricing.includes('$6 / month')&&dormantPricing.includes('$120 once'),'a dormant deployment still renders the amounts');
+assert.ok(dormantPricing.includes('Online payment is not connected yet'),'the dormant note keeps the honest copy');
+assert.ok(!dormantPricing.includes('Continue to checkout')&&!dormantPricing.includes('Lifetime — one payment'),'a dormant pricing page shows no pay buttons that would only error');
+const entitledPricing=renderPricing({language:'es',billing:entitled});
+assert.ok(entitledPricing.includes('Historias ilimitadas — suscripción activa'),'an entitled owner sees their plan state');
+assert.ok(!entitledPricing.includes('Ir al pago')&&!entitledPricing.includes('Un solo pago'),'an entitled owner is not offered checkout again');
+const zhPricing=renderPricing({language:'zh',billing:freeAtCap});
+assert.ok(zhPricing.includes('$60 / 年')&&zhPricing.includes('$120 一次付清'),'zh carries its own localized amounts');
+const esPricing=renderPricing({language:'es',billing:freeUnder});
+assert.ok(esPricing.includes('$60 / año')&&esPricing.includes('$6 / mes'),'es carries its own localized amounts');
+
 // ---- Checkout return parsing and the server-verified rescue ----
 assert.equal(checkoutReturnId('?billing_checkout=cs_test_a1b2C3d4'),'cs_test_a1b2C3d4','a well-shaped session id is returned');
 assert.equal(checkoutReturnId(''),undefined,'an empty search has no return id');
@@ -114,12 +136,12 @@ assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the
 globalThis.fetch=originalFetch;
 
 // ---- paywall copy module: shape, placeholders, and language coverage ----
-const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','subscriptionActive','lifetimeActive','monthly','annual','lifetime','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending'].sort();
+const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','subscriptionActive','lifetimeActive','monthly','annual','lifetime','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending','pricingTitle','pricingIntro','viewPlans','freeName','freePrice','freeAllowance','priceMonthly','priceAnnual','priceLifetime','lifetimeName','lifetimeNote'].sort();
 for(const language of ['en','zh','es']){
  const copy=paywallCopy[language];
  assert.deepEqual(Object.keys(copy).sort(),expectedKeys,`${language} carries exactly the paywall copy keys`);
  for(const [key,value] of Object.entries(copy))assert.ok(value.trim().length>0,`${language}.${key} is never empty`);
- assert.ok(copy.limitTitle.includes('{limit}')&&copy.freeUsage.includes('{used}')&&copy.freeUsage.includes('{limit}'),`${language} interpolation placeholders survive the module extraction`);
+ assert.ok(copy.limitTitle.includes('{limit}')&&copy.freeUsage.includes('{used}')&&copy.freeUsage.includes('{limit}')&&copy.freeAllowance.includes('{limit}'),`${language} interpolation placeholders survive the module extraction`);
 }
 assert.notEqual(paywallCopy.en.limitCta,paywallCopy.zh.limitCta,'translations are distinct, not copy-pasted');
 assert.notEqual(paywallCopy.en.checkoutPending,paywallCopy.es.checkoutPending,'es copy is its own translation');

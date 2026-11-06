@@ -19,7 +19,7 @@ export default {
   // Guest invite pages serve the app shell under stricter headers: the token
   // in the path must not be indexed, framed, or leaked via Referrer.
   if(/^\/i\/[a-f0-9]{64}$/.test(url.pathname)) return new Response(request.method==='HEAD'?null:html,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"}});
-  const routes: Record<string,[string,string]> = {'/app.js':[javascript,'text/javascript; charset=utf-8'],'/app.css':[css,'text/css; charset=utf-8'],'/favicon.svg':[icon,'image/svg+xml'],'/':[html,'text/html; charset=utf-8']};
+  const routes: Record<string,[string,string]> = {'/app.js':[javascript,'text/javascript; charset=utf-8'],'/app.css':[css,'text/css; charset=utf-8'],'/favicon.svg':[icon,'image/svg+xml'],'/':[html,'text/html; charset=utf-8'],'/pricing':[html,'text/html; charset=utf-8']};
   const route=routes[url.pathname];
   if(!route) return new Response('Not found',{status:404});
   return new Response(request.method==='HEAD'?null:route[0],{headers:{'Content-Type':route[1],'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
