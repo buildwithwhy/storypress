@@ -76,4 +76,24 @@ const studioSrc=readFileSync('app/keepsake-studio.tsx','utf8');
 assert.ok(studioSrc.includes('download={`storypress-${index+1}.png`}')&&studioSrc.includes('share-image-preview'),'the per-card save/share stay on the preview block');
 assert.ok(!stack[1].includes('storypress-1.png'),'the column carries no per-card actions');
 
+// Wave 6 rework: the paper share panel's heading is ONE small brand eyebrow —
+// no h2, no paragraphs — above the three stacked actions.
+assert.ok(markup.includes('ONCE &amp; OURS'),'the paper share panel renders the brand eyebrow line');
+assert.ok(!/<h2>/.test(markup),'the paper share panel renders no heading above the column');
+assert.ok(!markup.includes(sharingCopy.en.title),'the Keep-it heading left the paper share panel');
+const stackIndex=markup.indexOf('<div class="sharing-actions sharing-actions--stack">');
+assert.ok(markup.slice(0,stackIndex).includes('ONCE &amp; OURS'),'the brand eyebrow renders above the stacked column');
+
+// Wave 6 rework: the account modal has no explicit save button — signed-in
+// stories auto-save (700ms debounced flush, pagehide flush, save-on-navigate)
+// and failures surface in the error banner with Retry. View plans moved into
+// the usage box via onViewPlans.
+const modal=ReactDOMServer.renderToStaticMarkup(h(Sharing,{...handlers,onClose:()=>{},onViewPlans:()=>{},story:{...story,language:'en'},config,saved,accountOnly:true}));
+assert.ok(!modal.includes('Save privately to my account'),'the explicit save-privately button is gone from the account modal');
+assert.ok(modal.includes('mei@example.com'),'the account email still renders in the modal');
+const usageAt=modal.indexOf('0 of 3 free stories used'),plansAt=modal.indexOf('View plans');
+assert.ok(usageAt>-1,'the usage box renders in the account modal');
+assert.ok(plansAt>usageAt,'View plans renders inside/under the usage box');
+assert.ok(modal.slice(plansAt-200,plansAt).includes('view-plans'),'the View plans entry is the larger view-plans variant');
+
 console.log('Passed: wave 6 share column — exactly three stacked full-width buttons (cards, keepsake, link), zero standing paragraph blocks, a Share link label that never flips and always PATCHes first, localized en/zh/es labels, and per-card sharing still attached to the card preview.');

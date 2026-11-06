@@ -33,15 +33,15 @@ assert.ok(!idle.includes('<video ')&&!idle.includes('Save video'),'Idle state sh
 assert.match(markup({...base,language:'zh'},true),/制作回忆视频/);
 assert.match(markup({...base,language:'es'},true),/Crear video de recuerdos/);
 // Beside share images (component level): both actions render, video placed
-// after the images. Wave 6 share column: the card-creation trigger lives in
-// the sharing panel's stacked column — the share-images section keeps its
-// heading and preview only, and a single "Create keepsake cards" string
-// proves the column's button is the only other occurrence.
+// after the images. Wave 6 rework: the card-creation trigger lives in the
+// sharing panel's stacked column and the share-images section carries no
+// heading — "Create keepsake cards" appears nowhere in this markup, so the
+// column's button (the paper page's cardsTrigger) is the label's only home.
 const both=ReactDOMServer.renderToStaticMarkup(h('div',null,h(ShareImages,{story:base}),h(ShareVideo,{story:base,enabled:true})));
 const imagesAt=both.indexOf('share-images'),videoAt=both.indexOf('share-video');
 assert.ok(imagesAt>-1&&videoAt>-1,'Both actions render together');
 assert.ok(imagesAt<videoAt,'The video action sits beside share images');
-assert.equal((both.match(/Create keepsake cards/g)||[]).length,1,'Wave 6: the section keeps its heading; the card button renders only in the share column');
+assert.equal((both.match(/Create keepsake cards/g)||[]).length,0,'Wave 6 rework: the card section renders no duplicated heading — the label lives only on the column button');
 
 // Paper-page placement (wave 6 share column): inside the share group the
 // order is share images → sharing panel (whose stacked column owns the

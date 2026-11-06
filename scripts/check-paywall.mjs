@@ -77,6 +77,14 @@ assert.ok(under.includes('Monthly')&&under.includes('Annual')&&under.includes('L
 assert.ok(under.includes('Continue to checkout'),'the checkout CTA renders when billing is configured');
 assert.ok(!under.includes('payment is not connected yet'),'no dormant note while configured');
 
+// Wave 6 rework: View plans lives inside the upgrade panel, directly under
+// the usage line — larger than the old low text-button, one tap to /pricing.
+const underWithPlans=renderPanel({...panelBase,billing:freeUnder,onViewPlans:()=>{}});
+const planLineAt=underWithPlans.indexOf('1 of 3 free stories used'),plansAt=underWithPlans.indexOf('View plans');
+assert.ok(plansAt>planLineAt,'View plans renders inside/under the usage line');
+assert.ok(underWithPlans.includes('class="secondary view-plans"'),'View plans uses the larger view-plans variant');
+assert.ok(!under.includes('View plans'),'no View plans entry without a handler');
+
 const atCap=renderPanel({...panelBase,billing:freeAtCap,language:'zh'});
 assert.ok(atCap.includes('已使用 3/3 个免费故事'),'the zh usage line interpolates both counters');
 assert.ok(atCap.includes('按月')&&atCap.includes('终身——一次付清'),'the zh panel carries the pay options');

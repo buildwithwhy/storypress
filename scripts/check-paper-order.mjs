@@ -69,6 +69,12 @@ const sharingTsx=readFileSync('app/sharing.tsx','utf8');
 assert.ok(sharingTsx.includes('sharing-actions--stack'),'the share group stacks its actions in one column');
 assert.ok(!page.includes('share-group-help')&&!page.includes('invite-group-help'),'the share and invite groups render no standing help paragraph');
 
+// Wave 6 rework: the card section renders no heading — "Create keepsake
+// cards" lives only on the share column's first button (cardsTrigger), so no
+// heading duplicates the button's own label above the stacked column.
+const studioSource=readFileSync('app/keepsake-studio.tsx','utf8');
+assert.ok(!studioSource.includes('<h2>{c.images}</h2>'),'the card section renders no "Create keepsake cards" heading (the column button carries the label)');
+
 // Pull-up illustration panel (wave 3 fix 2): the paper page renders a labeled
 // entry button and the ArtStudio content inside a modal panel that renders
 // after the keepsake/editor slot and before share/collaborate actions, closed

@@ -15,7 +15,5 @@
 .pricing-cadence button{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:76px;padding:14px 10px}
 .pricing-cadence button .pricing-amount{font-size:17px}
 .pricing-pay{display:grid;gap:4px}
-.account-plans{margin-top:20px;border-top:1px solid #d2d7c7;padding-top:14px}
-.account-plans .text-button{font-size:13px}
 .pricing-link{margin-left:26px}
 @media(max-width:800px){.pricing-page>h1{font-size:36px}}
