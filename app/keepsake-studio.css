@@ -62,7 +62,6 @@
 .share-group-header{display:flex;align-items:center;gap:10px}
 .share-group-icon{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#f1e4c3;color:#8a6a1f;flex-shrink:0}
 .share-group-title{font-size:16px;font-weight:600}
-.share-group-help{font-size:13px;color:#68725d;line-height:1.6;margin:0 0 4px;max-width:660px}
 .invite-group{border:0;padding:18px 20px 20px;margin:36px 0 0;min-width:0;background:#eef2e4;border-radius:14px;box-shadow:inset 0 0 0 1px #d6dfc8}
 .invite-group .share-group-icon{background:#dce5d4;color:#315444}
 .invite-group .sharing-panel{border:0;background:none;padding:0;margin:10px 0 0}
@@ -71,9 +70,10 @@
 .share-group .sharing-panel{border:0;background:none;border-radius:0;padding:22px 0 0;margin:22px 0 0;border-top:1px solid #d5d5c6}
 .share-group h2,.share-group .sharing-panel h2{font:22px Georgia,serif;margin:0 0 8px}
 @media(max-width:500px){.share-group{padding:18px}.share-group .sharing-panel{margin-top:16px;padding-top:16px}}
-/* Wave 5 share row: the group's one actions row carries the card trigger plus
-   send and download; the global 190px flex-basis wrap would push a control to
-   a second line on phones, so this row's buttons share one line down to 375px.
-   Direct-child scope keeps the share-link row's own wrap behavior. */
-@media(max-width:600px){.share-group .sharing-panel>.sharing-actions>button{flex:1 1 0;min-width:0;padding-left:10px;padding-right:10px}}
+/* Wave 6 share column: the group's actions row became a stacked column
+   (.sharing-actions--stack, globals.css) — one full-width button per line at
+   every viewport, so the wave-5 one-line mobile squeeze is gone. The stack's
+   buttons keep their natural height: column-direction flex-basis sizing
+   would redistribute it. */
+@media(max-width:600px){.share-group .sharing-panel>.sharing-actions--stack>button{flex:0 0 auto}}
 @media(max-width:800px){.invite-group{margin-top:26px;padding:16px}.share-group-title{font-size:15px}}

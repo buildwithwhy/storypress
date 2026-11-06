@@ -62,6 +62,13 @@ const keepsakeSlot=page.indexOf(': <KeepsakeView story={story}/>'),compare=page.
 assert.ok(compare>page.indexOf('d.quote')&&compare<keepsakeSlot,'the compare link renders inside the editor form, below the quote field');
 assert.ok(keepsake<page.indexOf('art-backdrop')&&keepsake<page.indexOf('translation-backdrop'),'keepsake precedes the art and translation panels');
 
+// Wave 6 share column: the share group stacks its three actions in one
+// full-width column and carries no standing help paragraphs (the removed
+// share-group-help/invite-group-help blocks and their aria-describedby ids).
+const sharingTsx=readFileSync('app/sharing.tsx','utf8');
+assert.ok(sharingTsx.includes('sharing-actions--stack'),'the share group stacks its actions in one column');
+assert.ok(!page.includes('share-group-help')&&!page.includes('invite-group-help'),'the share and invite groups render no standing help paragraph');
+
 // Pull-up illustration panel (wave 3 fix 2): the paper page renders a labeled
 // entry button and the ArtStudio content inside a modal panel that renders
 // after the keepsake/editor slot and before share/collaborate actions, closed
