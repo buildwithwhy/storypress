@@ -5,7 +5,7 @@
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "dist-public",
   "functions": { "api/*.mjs": { "maxDuration": 300 } },
-  "rewrites": [{ "source": "/s/:token", "destination": "/api/shared?token=:token" }, { "source": "/i/:token", "destination": "/index.html" }],
+  "rewrites": [{ "source": "/s/:token", "destination": "/api/shared?token=:token" }, { "source": "/i/:token", "destination": "/index.html" }, { "source": "/pricing", "destination": "/index.html" }],
   "headers": [{
     "source": "/(.*)",
     "headers": [

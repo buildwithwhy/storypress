@@ -1,0 +1,21 @@
+/* The /pricing page (wave 6 §3): one readable column of plan cards in the
+   upgrade-panel design language. Amounts render from copy; the cadence cards
+   reuse the .upgrade-cadence selection styles from globals.css. */
+.pricing-page{max-width:640px;margin:30px auto 60px;padding:0 20px}
+.pricing-page>h1{font-size:44px;margin:26px 0 10px}
+.pricing-intro{font-size:15px;line-height:1.7;color:#637267;margin-bottom:28px}
+.pricing-panel{display:grid;gap:16px}
+.pricing-card{background:#f3f3e9;border:1px solid #bdc7b7;border-radius:10px;padding:20px 22px}
+.pricing-card h3{font-family:var(--serif);font-size:26px;font-weight:400;margin:0 0 4px}
+.pricing-amount{font-family:var(--serif);font-size:21px;color:#283c2e}
+.pricing-includes{margin:12px 0 0;padding-left:18px;display:grid;gap:8px;font-size:14px;line-height:1.6;color:#42503f}
+.pricing-note{font-size:13px;line-height:1.65;color:#64705c;margin:6px 0 14px}
+.pricing-card .secondary,.pricing-card .primary{width:100%;margin-top:6px}
+.pricing-cadence{display:flex;gap:8px}
+.pricing-cadence button{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-height:76px;padding:14px 10px}
+.pricing-cadence button .pricing-amount{font-size:17px}
+.pricing-pay{display:grid;gap:4px}
+.account-plans{margin-top:20px;border-top:1px solid #d2d7c7;padding-top:14px}
+.account-plans .text-button{font-size:13px}
+.pricing-link{margin-left:26px}
+@media(max-width:800px){.pricing-page>h1{font-size:36px}}
