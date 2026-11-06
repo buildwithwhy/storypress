@@ -4,6 +4,7 @@ import {billingStatusSchema,parseAddons,type BillingStatus} from '../lib/billing
 import {multilingualSnapshot, editionHtml} from '../lib/edition';
 import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
+import {timedDbCall} from '../lib/call-log';
 export type Bindings=Record<string,string|undefined>;
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store'}});
 export {json};
@@ -12,9 +13,12 @@ export function supabase(env:Bindings){if(!configured(env))throw new ServiceErro
 export async function identity(request:Request,env:Bindings){
  if(!env.SUPABASE_URL){const id=request.headers.get('oai-authenticated-user-id');return id?{id,email:''}:null;}
  const bearer=request.headers.get('authorization');if(!bearer?.startsWith('Bearer '))return null;
- const response=await fetch(`${supabase(env)}/auth/v1/user`,{headers:{apikey:env.SUPABASE_PUBLISHABLE_KEY!,Authorization:bearer},signal:AbortSignal.timeout(10000)});
- if(!response.ok)return null;
- const user=await response.json() as {id?:string;email?:string};return user.id&&z.string().uuid().safeParse(user.id).success?{id:user.id,email:user.email||''}:null;
+ return timedDbCall({task:'GET auth/v1/user',model:'supabase-auth',backend:'supabase'},async firstByte=>{
+  const response=await fetch(`${supabase(env)}/auth/v1/user`,{headers:{apikey:env.SUPABASE_PUBLISHABLE_KEY!,Authorization:bearer},signal:AbortSignal.timeout(10000)});
+  firstByte();
+  if(!response.ok)return null;
+  const user=await response.json() as {id?:string;email?:string};return user.id&&z.string().uuid().safeParse(user.id).success?{id:user.id,email:user.email||''}:null;
+ });
 }
 export async function owner(request:Request,env:Bindings){const user=await identity(request,env);if(!user)throw new ServiceError('Sign in to use AI or save your stories. You can still explore the sample.',401);return user.id;}
 // Machine storage codes (wave 5 change 3): a non-OK Supabase response used to
@@ -31,19 +35,25 @@ function storageCodeFor(status:number,code:string):StorageCode{
 }
 // Modern secret keys belong only in apikey; Authorization is reserved for user JWTs.
 export async function db(env:Bindings,path:string,method='GET',body?:unknown,opts?:{prefer?:string}){
- const response=await fetch(`${supabase(env)}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SECRET_KEY!,'User-Agent':'Storypress-Server/1.0','Content-Type':'application/json',Prefer:opts?.prefer??'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
- if(!response.ok){
-  const text=await response.text().catch(()=>'');
-  let postgrest:{code?:string;message?:string;hint?:string}|undefined;
-  try{postgrest=JSON.parse(text) as {code?:string;message?:string;hint?:string};}catch{/* not PostgREST JSON (a proxy page, an empty body) — the raw status still logs */}
-  // Zero logging existed on this path before (art_VetIBa76 §5); this line is
-  // what makes a red error in the UI self-diagnosing in the server log.
-  console.error(JSON.stringify({event:'storage_upstream_error',status:response.status,path,postgrest:{code:postgrest?.code,message:postgrest?.message,hint:postgrest?.hint}}));
-  const code=storageCodeFor(response.status,postgrest?.code??'');
-  const message=code==='SCHEMA_MISSING'?'Your account storage isn’t set up for this yet. Your device draft is kept.':'Your account storage could not complete that step. Your device draft is kept.';
-  throw new ServiceError(message,503,code);
- }
- return response.status===204?null:response.json();
+ const base=supabase(env);
+ // The task names the roundtrip without its query string: filters can embed
+ // story and user ids, and a timing line never carries them (wave 7 privacy).
+ return timedDbCall({task:`${method} ${path.split('?')[0]}`,model:'postgrest',backend:'supabase'},async firstByte=>{
+  const response=await fetch(`${base}/rest/v1/${path}`,{method,headers:{apikey:env.SUPABASE_SECRET_KEY!,'User-Agent':'Storypress-Server/1.0','Content-Type':'application/json',Prefer:opts?.prefer??'return=representation'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});
+  firstByte();
+  if(!response.ok){
+   const text=await response.text().catch(()=>'');
+   let postgrest:{code?:string;message?:string;hint?:string}|undefined;
+   try{postgrest=JSON.parse(text) as {code?:string;message?:string;hint?:string};}catch{/* not PostgREST JSON (a proxy page, an empty body) — the raw status still logs */}
+   // Zero logging existed on this path before (art_VetIBa76 §5); this line is
+   // what makes a red error in the UI self-diagnosing in the server log.
+   console.error(JSON.stringify({event:'storage_upstream_error',status:response.status,path,postgrest:{code:postgrest?.code,message:postgrest?.message,hint:postgrest?.hint}}));
+   const code=storageCodeFor(response.status,postgrest?.code??'');
+   const message=code==='SCHEMA_MISSING'?'Your account storage isn’t set up for this yet. Your device draft is kept.':'Your account storage could not complete that step. Your device draft is kept.';
+   throw new ServiceError(message,503,code);
+  }
+  return response.status===204?null:response.json();
+ });
 }
 export function sameOrigin(request:Request){const origin=request.headers.get('origin');if(origin&&origin!==new URL(request.url).origin)throw new ServiceError('Please open Once & Ours directly.',403);}
 const uuid=z.string().uuid();

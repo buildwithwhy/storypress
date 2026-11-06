@@ -1,4 +1,5 @@
 import { ServiceError } from './providers';
+import { timedAiCall, tokensFromGenerateContent } from './call-log';
 
 type ImageEnv = Record<string, string | undefined>;
 export type StoryImageInput = {
@@ -53,33 +54,37 @@ The factual sources are originalWords and explicit appearance corrections in art
 Use explicitly stated gender, pronouns and appearance from the narrator’s words or artDirection. Never infer gender from a name, voice, occupation, location or language. Do not default an unspecified narrator to a man. People without explicitly described appearances must be abstract, simplified figures without gendered cues, never claimed likenesses; prefer a scene focused on described objects when an accurate depiction of a person would require guessing. Do not infer ethnicity, religion, health, sexuality, wealth, or other identifying characteristics. Do not add stereotyped clothing or appearance based on place or language. Do not reproduce private names, addresses, or identifying document details.
 No text, letters, typography, numbers, labels, logos, signatures, captions, speech balloons, or invented quotations anywhere in the image. The illustration is an interpretation of the memory, not a historical photograph or documentary evidence. Return the finished image.`;
   const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-  let response: Response;
-  try {
-    response = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: instructions }] },
-        contents: [{ role: 'user', parts: [{ text: JSON.stringify({ language: input.language, originalWords: words, artDirection: input.instructions?.trim()||'' }) }] }],
-        generationConfig: { responseModalities: ['TEXT', 'IMAGE'], candidateCount: 1, imageConfig: { aspectRatio: '3:2' } },
-        labels: { app: 'storypress' },
-      }),
-      signal: AbortSignal.timeout(90000),
-    });
-  } catch (error) {
-    const timeout = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name);
-    throw new ServiceError(timeout ? `The illustration took too long. Please try again. ${kept}` : `The illustrator could not connect. Please try again. ${kept}`, timeout ? 504 : 502);
-  }
-  if (!response.ok) {
-    if (response.status === 429) throw new ServiceError(`The illustrator is busy. Please try again in a moment. ${kept}`, 429);
-    if ([401, 402, 403, 404].includes(response.status)) throw new ServiceError(`The app's illustration model or Google Cloud access needs attention. ${kept}`, 503);
-    throw new ServiceError(`The illustrator could not finish this request. Please try again. ${kept}`);
-  }
-  let result: { promptFeedback?: { blockReason?: string }; candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ thought?: boolean; inlineData?: { mimeType?: string; data?: string } }> } }> };
-  try { result = await response.json(); } catch { throw new ServiceError(`The illustrator returned an unreadable response. Please try again. ${kept}`); }
-  const candidate = result?.candidates?.[0];
-  if (result?.promptFeedback?.blockReason || candidate?.finishReason && candidate.finishReason !== 'STOP') throw new ServiceError(`The illustrator could not return an image for this scene. Try a different moment from your story. ${kept}`);
-  const parts = candidate?.content?.parts;
-  const generated = Array.isArray(parts) ? parts.find(part => part && !part.thought && part.inlineData)?.inlineData : undefined;
-  if (!generated) throw new ServiceError(`The illustrator returned no image. Please try another scene. ${kept}`);
-  return { data: imageData(generated.mimeType, generated.data), model };
+  return timedAiCall({ task: 'illustrate', model, backend: 'vertex', language: input.language, thinking: null, vertexLocation: location }, async timer => {
+    let response: Response;
+    try {
+      response = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: instructions }] },
+          contents: [{ role: 'user', parts: [{ text: JSON.stringify({ language: input.language, originalWords: words, artDirection: input.instructions?.trim()||'' }) }] }],
+          generationConfig: { responseModalities: ['TEXT', 'IMAGE'], candidateCount: 1, imageConfig: { aspectRatio: '3:2' } },
+          labels: { app: 'storypress' },
+        }),
+        signal: AbortSignal.timeout(90000),
+      });
+    } catch (error) {
+      const timeout = error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name);
+      throw new ServiceError(timeout ? `The illustration took too long. Please try again. ${kept}` : `The illustrator could not connect. Please try again. ${kept}`, timeout ? 504 : 502);
+    }
+    timer.firstByte();
+    if (!response.ok) {
+      if (response.status === 429) throw new ServiceError(`The illustrator is busy. Please try again in a moment. ${kept}`, 429);
+      if ([401, 402, 403, 404].includes(response.status)) throw new ServiceError(`The app's illustration model or Google Cloud access needs attention. ${kept}`, 503);
+      throw new ServiceError(`The illustrator could not finish this request. Please try again. ${kept}`);
+    }
+    let result: { promptFeedback?: { blockReason?: string }; usageMetadata?: unknown; candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ thought?: boolean; inlineData?: { mimeType?: string; data?: string } }> } }> };
+    try { result = await response.json(); } catch { throw new ServiceError(`The illustrator returned an unreadable response. Please try again. ${kept}`); }
+    timer.setTokens(tokensFromGenerateContent(result.usageMetadata));
+    const candidate = result?.candidates?.[0];
+    if (result?.promptFeedback?.blockReason || candidate?.finishReason && candidate.finishReason !== 'STOP') throw new ServiceError(`The illustrator could not return an image for this scene. Try a different moment from your story. ${kept}`);
+    const parts = candidate?.content?.parts;
+    const generated = Array.isArray(parts) ? parts.find(part => part && !part.thought && part.inlineData)?.inlineData : undefined;
+    if (!generated) throw new ServiceError(`The illustrator returned no image. Please try another scene. ${kept}`);
+    return { data: imageData(generated.mimeType, generated.data), model };
+  });
 }
