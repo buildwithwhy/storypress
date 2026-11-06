@@ -54,7 +54,7 @@ assert.equal(queue.length,0);
 // original. The strict queue proves the reserve RPC fires exactly once per
 // self-started create — and never for derivatives, revisions, or deletes.
 const meteredEnv={...env,STRIPE_SECRET_KEY:'sk_test_mock'},insertedAt='2026-10-30T00:00:00.000Z',copyId='33333333-3333-4333-8333-333333333333';
-const reserve=(ok,reason)=>({data:[{ok,reason}],check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_story'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_limit:3},'The reserve RPC receives the owner and the default allowance');}});
+const reserve=(ok,reason)=>({data:[{ok,reason}],check:(url,init)=>{assert.ok(url.endsWith('/rpc/storypress_reserve_story'));assert.deepEqual(JSON.parse(init.body),{p_user:user,p_limit:3,p_cap:50},'The reserve RPC receives the owner, the default allowance, and the default monthly cap');}});
 const inserted=id=>({data:[{id,revision:1,share_token:null,updated_at:insertedAt}]});
 queue=[authenticated(),reserve(false,'limit')];
 const refused=await worker.fetch(req('/api/stories',{action:'save',story}),meteredEnv);
@@ -104,6 +104,10 @@ assert.equal(generous.billing.freeStoryLimit,5,'STORYPRESS_FREE_STORIES raises t
 queue=[authenticated(),{data:[]},{data:[]}];
 assert.equal((await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'not-a-number'})).json()).billing.freeStoryLimit,3,'A malformed allowance env falls back to 3');
 assert.equal(queue.length,0);
+// Wave 8 §1: the subscription cap rides the same reserve call, env-tuned
+// without a code release.
+queue=[authenticated(),{data:[{ok:true,reason:'subscription'}],check:(url,init)=>{assert.deepEqual(JSON.parse(init.body),{p_user:user,p_limit:3,p_cap:7},'STORYPRESS_SUBSCRIPTION_MONTHLY_CAP reaches the reserve RPC');}},inserted(id)];
+assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),{...meteredEnv,STORYPRESS_SUBSCRIPTION_MONTHLY_CAP:'7'})).status,200,'An env-tuned subscription cap rides the reserve call');
 
 const incomplete={...env,SUPABASE_SECRET_KEY:''};
 const account=await(await worker.fetch(req('/api/account',undefined,false),incomplete)).json();assert.equal(account.storage,false);assert.equal(account.supabase,null);
