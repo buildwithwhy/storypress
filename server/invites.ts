@@ -102,7 +102,7 @@ async function review(env:Bindings,userId:string,body:Record<string,unknown>){
   let merged;
   try{merged=applyApproval(storySchema.parse(current.data),guestTurns,pending.author_label,pending.contributor_user_id||undefined);}
   catch(problem){
-   if((problem as Error).message==='transcript-full')throw new ServiceError('This story transcript is full. Finish this keepsake before adding more family memories.',400);
+   if((problem as Error).message==='transcript-full')throw new ServiceError('This story transcript is full. Finish this keepsake before adding more memories.',400);
    throw problem;
   }
   const patched=await db(env,`storypress_stories?id=eq.${pending.story_id}&revision=eq.${current.revision}`,'PATCH',{data:merged,revision:current.revision+1}) as unknown[]|null;
