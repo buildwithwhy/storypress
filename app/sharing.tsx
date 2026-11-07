@@ -66,9 +66,10 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
 // the subscription cadence toggle and its checkout CTA. Packs live on the
 // /pricing page (View plans); a cap-hit refusal there points at them. Dormant
 // deployments keep the usage legible but never show a pay button that would
-// only error. Legacy 'lifetime' entitlement rows read as entitled and render
-// the same plan/usage state as subscribers. The guard is the free-forever
-// invariant: outside the owner's Storypress tree the panel renders nothing.
+// only error. A stray legacy entitlement row reads as the free tier at the
+// account read boundary, so the panel renders the free state it validates. The
+// guard is the free-forever invariant: outside the owner's Storypress tree the
+// panel renders nothing.
 export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean;onViewPlans?:()=>void}){
  const c=paywallCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');

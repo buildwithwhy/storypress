@@ -102,8 +102,11 @@ try {
   psql(`delete from public.storypress_stories where owner_id='${user}';`);
   assert.equal(psql(`select stories_created from public.storypress_story_counts where owner_id='${user}'`), '3', 'story deletion must not decrement the counter');
 
-  // Entitled plans: legacy lifetime stays unlimited-entitled; a subscription
-  // draws from the calendar-month window (past_due keeps grace access, capped).
+  // Entitled plans at the DB layer only: a legacy lifetime row (the CHECK still
+  // permits the value) stays unlimited-entitled in the RPC, while the account
+  // payload fails any such row back to the free tier — no payload carries the
+  // value. A subscription draws from the calendar-month window (past_due keeps
+  // grace access, capped).
   for (const [uid, plan] of [[mate, 'lifetime'], [paid, 'subscription']]) psql(`insert into public.storypress_entitlements(owner_id,plan,subscription_status) values('${uid}','${plan}','past_due');`);
   assert.deepEqual(Array.from({length: 5}, () => reserve(mate)), Array(5).fill('true|entitled'), 'lifetime passes past the cap');
   assert.deepEqual(Array.from({length: 5}, () => reserve(paid)), Array(5).fill('true|subscription'), 'past_due subscription keeps grace access within the cap');
