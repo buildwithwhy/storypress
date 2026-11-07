@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {serveVercel} from '../server/vercel.mjs';
 import shared from '../api/shared.mjs';
+import account from '../api/account.mjs';
 import billing from '../api/billing.mjs';
 import stripeWebhook from '../api/stripe-webhook.mjs';
 const origin='https://storypress.example';
@@ -26,20 +27,31 @@ try{
   }
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',env)).status,401);
   assert.equal((await serveVercel(request('/api/stories'),'/api/stories',env)).status,401);
-  // The billing wrappers ride the same adapter: /api/billing is a normal
-  // authenticated route (401 unauthenticated), /api/stripe-webhook refuses
-  // unverified deliveries (503 unconfigured / 400 unsigned) without touching
-  // Supabase.
-  assert.equal((await billing.fetch(new Request(origin+'/api/billing',{method:'POST',body:JSON.stringify({action:'checkout',mode:'subscription'})}),env)).status,401);
-  // Through the adapter, an unconfigured deployment retries with 503 before
-  // anything is verified; with Supabase configured, an unsigned delivery is
-  // refused by signature verification itself.
-  assert.equal((await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),{})).status,503);
-  assert.equal((await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),{...env,STRIPE_WEBHOOK_SECRET:'whsec_mock'})).status,400);
-  const account=await(await serveVercel(request('/api/account'),'/api/account',env)).json();
-  assert.equal(account.user,null);
-  assert.equal(account.supabase.key,env.SUPABASE_PUBLISHABLE_KEY);
-  assert.ok(!JSON.stringify(account).includes(env.SUPABASE_SECRET_KEY));
+  // The billing wrappers ride the same adapter. Vercel's runtime binds a
+  // second fetch argument that is NOT the deployment environment — forwarding
+  // it into serveVercel starved the Supabase guard and returned the dormant
+  // 503 on every /api/billing and /api/stripe-webhook request. The handlers
+  // must rely on serveVercel's process.env default, so each is invoked below
+  // with a stub second argument that lacks the Supabase variables and must
+  // proceed to its own auth/signature handling instead of that guard.
+  const savedRouteEnv={SUPABASE_URL:process.env.SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY:process.env.SUPABASE_PUBLISHABLE_KEY,SUPABASE_SECRET_KEY:process.env.SUPABASE_SECRET_KEY,STRIPE_WEBHOOK_SECRET:process.env.STRIPE_WEBHOOK_SECRET};
+  try{
+    Object.assign(process.env,{SUPABASE_URL:env.SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY:env.SUPABASE_PUBLISHABLE_KEY,SUPABASE_SECRET_KEY:env.SUPABASE_SECRET_KEY});
+    const stub={};
+    const unsigned=await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),stub);
+    assert.equal(unsigned.status,503);
+    assert.match(await unsigned.text(),/Payment webhooks are not configured/);
+    process.env.STRIPE_WEBHOOK_SECRET='whsec_mock';
+    assert.equal((await account.fetch(request('/api/account'),stub)).status,200);
+    assert.equal((await billing.fetch(new Request(origin+'/api/billing',{method:'POST',body:JSON.stringify({action:'checkout',mode:'subscription'})}),stub)).status,401);
+    assert.equal((await stripeWebhook.fetch(new Request(origin+'/api/stripe-webhook',{method:'POST',body:'{}'}),stub)).status,400);
+  }finally{
+    for(const [key,value]of Object.entries(savedRouteEnv)){if(value===undefined)delete process.env[key];else process.env[key]=value;}
+  }
+  const accountPayload=await(await serveVercel(request('/api/account'),'/api/account',env)).json();
+  assert.equal(accountPayload.user,null);
+  assert.equal(accountPayload.supabase.key,env.SUPABASE_PUBLISHABLE_KEY);
+  assert.ok(!JSON.stringify(accountPayload).includes(env.SUPABASE_SECRET_KEY));
   assert.equal(calls.length,0,'An untrusted Sites header must not grant AI or storage access');
   const id='11111111-1111-4111-8111-111111111111';
   globalThis.fetch=async(url,init)=>{
