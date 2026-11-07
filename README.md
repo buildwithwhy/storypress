@@ -28,3 +28,7 @@ Each starting point guides the opening question and interview focus. The convers
 Storypress is an early prototype in a private pilot. Public sign-up, books, and payments are not available yet. Approved editions can use revocable, unlisted links on deployments where sharing is enabled. Mobile voice support still needs testing across real devices.
 
 For the people building Storypress: [development notes](docs/DEVELOPMENT.md).
+
+## Stripe live-test preview
+
+This branch exists only to provide a stable Vercel preview deployment for Stripe test-mode checkout testing (see docs/STRIPE-SETUP.md). It carries no code changes.
