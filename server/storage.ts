@@ -211,7 +211,12 @@ export async function billingStatus(env:Bindings,userId:string|null):Promise<Bil
   const drawRow=Array.isArray(drawRows)?drawRows[0]:undefined;
   const granted=Array.isArray(grantRows)?grantRows[0]?.sum:undefined;
   const drawn=Array.isArray(packDrawRows)?packDrawRows[0]?.count:undefined;
-  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan??'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:Math.max(0,(granted??0)-(drawn??0))});
+  // The plan is normalized at the read boundary: only 'subscription' passes
+  // through — an unexpected or legacy plan value (the DB CHECK still permits
+  // 'lifetime') reads as the free tier, so no account payload can ever emit
+  // a retired plan and a stray legacy row renders fail-safe rather than
+  // crashing the panel. The reserve RPC still meters the DB row itself.
+  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:Math.max(0,(granted??0)-(drawn??0))});
   return parsed.success?parsed.data:fallback();
  }catch{return fallback();}
 }

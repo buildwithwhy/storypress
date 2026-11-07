@@ -8,10 +8,11 @@ import {z} from 'zod';
 // alone, next to the other capability flags.
 export const billingStatusSchema=z.object({
  configured:z.boolean(),
- // 'lifetime' is a legacy read-only value: no write path produces it since
- // wave 8, but the DB CHECK keeps the value so legacy rows stay readable and
- // entitled until the founder's zero-rows gate clears them.
- plan:z.enum(['free','subscription','lifetime']),
+ // No 'lifetime' in the schema: the zero-rows gate confirmed no legacy rows
+ // exist, and the account read boundary fails any unexpected legacy plan value
+ // back to the free tier instead of emitting it (the DB CHECK still permits
+ // the value, so an unexpected row must render fail-safe, never crash).
+ plan:z.enum(['free','subscription']),
  addons:z.array(z.string()),
  storiesCreated:z.number().int().min(0),
  freeStoryLimit:z.number().int().min(0),

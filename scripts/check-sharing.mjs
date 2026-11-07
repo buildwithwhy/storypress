@@ -102,6 +102,13 @@ queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[
 const paid=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:27},'The account payload reports the entitlement, the counter, and the wave-8 owner state');
 assert.deepEqual(paid.pricing,{currency:'usd',monthly:{amount:999},annual:{amount:5900},pack30:{amount:1200},pack100:{amount:2900}},'The account payload carries the Stripe price amounts in minor units');
+// Wave 8 cleanup: a stray legacy entitlement row (the DB CHECK still permits
+// 'lifetime') fails safe at the read boundary — the payload reads as the free
+// tier and never emits the retired plan value.
+queue=[authenticated(),{data:[{plan:'lifetime',addons:'[]'}]},{data:[{stories_created:9}]},{data:[{stories_created:0}]},{data:[{sum:0}]},{data:[{count:0}]}];
+const legacyRow=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
+assert.deepEqual(legacyRow.billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'A legacy entitlement row reads as the free tier, fail-safe instead of crashing');
+assert.ok(!JSON.stringify(legacyRow).includes('lifetime'),'No account payload may ever emit the retired lifetime plan');
 queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
 const freeAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'Missing billing rows read as a free account');

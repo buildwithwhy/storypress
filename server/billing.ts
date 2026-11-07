@@ -11,12 +11,13 @@ import {ServiceError} from '../lib/providers';
 
 const STRIPE_API='https://api.stripe.com';
 const uuid=z.string().uuid();
-// The entitlement columns a webhook or rescue may write. Legacy 'lifetime'
-// rows stay readable everywhere (the read schema and the reserve RPC keep
-// treating them as entitled), but since the lifetime unlock retired no
-// webhook or rescue may ever write the plan — payment mode grants pack
-// credits instead. The upsert never touches the addons column: add-ons
-// arrive as separate one-time unlocks and a plan change must not erase them.
+// The entitlement columns a webhook or rescue may write. Since the lifetime
+// unlock retired (zero-rows gate confirmed no legacy rows exist), no webhook
+// or rescue may ever write a plan other than 'free'|'subscription' — payment
+// mode grants pack credits instead, and the account read boundary fails any
+// stray legacy plan value back to the free tier. The upsert never touches the
+// addons column: add-ons arrive as separate one-time unlocks and a plan
+// change must not erase them.
 export type EntitlementWrite={plan:'free'|'subscription';subscription_status?:string;current_period_end?:string|null;stripe_customer_id?:string|null};
 
 async function applyEntitlement(env:Bindings,ownerId:string,write:EntitlementWrite){

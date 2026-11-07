@@ -32,7 +32,7 @@ export interface PaywallCopy{
  freeUsage:string; // {used} → stories created, {limit} → allowance
  monthlyUsage:string; // {used} → this month's draws, {cap} → monthly cap
  packCredits:string; // {size} → remaining pack credits
- entitledActive:string; // entitled line for any paid plan (incl. legacy lifetime rows)
+ entitledActive:string; // entitled line for any paid plan
  monthly:string;
  annual:string;
  checkout:string;

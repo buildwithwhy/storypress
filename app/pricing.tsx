@@ -14,9 +14,8 @@ import {type Story} from '../lib/story';
 // packs are always-visible one-time cards ("one-time, never expire"). The
 // saving badge and the {cap} allowance line are computed or interpolated from
 // payload values — never literals, never translated numbers. Entitled owners
-// (subscribers and legacy lifetime rows alike) see their plan state instead
-// of checkout. No video add-on: there is no checkout mode or entitlement
-// write for it.
+// (subscribers) see their plan state instead of checkout. No video add-on:
+// there is no checkout mode or entitlement write for it.
 export function PricingPanel({billing,pricing,language}:{billing:BillingStatus;pricing:Pricing|null;language:Story['language']}){
  const c=paywallCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');

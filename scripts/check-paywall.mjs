@@ -1,7 +1,7 @@
 // Paywall client-gate checks (paywall §5): renders StoryStart's three locked
 // states (sample-disabled, needs-sign-in, limit-reached), the UpgradePanel
 // usage panel (plan state, this-month usage vs cap, remaining pack credits,
-// dormant, entitled incl. legacy lifetime rows, owner-tree guard), and the
+// dormant, entitled, owner-tree guard), and the
 // wave-8 pricing page (four options; payload-asserted amounts when billing is
 // configured, labeled dormant fallback copy when not, amounts hidden when the
 // Stripe payload is unavailable) in every language, and asserts the pure gate
@@ -16,18 +16,18 @@ import {renderToStaticMarkup} from 'react-dom/server';
 import {StoryStart} from './app/story-start.tsx';
 import {UpgradePanel} from './app/sharing.tsx';
 import {PricingPanel} from './app/pricing.tsx';
-import {freeStoryLimitReached} from './lib/billing.ts';
+import {billingStatusSchema,freeStoryLimitReached} from './lib/billing.ts';
 import {checkoutReturnId,startCheckout,confirmCheckout} from './lib/billing-client.ts';
 import {paywallCopy} from './lib/paywall-copy.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(StoryStart,props));
 export const renderPanel=props=>renderToStaticMarkup(React.createElement(UpgradePanel,props));
 export const renderPricing=props=>renderToStaticMarkup(React.createElement(PricingPanel,props));
-export {freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy};
+export {billingStatusSchema,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy};
 `,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
 // Resolve React from this repository while importing the generated check.
 import fs from 'node:fs/promises';
 const path=new URL('../work/paywall-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {render,renderPanel,renderPricing,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
+const {render,renderPanel,renderPricing,billingStatusSchema,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
 
 const base={disabled:false,hasDraft:false,needsSignIn:false,fromShared:false,freeLimit:3,onUpgrade:()=>{},onStart:()=>{},onContinue:()=>{},children:null};
 
@@ -36,7 +36,7 @@ assert.equal(freeStoryLimitReached({configured:true,plan:'free',addons:[],storie
 assert.equal(freeStoryLimitReached({configured:true,plan:'free',addons:[],storiesCreated:2,freeStoryLimit:3}),false,'a free account under the cap may start stories');
 assert.equal(freeStoryLimitReached({configured:false,plan:'free',addons:[],storiesCreated:99,freeStoryLimit:3}),false,'dormant billing never blocks a writer');
 assert.equal(freeStoryLimitReached({configured:true,plan:'subscription',addons:[],storiesCreated:99,freeStoryLimit:3}),false,'an active subscription is never limit-reached');
-assert.equal(freeStoryLimitReached({configured:true,plan:'lifetime',addons:[],storiesCreated:99,freeStoryLimit:3}),false,'a lifetime unlock is never limit-reached');
+assert.ok(!billingStatusSchema.safeParse({configured:true,plan:'lifetime',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}).success,'the billing status schema rejects the retired lifetime plan — no payload or type carries it (wave 8 cleanup)');
 assert.equal(freeStoryLimitReached({configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:0}),true,'a zero-allowance deployment gates immediately');
 
 // Dormant default: start choices enabled, no limit block, no dead end.
@@ -73,7 +73,6 @@ const freeUnder={configured:true,plan:'free',addons:[],storiesCreated:1,freeStor
 const freeAtCap={configured:true,plan:'free',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0};
 const dormant={configured:false,plan:'free',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0};
 const entitled={configured:true,plan:'subscription',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:12,packCreditsRemaining:27};
-const legacyLifetime={configured:true,plan:'lifetime',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0};
 
 const under=renderPanel({...panelBase,billing:freeUnder});
 assert.ok(under.includes('1 of 3 free stories used'),'the usage line reflects the billing payload, never a hard-coded count');
@@ -105,12 +104,10 @@ assert.ok(entitledPanel.includes('12 de 50 historias este mes'),'the monthly usa
 assert.ok(entitledPanel.includes('Quedan 27 créditos de paquete'),'remaining pack credits render');
 assert.ok(!entitledPanel.includes('Ir al pago')&&!entitledPanel.includes('Mensual'),'an entitled owner is not offered checkout again');
 
-// Legacy 'lifetime' entitlement rows keep a sane entitled state (wave 8 §3):
-// the plan line reads entitled and the usage panel still works.
-const legacyPanel=renderPanel({...panelBase,billing:legacyLifetime});
-assert.ok(legacyPanel.includes('Unlimited stories — your plan is active'),'a legacy lifetime row renders a sane entitled state');
-assert.ok(legacyPanel.includes('0 of 50 stories this month'),'the usage panel works for a legacy lifetime row');
-assert.ok(!legacyPanel.includes('Continue to checkout'),'a legacy lifetime owner is not offered checkout again');
+// A stray legacy plan value must fail safe: the read boundary maps anything
+// the DB CHECK still permits but the schema no longer carries back to the
+// free tier — the panel renders the free state it validates, never a crash.
+assert.equal(freeStoryLimitReached({configured:true,plan:'free',addons:[],storiesCreated:99,freeStoryLimit:3}),true,'a legacy row normalized to free re-meters against the allowance');
 
 assert.equal(renderPanel({...panelBase,billing:freeUnder,ownerTree:false}),'','the guard renders nothing outside the owner tree');
 
@@ -192,4 +189,4 @@ for(const language of ['en','zh','es']){
 assert.notEqual(paywallCopy.en.limitCta,paywallCopy.zh.limitCta,'translations are distinct, not copy-pasted');
 assert.notEqual(paywallCopy.en.checkoutPending,paywallCopy.es.checkoutPending,'es copy is its own translation');
 
-console.log('Passed paywall client gates: paywallCopy shape/placeholders/coverage across en/zh/es, freeStoryLimitReached truth table (dormancy, free cap, paid plans incl. legacy lifetime, zero allowance), StoryStart limitReached state with upgrade CTA in en/zh/es, resume stays free, UpgradePanel usage panel (plan line, monthly usage vs cap, pack credits, dormant, entitled, legacy lifetime entitled state, owner-tree guard), pricing page four options with payload-asserted amounts/dormant fallback copy/unavailable-hidden amounts, computed savings badge, interpolated cap and pack sizes, checkout return-id shape checks, pack checkout mapping, and the server-verified status rescue. React rendered server-side; no network calls.');
+console.log('Passed paywall client gates: paywallCopy shape/placeholders/coverage across en/zh/es, billing status schema rejects the retired lifetime plan, freeStoryLimitReached truth table (dormancy, free cap, paid plans, legacy-row fail-safe, zero allowance), StoryStart limitReached state with upgrade CTA in en/zh/es, resume stays free, UpgradePanel usage panel (plan line, monthly usage vs cap, pack credits, dormant, entitled, owner-tree guard), pricing page four options with payload-asserted amounts/dormant fallback copy/unavailable-hidden amounts, computed savings badge, interpolated cap and pack sizes, checkout return-id shape checks, pack checkout mapping, and the server-verified status rescue. React rendered server-side; no network calls.');

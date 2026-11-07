@@ -3,8 +3,8 @@ import {accountHeaders} from './account-client';
 
 // Wave 8: the two subscriptions plus the two one-time story packs. 'lifetime'
 // is gone from the checkout surface entirely (its archived Stripe product stays
-// archived; legacy entitlement ROWS still read as entitled through the billing
-// status schema).
+// archived), and the billing status schema no longer carries it — a stray
+// legacy row reads as the free tier at the account read boundary.
 export type CheckoutPlan='monthly'|'annual'|'pack30'|'pack100';
 
 // POSTs to the same-origin billing API with the owner's identity headers —
