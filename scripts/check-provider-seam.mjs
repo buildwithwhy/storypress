@@ -17,7 +17,7 @@ const sources={
 };
 assert.match(sources.providers,/export interface TextProvider/,'lib/providers.ts must export the TextProvider interface');
 assert.match(sources.providers,/export interface ResearchResult/,'research results must be typed at the seam');
-assert.match(sources.providers,/export function createProviders\(env: Record<string, string \| undefined>, language: Language = "en"\): TextProvider/,'the factory must return the interface, routed by language');
+assert.match(sources.providers,/export function createProviders\(env: Record<string, string \| undefined>, language: Language = "en"(, onAiCall\?: AiCallReport)?\): TextProvider/,'the factory must return the interface, routed by language');
 assert.match(sources.providers,/const ZH_TEXT_BASE_URL = "https:\/\/openrouter\.ai\/api\/v1"/,'routed connection URLs live in the route table, like every provider URL');
 assert.ok(!sources.api.includes('openrouter'),'server call sites never name routed provider hosts — the route table owns the URL');
 assert.ok(!sources.live.includes('createProviders'),'live voice must not route through the text table — the grant keeps naming gemini');
