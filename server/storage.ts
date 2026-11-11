@@ -185,40 +185,55 @@ export async function reserveStory(userId:string,env:Bindings){
 }
 // The account payload's billing block (§4): the Stripe flag plus the signed-in
 // owner's entitlement, monotonic story counter, and wave-8 owner state — this
-// month's subscription-window draws and the remaining pack balance. Read
-// failures degrade to free-tier defaults — a missing or broken billing table
-// must never take down the account panel; the save-seam reserve is the
-// enforcement path. The read order below is fixed (entitlements, counts,
-// month draws, pack grants, pack draws) — the check suites' fetch mocks queue
-// responses in exactly that order.
+// month's subscription-window draws and the remaining pack balance. Each read
+// is guarded on its own: a failing table degrades only its own field (the
+// entitlement reads as the free tier, a counter as zero, the pack balance as
+// zero) instead of collapsing the whole block through a single catch — the
+// Nov 11 zero-panel outage was two malformed aggregate selects (PGRST100/
+// PGRST200) doing exactly that. db() logs every upstream failure with its
+// PostgREST code before throwing, so the degradation is never silent. No
+// PostgREST aggregate syntax (count(*), sum(column)) appears here: this
+// project's PostgREST rejects those select shapes outright, so raw rows are
+// summed and counted in JS. The read order below is fixed (entitlements,
+// counts, month draws, pack grants, pack draws) — the check suites' fetch
+// mocks queue responses in exactly that order.
 export async function billingStatus(env:Bindings,userId:string|null):Promise<BillingStatus>{
  // Env-tuned sizes ride the payload so the UI interpolates them; the dormant
  // mirror in server/vercel.mjs hand-copies this shape — keep the two in sync.
  const sizes={subscriptionMonthlyCap:subscriptionMonthlyCap(env),pack30Credits:pack30Credits(env),pack100Credits:pack100Credits(env)};
  const fallback=()=>({configured:billingConfigured(env),plan:'free' as const,addons:[] as string[],storiesCreated:0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:0,packCreditsRemaining:0});
  if(!configured(env)||!userId)return fallback();
- try{
-  const entitlementRows=await db(env,`storypress_entitlements?owner_id=eq.${userId}&select=plan,addons`) as {plan?:string;addons?:string}[]|null;
-  const entitlement=Array.isArray(entitlementRows)?entitlementRows[0]:undefined;
-  const countRows=await db(env,`storypress_story_counts?owner_id=eq.${userId}&select=stories_created`) as {stories_created?:number}[]|null;
-  const count=Array.isArray(countRows)?countRows[0]:undefined;
-  // The window row matches the RPC's UTC calendar month; the pack balance is
-  // granted credits minus drawn rows (draws never exceed grants under the
-  // reserve lock; the clamp keeps a transient skew from displaying negative).
-  const drawRows=await db(env,`storypress_subscription_draws?owner_id=eq.${userId}&period_month=eq.${new Date().toISOString().slice(0,7)}-01&select=stories_created`) as {stories_created?:number}[]|null;
-  const grantRows=await db(env,`storypress_pack_grants?owner_id=eq.${userId}&select=sum(credits)`) as {'sum'?:number|null}[]|null;
-  const packDrawRows=await db(env,`storypress_pack_draws?owner_id=eq.${userId}&select=count(*)`) as {count?:number}[]|null;
-  const drawRow=Array.isArray(drawRows)?drawRows[0]:undefined;
-  const granted=Array.isArray(grantRows)?grantRows[0]?.sum:undefined;
-  const drawn=Array.isArray(packDrawRows)?packDrawRows[0]?.count:undefined;
-  // The plan is normalized at the read boundary: only 'subscription' passes
-  // through — an unexpected or legacy plan value (the DB CHECK still permits
-  // 'lifetime') reads as the free tier, so no account payload can ever emit
-  // a retired plan and a stray legacy row renders fail-safe rather than
-  // crashing the panel. The reserve RPC still meters the DB row itself.
-  const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:Math.max(0,(granted??0)-(drawn??0))});
-  return parsed.success?parsed.data:fallback();
- }catch{return fallback();}
+ // One guard per read: db() has already logged the upstream error; here the
+ // field degrades and the rest of the block survives.
+ const read=async(path:string):Promise<unknown[]|null>=>{
+  try{return await db(env,path) as unknown[]|null;}
+  catch{return null;} // Degrade this field only — never zero the whole block.
+ };
+ const entitlementRows=await read(`storypress_entitlements?owner_id=eq.${userId}&select=plan,addons`);
+ const entitlement=Array.isArray(entitlementRows)?entitlementRows[0] as {plan?:string;addons?:string}|undefined:undefined;
+ const countRows=await read(`storypress_story_counts?owner_id=eq.${userId}&select=stories_created`);
+ const count=Array.isArray(countRows)?countRows[0] as {stories_created?:number}|undefined:undefined;
+ // The window row matches the RPC's UTC calendar month; the pack balance is
+ // granted credits minus drawn rows (draws never exceed grants under the
+ // reserve lock; the clamp keeps a transient skew from displaying negative).
+ const drawRows=await read(`storypress_subscription_draws?owner_id=eq.${userId}&period_month=eq.${new Date().toISOString().slice(0,7)}-01&select=stories_created`);
+ const grantRows=await read(`storypress_pack_grants?owner_id=eq.${userId}&select=credits`);
+ const packDrawRows=await read(`storypress_pack_draws?owner_id=eq.${userId}&select=id`);
+ const drawRow=Array.isArray(drawRows)?drawRows[0] as {stories_created?:number}|undefined:undefined;
+ // Aggregated in JS (see the guard note above): grants carry one credit count
+ // per row, draws are one row per consumed credit. A failed read on either
+ // side reports the balance as zero — the conservative degrade — rather than
+ // a half-computed number.
+ const granted=Array.isArray(grantRows)?grantRows.reduce<number>((total,row)=>total+(Number((row as {credits?:unknown}).credits)||0),0):null;
+ const drawn=Array.isArray(packDrawRows)?packDrawRows.length:null;
+ const packBalance=granted!==null&&drawn!==null?Math.max(0,granted-drawn):0;
+ // The plan is normalized at the read boundary: only 'subscription' passes
+ // through — an unexpected or legacy plan value (the DB CHECK still permits
+ // 'lifetime') reads as the free tier, so no account payload can ever emit
+ // a retired plan and a stray legacy row renders fail-safe rather than
+ // crashing the panel. The reserve RPC still meters the DB row itself.
+ const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:packBalance});
+ return parsed.success?parsed.data:fallback();
 }
 
 
