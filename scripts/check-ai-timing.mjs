@@ -6,9 +6,10 @@ import { build } from 'esbuild';
 // console convention. Proves the line shape (task/model/backend/language/
 // thinking/vertexLocation/ttftMs/totalMs/status/tokens) across every call
 // type, the Vertex region field, streamed-usage capture, fallback
-// double-logging, Server-Timing on non-streaming JSON only, and the privacy
-// invariant: no prompt text, story content, emails, or raw user ids in any
-// line. All fetches are mocked; no paid API calls.
+// double-logging, Server-Timing on non-streaming JSON only — with the AI span
+// carrying the tokens the API returned and, for Vertex, its region — and the
+// privacy invariant: no prompt text, story content, emails, or raw user ids
+// in any line. All fetches are mocked; no paid API calls.
 const bundle = await build({
   stdin: { contents: [
     "export {createProviders, ServiceError} from './lib/providers.ts';",
@@ -254,6 +255,20 @@ try {
   const serverTiming = transcriptResponse.headers.get('Server-Timing');
   assert.match(serverTiming, /(^|,)\s*identity;dur=\d+/, 'the identity span rides the JSON response');
   assert.match(serverTiming, /ai_transcribe;dur=\d+/, 'the AI span rides the JSON response');
+  assert.ok(!/tokens_/.test(serverTiming), 'no token params when the API returned no usage');
+  assert.ok(!/region=/.test(serverTiming), 'no region param on non-Vertex AI spans');
+  // The Vertex region and the mapped usageMetadata numbers ride the AI span,
+  // in the order the response actually carried them.
+  globalThis.fetch = async () => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'fixture transcript' }] } }], usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 7, thoughtsTokenCount: 3 } });
+  const vertexApiEnv = { GEMINI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'fixture-project', VERTEX_API_KEY: 'k', GOOGLE_CLOUD_LOCATION: 'us-east5' };
+  const vertexResponse = await handleApi(apiRequest({ action: 'transcribe', audio: { data: 'QQ==', mime: 'audio/wav' } }), vertexApiEnv);
+  assert.equal(vertexResponse.status, 200);
+  assert.match(vertexResponse.headers.get('Server-Timing'), /ai_transcribe;dur=\d+;tokens_in=11;tokens_out=7;tokens_thinking=3;region=us-east5/, 'the AI span carries returned tokens and the Vertex region');
+  // A usage shape with only some fields omits the absent ones — never zeros.
+  globalThis.fetch = async () => Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'fixture transcript' }] } }], usageMetadata: { promptTokenCount: 11, candidatesTokenCount: 7 } });
+  const partialResponse = await handleApi(apiRequest({ action: 'transcribe', audio: { data: 'QQ==', mime: 'audio/wav' } }), vertexApiEnv);
+  assert.match(partialResponse.headers.get('Server-Timing'), /ai_transcribe;dur=\d+;tokens_in=11;tokens_out=7;region=us-east5/, 'absent usage fields are omitted from the span');
+  assert.ok(!/tokens_thinking/.test(partialResponse.headers.get('Server-Timing')), 'no thinking param when usageMetadata carried none');
   globalThis.fetch = async () => sse([{ candidates: [{ content: { parts: [{ text: '{"question":"How now?"}' }] }, finishReason: 'STOP' }] }]);
   const streamResponse = await handleApi(apiRequest({ action: 'interview', stream: true, story: { name: '', language: 'en', occasion: 'life', turns: [], sources: [], sample: false, approved: false } }), apiEnv);
   assert.equal(streamResponse.headers.get('Content-Type'), 'text/event-stream; charset=utf-8');
@@ -270,7 +285,9 @@ try {
     assert.ok(!text.includes(STORY_ID), 'no raw story ids in log lines');
   }
   for (const line of callLines()) {
-    const fields = line.event === 'ai_call' ? AI_FIELDS : DB_FIELDS;
+    // tokens is optional on the line (omitted when the API returned none), so
+    // it is swept as an allowed field rather than required by assertAiShape.
+    const fields = line.event === 'ai_call' ? [...AI_FIELDS, 'tokens'] : DB_FIELDS;
     for (const key of Object.keys(line)) assert.ok(fields.includes(key), `unexpected field ${key} on ${line.event}`);
   }
   console.error = originalError;
