@@ -57,6 +57,7 @@ assert.ok(app.includes(`researchDone:searched||story.sources.length>0`),'researc
 assert.ok(app.includes(`writeActive:makePhase==='writing'`),'drafting tracks the write request');
 assert.ok(app.includes(`layoutActive:makePhase==='layingOut'`),'laying out tracks the layout/render phase');
 assert.ok(app.includes('<MakeProgress language={story.language} pipeline={makePipeline}/>'),'the panel renders from the pipeline flags');
+assert.ok(app.includes('mode === "type" && (busy || researching)'),'a live discover request surfaces in the tell-stage panel, not just make phases');
 assert.ok(app.includes("makePhase!=='layingOut'||artJobs>0"),'laying out holds while make-triggered artwork draws');
 assert.ok(!app.match(/setTimeout\([^)]*setMakePhase/),'no timer drives the stage display');
 
