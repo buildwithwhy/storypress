@@ -64,7 +64,7 @@ function StoryApp() {
  const [account,setAccount]=useState<AccountConfig|null>(null);
  const [problem,setProblem]=useState('');
  const flushDraft=useRef<()=>void>(()=>{});
- useEffect(()=>{let active=true,dispose=()=>{};void setupAccount(user=>{if(active){flushDraft.current();setAccount(c=>c?{...c,user}:c);}}).then(result=>{dispose=result.dispose;if(active)setAccount(result.config);else dispose();}).catch(e=>setProblem(e.message));return()=>{active=false;dispose();};},[]);
+ useEffect(()=>{let active=true,dispose=()=>{};void setupAccount((user,config)=>{if(active){flushDraft.current();setAccount(c=>config??(c?{...c,user}:c));}}).then(result=>{dispose=result.dispose;if(active)setAccount(result.config);else dispose();}).catch(e=>setProblem(e.message));return()=>{active=false;dispose();};},[]);
  if(!account)return <main className="account-loading"><h1>Once &amp; Ours</h1><p role="status">{problem||'Opening your story studio…'}</p>{problem&&<button className="secondary" onClick={()=>location.reload()}>Try again</button>}</main>;
  return <Storypress key={account.user?.id||'guest'} account={account} flushDraft={flushDraft} patchBilling={billing=>setAccount(c=>c?{...c,billing}:c)}/>;
 }
