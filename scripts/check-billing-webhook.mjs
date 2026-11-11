@@ -71,8 +71,12 @@ const ownerState=(state={})=>[
  {data:state.entitlements??[]},
  {data:state.counts??[]},
  {data:state.draws??[]},
- {data:state.grants??[{sum:null}]},
- {data:state.packDraws??[{count:0}]}];
+ {data:state.grants??[]},
+ {data:state.packDraws??[]}];
+// The exact error shapes the live Supabase project returned for aggregate
+// selects before the fix (reproduced with an owner JWT, Nov 11) — the guard
+// per read must degrade the field, not zero the block.
+const pgrstError=(code,message)=>({status:400,data:{code,message,hint:null,details:null}});
 const checkoutEvent=(id,overrides={})=>({id,type:'checkout.session.completed',data:{object:{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',customer_details:{email:'fictional@example.invalid'},metadata:{userId:user},...overrides}}});
 
 try{
@@ -338,10 +342,63 @@ try{
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
-   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{sum:30}],packDraws:[{count:1}]})];
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{credits:30}],packDraws:[{id:'draw_1'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29});
+  assert.equal(queue.length,0);
+ }
+ {
+  // Regression (the Nov 11 zero panel): the live project's PostgREST rejected
+  // the old aggregate selects — sum(credits) with PGRST200, count(*) with
+  // PGRST100 — and the old single catch zeroed the entire billing block for
+  // every signed-in account. Both pack reads fail here with those exact error
+  // shapes: the pack balance degrades to zero while every other field keeps
+  // the owner's real values, and all five reads are still attempted.
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
+   {data:[{plan:'subscription',addons:'[]'}]},
+   {data:[{stories_created:54}]},
+   {data:[{stories_created:12}]},
+   pgrstError('PGRST200','Could not find a relationship between \'storypress_pack_grants\' and \'sum\' in the schema cache'),
+   pgrstError('PGRST100','failed to parse select parameter (* is not valid inside select)')];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:54,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:12,packCreditsRemaining:0},'two failed pack reads must degrade only the pack balance, never zero the whole billing block');
+  assert.equal(queue.length,0,'all five billing reads were attempted despite two failing');
+ }
+ {
+  // Positive: raw rows present on both pack tables — grants sum their credits
+  // and draws count their rows in JS, so two packs (30 + 100) minus three
+  // draws read as 127 remaining credits.
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:7}],draws:[{stories_created:5}],grants:[{credits:30},{credits:100}],packDraws:[{id:'d1'},{id:'d2'},{id:'d3'}]})];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:5,packCreditsRemaining:127},'grant and draw rows aggregate in JS to the real balances');
+  assert.equal(queue.length,0);
+ }
+ {
+  // Per-read resilience: the entitlement read fails (a revoked key 401s) but
+  // the other four succeed — the plan degrades to free while the counter,
+  // month draws, and pack balance stay real, instead of the block collapsing.
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
+   {status:401,data:{code:'42501',message:'permission denied for table storypress_entitlements'}},
+   {data:[{stories_created:9}]},
+   {data:[{stories_created:4}]},
+   {data:[{credits:30}]},
+   {data:[{id:'d1'}]}];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:4,packCreditsRemaining:29},'one failed billing table must cost only its own field');
   assert.equal(queue.length,0);
  }
  {
@@ -351,7 +408,7 @@ try{
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_pack?expand[]=line_items'),`session lookup expected, got ${url}`);}},
    grantInsert('cs_pack',30),
-   ...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}],grants:[{sum:30}]})];
+   ...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}],grants:[{credits:30}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_pack'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.equal((await response.json()).billing.plan,'free','a pack grant must not flip the plan');

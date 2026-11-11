@@ -89,36 +89,40 @@ assert.equal((await afterDelete.json()).code,'story_limit');
 queue=[authenticated(),inserted(id)];
 assert.equal((await worker.fetch(req('/api/stories',{action:'save',story}),env)).status,200,'Without Stripe env, story creation is never blocked');
 assert.equal(queue.length,0,'The reserve RPC must not even be called while billing is dormant');
-queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{sum:30}]},{data:[{count:3}]}];
+queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{credits:30}]},{data:[{id:'d1'},{id:'d2'},{id:'d3'}]}];
 // Wave 8 §3: the pricing payload rides the account response only while billing
 // is configured. A failed Stripe refetch with no cache hides amounts (null)
 // instead of inventing numbers — tested before the success scenario so the
 // module-scope cache is still cold.
 const stripePrice=amount=>({data:{currency:'usd',unit_amount:amount},check:url=>{assert.ok(url.startsWith('https://api.stripe.com/v1/prices/'),'the pricing payload fetches the configured Stripe price objects');assert.ok(['price_monthly_mock','price_annual_mock','price_pack30_mock','price_pack100_mock'].some(id=>url.endsWith(id)),'the pricing payload fetches exactly the configured price IDs');}});
-queue=[authenticated(),{data:[{plan:'subscription',addons:'[]'}]},{data:[{stories_created:0}]},{data:[{stories_created:0}]},{data:[{sum:null}]},{data:[{count:0}]},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}}];
+queue=[authenticated(),{data:[{plan:'subscription',addons:'[]'}]},{data:[{stories_created:0}]},{data:[{stories_created:0}]},{data:[]},{data:[]},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}},{status:500,data:{error:'stripe down'}}];
 const unpricedAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(unpricedAccount.pricing,null,'A failed Stripe refetch with no cache hides amounts instead of inventing them');
-queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{sum:30}]},{data:[{count:3}]},stripePrice(999),stripePrice(5900),stripePrice(1200),stripePrice(2900)];
+queue=[authenticated(),{data:[{plan:'subscription',addons:'["video"]'}]},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{credits:30}]},{data:[{id:'d1'},{id:'d2'},{id:'d3'}]},stripePrice(999),stripePrice(5900),stripePrice(1200),stripePrice(2900)];
 const paid=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(paid.billing,{configured:true,plan:'subscription',addons:['video'],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:27},'The account payload reports the entitlement, the counter, and the wave-8 owner state');
 assert.deepEqual(paid.pricing,{currency:'usd',monthly:{amount:999},annual:{amount:5900},pack30:{amount:1200},pack100:{amount:2900}},'The account payload carries the Stripe price amounts in minor units');
 // Wave 8 cleanup: a stray legacy entitlement row (the DB CHECK still permits
 // 'lifetime') fails safe at the read boundary — the payload reads as the free
 // tier and never emits the retired plan value.
-queue=[authenticated(),{data:[{plan:'lifetime',addons:'[]'}]},{data:[{stories_created:9}]},{data:[{stories_created:0}]},{data:[{sum:0}]},{data:[{count:0}]}];
+queue=[authenticated(),{data:[{plan:'lifetime',addons:'[]'}]},{data:[{stories_created:9}]},{data:[{stories_created:0}]},{data:[]},{data:[]}];
 const legacyRow=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(legacyRow.billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'A legacy entitlement row reads as the free tier, fail-safe instead of crashing');
 assert.ok(!JSON.stringify(legacyRow).includes('lifetime'),'No account payload may ever emit the retired lifetime plan');
-queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[]},{data:[]}];
 const freeAccount=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
 assert.deepEqual(freeAccount.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'Missing billing rows read as a free account');
-queue=[authenticated(),{status:503,data:{error:'relation does not exist'}}];
+// Per-read resilience: a failing billing read costs only its own field. The
+// entitlement table 503s while the other four succeed — the plan degrades to
+// free but the counter, month draws, and pack balance stay real, instead of
+// the whole block collapsing to zeros (the Nov 11 zero-panel failure mode).
+queue=[authenticated(),{status:503,data:{error:'relation does not exist'}},{data:[{stories_created:7}]},{data:[{stories_created:2}]},{data:[{credits:30}]},{data:[{id:'d1'},{id:'d2'},{id:'d3'}]}];
 const degraded=await(await worker.fetch(req('/api/account'),meteredEnv)).json();
-assert.deepEqual(degraded.billing,{configured:true,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'A broken billing table must not take down the account payload');
-queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
+assert.deepEqual(degraded.billing,{configured:true,plan:'free',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:27},'A broken billing table must cost only its own field, not zero the block');
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[]},{data:[]}];
 const generous=await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'5'})).json();
 assert.equal(generous.billing.freeStoryLimit,5,'STORYPRESS_FREE_STORIES raises the reported allowance');
-queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[{sum:null}]},{data:[{count:0}]}];
+queue=[authenticated(),{data:[]},{data:[]},{data:[]},{data:[]},{data:[]}];
 assert.equal((await(await worker.fetch(req('/api/account'),{...meteredEnv,STORYPRESS_FREE_STORIES:'not-a-number'})).json()).billing.freeStoryLimit,3,'A malformed allowance env falls back to 3');
 assert.equal(queue.length,0);
 // Wave 8 §1: the subscription cap rides the same reserve call, env-tuned
