@@ -22,12 +22,24 @@ export interface TextProvider {
   interviewStream(system: string, input: string, model: string, signal: AbortSignal, task?: string): AsyncGenerator<string, void, unknown>;
 }
 const DEFAULT_MODEL = "gemini-3.8-flash";
-// The only thinking setting in the app: the default model ships thinkingLevel
-// LOW on the GenerateContent paths (whole-result Vertex, both streams); any
-// model override and the AI-Studio interactions body send none. Request
-// bodies and timing lines both derive from this function, so a line can
-// never report a setting the request does not carry.
-function thinkingFor(model: string): "LOW" | null {
+// Thinking levels, resolved per task like taskModelSettings below. Without a
+// task setting, today's floor holds: the default model ships thinkingLevel LOW
+// on every path that carries thinking — GenerateContent whole-result, both
+// streams, and now the AI-Studio interactions body, which previously sent
+// none — while non-default models send none. An explicit setting reaches
+// EVERY body builder and survives model overrides, which previously dropped
+// thinking config entirely. Request bodies and timing lines both derive from
+// this function, so a line can never report a setting the request does not
+// carry.
+const THINKING_LEVELS = ["MINIMAL", "LOW", "MEDIUM", "HIGH"] as const;
+type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+function thinkingFor(env: Record<string, string | undefined>, task: string | undefined, model: string): ThinkingLevel | null {
+  const key = task && task in taskThinkingSettings ? taskThinkingSettings[task as ModelTask] : "";
+  const override = ((key ? env[key] : "") || "").trim().toUpperCase();
+  if (override) {
+    if (!(THINKING_LEVELS as readonly string[]).includes(override)) throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
+    return override as ThinkingLevel;
+  }
   return model === DEFAULT_MODEL ? "LOW" : null;
 }
 const taskModelSettings: Record<ModelTask, string> = {
@@ -36,6 +48,13 @@ const taskModelSettings: Record<ModelTask, string> = {
   photo: "GEMINI_PHOTO_MODEL",
   transcribe: "GEMINI_TRANSCRIPTION_MODEL",
   research: "GEMINI_RESEARCH_MODEL",
+};
+const taskThinkingSettings: Record<ModelTask, string> = {
+  interview: "GEMINI_INTERVIEW_THINKING",
+  write: "GEMINI_WRITING_THINKING",
+  photo: "GEMINI_PHOTO_THINKING",
+  transcribe: "GEMINI_TRANSCRIPTION_THINKING",
+  research: "GEMINI_RESEARCH_THINKING",
 };
 // Language routing: story text follows the narrator's chosen language. The
 // route table is env-driven like taskModelSettings, and an unconfigured route
@@ -249,10 +268,12 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
   if (backend() !== "ai-studio") throw new ServiceError("The story editor configuration needs attention. Your words are still saved.", 503);
   const key = setting("GEMINI_API_KEY");
   if (!key) throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.", 503);
-  // The interactions body sends no thinking configuration (unlike the
-  // GenerateContent paths), so the line reports null rather than inferring one.
-  return timedAiCall(aiMeta(task ?? selectedModel, selectedModel, "ai-studio", null, null), async timer => {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false }), signal: AbortSignal.timeout(55000) });
+  // The interactions body carries the resolved level — default LOW for the
+  // default model, or the per-task override — closing the asymmetry where it
+  // silently sent none.
+  const thinking = thinkingFor(env, task, selectedModel);
+  return timedAiCall(aiMeta(task ?? selectedModel, selectedModel, "ai-studio", thinking, null), async timer => {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false, ...(thinking ? { generation_config: { thinking_level: thinking.toLowerCase() } } : {}) }), signal: AbortSignal.timeout(55000) });
     timer.firstByte();
     if (!res.ok) throw providerError(res.status);
     const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[]; usage?: unknown };
@@ -263,9 +284,9 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
     return output;
   });
 }
-function generateContentsBody(system: string, input: ModelInput, json: boolean, model: string) {
+function generateContentsBody(system: string, input: ModelInput, json: boolean, model: string, task?: string) {
   const parts = typeof input === "string" ? [{ text: input }] : input.map(part => part.type === "text" ? { text: part.text } : { inlineData: { mimeType: part.mime_type, data: part.data } });
-  const thinking = thinkingFor(model);
+  const thinking = thinkingFor(env, task, model);
   return {
     systemInstruction: { parts: [{ text: system + (json ? " Output valid JSON without markdown fences." : "") }] },
     contents: [{ role: "user", parts }],
@@ -273,7 +294,7 @@ function generateContentsBody(system: string, input: ModelInput, json: boolean, 
     labels: { app: "storypress" },
   };
 }
-async function vertexRequest(system: string, input: ModelInput, json: boolean, model: string,stream=false,signal?:AbortSignal): Promise<Response> {
+async function vertexRequest(system: string, input: ModelInput, json: boolean, model: string, task?: string, stream=false,signal?:AbortSignal): Promise<Response> {
   const key = setting("VERTEX_API_KEY");
   const project = setting("GOOGLE_CLOUD_PROJECT");
   const location = vertexLocation();
@@ -283,15 +304,15 @@ async function vertexRequest(system: string, input: ModelInput, json: boolean, m
   const res = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:${stream?'streamGenerateContent?alt=sse':'generateContent'}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-    body: JSON.stringify(generateContentsBody(system, input, json, model)),
+    body: JSON.stringify(generateContentsBody(system, input, json, model, task)),
     signal: signal?AbortSignal.any([signal,AbortSignal.timeout(55000)]):AbortSignal.timeout(55000),
   });
   if (!res.ok) throw providerError(res.status);
   return res;
 }
 async function vertex(system: string, input: ModelInput, json: boolean, model: string, task?: string): Promise<string> {
-  return timedAiCall(aiMeta(task ?? model, model, "vertex", thinkingFor(model), vertexLocation()), async timer => {
-    const res=await vertexRequest(system,input,json,model);
+  return timedAiCall(aiMeta(task ?? model, model, "vertex", thinkingFor(env, task, model), vertexLocation()), async timer => {
+    const res=await vertexRequest(system,input,json,model,task);
     timer.firstByte();
     const data = await res.json() as { candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>; usageMetadata?: unknown };
     timer.setTokens(tokensFromGenerateContent(data.usageMetadata));
@@ -325,8 +346,8 @@ async function* interviewStream(system:string,input:string,model:string,signal:A
  if(backend()==='ai-studio'){
   const key=setting('GEMINI_API_KEY');
   if(!key)throw new ServiceError("The story editor is not connected yet. Your words are still saved on this device. You can try the sample story meanwhile.",503);
-  yield* timedAiStream(aiMeta(task ?? model, model, 'ai-studio', thinkingFor(model), null), async function*(){
-   const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(generateContentsBody(system,input,true,model)),signal:AbortSignal.any([signal,AbortSignal.timeout(55000)])});
+  yield* timedAiStream(aiMeta(task ?? model, model, 'ai-studio', thinkingFor(env, task, model), null), async function*(){
+   const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},body:JSON.stringify(generateContentsBody(system,input,true,model,task)),signal:AbortSignal.any([signal,AbortSignal.timeout(55000)])});
    if(!res.ok)throw providerError(res.status);
    return yield* streamResult(res);
   },tokensFromGenerateContent);
@@ -335,8 +356,8 @@ async function* interviewStream(system:string,input:string,model:string,signal:A
  // The existing Google Cloud route streams; other configured backends retain
  // their normal request contract without switching credentials or providers.
  if(backend()!=='vertex'){yield await gemini(system,input,true,model,task);return;}
- yield* timedAiStream(aiMeta(task ?? model, model, 'vertex', thinkingFor(model), vertexLocation()), async function*(){
-  const res=await vertexRequest(system,input,true,model,true,signal);
+ yield* timedAiStream(aiMeta(task ?? model, model, 'vertex', thinkingFor(env, task, model), vertexLocation()), async function*(){
+  const res=await vertexRequest(system,input,true,model,task,true,signal);
   return yield* streamResult(res);
  },tokensFromGenerateContent);
 }
