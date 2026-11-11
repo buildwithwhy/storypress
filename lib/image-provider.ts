@@ -1,5 +1,5 @@
 import { ServiceError } from './providers';
-import { timedAiCall, tokensFromGenerateContent } from './call-log';
+import { timedAiCall, tokensFromGenerateContent, type AiCallReport } from './call-log';
 
 type ImageEnv = Record<string, string | undefined>;
 export type StoryImageInput = {
@@ -33,7 +33,7 @@ function imageData(mime: unknown, data: unknown): string {
   return prefix + data;
 }
 
-export async function generateStoryImage(env: ImageEnv, input: StoryImageInput): Promise<{ data: string; model: string }> {
+export async function generateStoryImage(env: ImageEnv, input: StoryImageInput, onAiCall?: AiCallReport): Promise<{ data: string; model: string }> {
   const model = imageModel(env);
   const key = env.VERTEX_API_KEY;
   const project = env.GOOGLE_CLOUD_PROJECT;
@@ -54,7 +54,7 @@ The factual sources are originalWords and explicit appearance corrections in art
 Use explicitly stated gender, pronouns and appearance from the narrator’s words or artDirection. Never infer gender from a name, voice, occupation, location or language. Do not default an unspecified narrator to a man. People without explicitly described appearances must be abstract, simplified figures without gendered cues, never claimed likenesses; prefer a scene focused on described objects when an accurate depiction of a person would require guessing. Do not infer ethnicity, religion, health, sexuality, wealth, or other identifying characteristics. Do not add stereotyped clothing or appearance based on place or language. Do not reproduce private names, addresses, or identifying document details.
 No text, letters, typography, numbers, labels, logos, signatures, captions, speech balloons, or invented quotations anywhere in the image. The illustration is an interpretation of the memory, not a historical photograph or documentary evidence. Return the finished image.`;
   const host = location === 'global' ? 'aiplatform.googleapis.com' : `${location}-aiplatform.googleapis.com`;
-  return timedAiCall({ task: 'illustrate', model, backend: 'vertex', language: input.language, thinking: null, vertexLocation: location }, async timer => {
+  return timedAiCall({ task: 'illustrate', model, backend: 'vertex', language: input.language, thinking: null, vertexLocation: location, ...(onAiCall ? { report: onAiCall } : {}) }, async timer => {
     let response: Response;
     try {
       response = await fetch(`https://${host}/v1/projects/${project}/locations/${location}/publishers/google/models/${model}:generateContent`, {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {eventData} from './event-stream';
-import {timedAiCall, timedAiStream, tokensFromGenerateContent, tokensFromOpenAi, rawTokens, type AiCallMeta} from './call-log';
+import {timedAiCall, timedAiStream, tokensFromGenerateContent, tokensFromOpenAi, rawTokens, type AiCallMeta, type AiCallReport} from './call-log';
 import type { Language } from './story';
 export type ModelInput = string | Array<{ type: "text"; text: string } | { type: "audio" | "image"; data: string; mime_type: string }>;
 export type ModelTask = "interview" | "write" | "photo" | "transcribe" | "research";
@@ -203,7 +203,7 @@ async function* streamWithFallback(routed: AsyncGenerator<string, void, unknown>
     await iterator.return();
   }
 }
-function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: TextProvider, language: Language): TextProvider {
+function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: TextProvider, language: Language, onAiCall?: AiCallReport): TextProvider {
   const key = () => gemini.setting(route.apiKeyEnv);
   const retryOnGemini = async <T>(routed: () => Promise<T>, fallback: () => Promise<T>): Promise<T> => {
     try {
@@ -215,7 +215,7 @@ function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: Text
   };
   // The routed call is timed here; Gemini fallback calls time themselves, so
   // one fallback shows as an error line plus the retry line that served it.
-  const routeMeta = (task?: string): AiCallMeta => ({ task: task ?? route.model, model: route.model, backend: route.provider, language });
+  const routeMeta = (task?: string): AiCallMeta => ({ task: task ?? route.model, model: route.model, backend: route.provider, language, ...(onAiCall ? { report: onAiCall } : {}) });
   return {
     setting: gemini.setting,
     backend: () => route.provider,
@@ -235,12 +235,12 @@ function openAiCompatibleProvider(route: OpenAICompatibleTextRoute, gemini: Text
       : async function*(){ yield await gemini.gemini(system, input, true, gemini.modelFor('interview'), task); }),
   };
 }
-export function createProviders(env: Record<string, string | undefined>, language: Language = "en"): TextProvider {
+export function createProviders(env: Record<string, string | undefined>, language: Language = "en", onAiCall?: AiCallReport): TextProvider {
 function setting(key: string): string { return env[key] || ""; }
 // Every timing line's fixed context: the language this provider was built
 // for, the Google Cloud region Vertex requests resolve to, and nothing else.
 function aiMeta(task: string, model: string, backend: string, thinking: string | null, location: string | null): AiCallMeta {
-  return { task, model, backend, language, thinking, vertexLocation: location };
+  return { task, model, backend, language, thinking, vertexLocation: location, ...(onAiCall ? { report: onAiCall } : {}) };
 }
 function vertexLocation(): string { return setting("GOOGLE_CLOUD_LOCATION") || "global"; }
 function backend(): string { return setting("GEMINI_BACKEND") || "ai-studio"; }
@@ -377,6 +377,6 @@ async function nimble(query: string, locale: string): Promise<ResearchResult[]> 
 
 const geminiProvider: TextProvider = { setting, backend, modelConfigured, modelFor, gemini, nimble, parseJson, interviewStream };
 const route = textRoute(env, language);
-return route.provider === "gemini" ? geminiProvider : openAiCompatibleProvider(route, geminiProvider, language);
+return route.provider === "gemini" ? geminiProvider : openAiCompatibleProvider(route, geminiProvider, language, onAiCall);
 }
 export class ServiceError extends Error { constructor(message: string, public status = 502, public code?:string) { super(message); } }

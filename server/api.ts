@@ -13,15 +13,43 @@ import {storyFocus} from '../lib/story-modes';
 import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
 import {interviewResult} from '../lib/interview-result';
 import {streamInterview} from './interview-stream';
+import type { AiCallReport } from '../lib/call-log';
+
+// Server-Timing span details for AI calls: the tokens the provider actually
+// returned plus the Vertex region the request resolved to, surfaced next to
+// dur. Only numbers the API returned ride the header — mapped
+// GenerateContent/chat-completions fields become params, unverified raw
+// usage shapes are omitted rather than guessed (never a fabricated zero).
+type SpanDetail = { tokens?: unknown; vertexLocation?: string | null };
+const tokenParams = (tokens: unknown): string => {
+  if (!tokens || typeof tokens !== 'object') return '';
+  const u = tokens as Record<string, unknown>;
+  let params = '';
+  for (const [name, value] of [['tokens_in', u.input], ['tokens_out', u.output], ['tokens_thinking', u.thinking]] as Array<[string, unknown]>)
+    if (typeof value === 'number' && Number.isFinite(value)) params += `;${name}=${value}`;
+  return params;
+};
+const spanMetric = (name: string, ms: number, detail?: SpanDetail): string => {
+  let metric = `${name};dur=${ms}`;
+  if (detail) { metric += tokenParams(detail.tokens); if (detail.vertexLocation) metric += `;region=${detail.vertexLocation}`; }
+  return metric;
+};
 export async function handleApi(request: Request, env: Bindings) {
  const envRecord = env as Record<string,string|undefined>;
  if(request.method !== "POST"&&request.method !== "GET") return new Response("Method not allowed",{status:405});
   // Supplemental in-response timings (wave 7 PR A): attached to non-streaming
   // JSON responses only — SSE headers are fixed at construction, before the
   // timings exist. The console ai_call/db_call lines stay the primary seam.
-  const spans: Array<[string, number]> = [];
-  const span = async <T>(name: string, run: () => Promise<T>): Promise<T> => { const start = Date.now(); try { return await run(); } finally { spans.push([name, Date.now() - start]); } };
-  const timedJson = (data: unknown, headers: Record<string, string> = {}) => Response.json(data, { headers: spans.length ? { ...headers, "Server-Timing": spans.map(([name, ms]) => `${name};dur=${ms}`).join(", ") } : headers });
+  // AI spans additionally carry what the call reported (wave 7 item 5):
+  // usageMetadata token counts and, for Vertex, the resolved region. Spans
+  // run sequentially within a request, so the reporting span is saved and
+  // restored around each; a fallback's retry overwrites with the call that
+  // actually served the user.
+  const spans: Array<[string, number, SpanDetail | undefined]> = [];
+  let reportingSpan: SpanDetail | undefined;
+  const observeAiCall: AiCallReport = (tokens, vertexLocation) => { if (!reportingSpan) return; if (tokens !== undefined) reportingSpan.tokens = tokens; reportingSpan.vertexLocation = vertexLocation; };
+  const span = async <T>(name: string, run: () => Promise<T>): Promise<T> => { const start = Date.now(); const detail: SpanDetail = {}; const previous = reportingSpan; reportingSpan = detail; try { return await run(); } finally { reportingSpan = previous; spans.push([name, Date.now() - start, detail]); } };
+  const timedJson = (data: unknown, headers: Record<string, string> = {}) => Response.json(data, { headers: spans.length ? { ...headers, "Server-Timing": spans.map(([name, ms, detail]) => spanMetric(name, ms, detail)).join(", ") } : headers });
   try {
     if(request.method === "GET"){
       const providers: TextProvider = createProviders(envRecord);
@@ -37,7 +65,7 @@ export async function handleApi(request: Request, env: Bindings) {
     if(body.action==='translate'){
       // Translation stays on Gemini for every language: the most
       // correctness-sensitive path, with Qwen-translate a separate evaluation.
-      const geminiProvider: TextProvider = createProviders(envRecord);
+      const geminiProvider: TextProvider = createProviders(envRecord, undefined, observeAiCall);
       const input=translationInputSchema.parse(body.translation);
       if(!geminiProvider.modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
       // One writing-model call, using the existing durable writing allowance.
@@ -47,7 +75,7 @@ export async function handleApi(request: Request, env: Bindings) {
       catch{throw new ServiceError('The translation was incomplete. Your original is kept. Please try again.',502);}
     }
     if(body.action==='translate-transcript'){
-      const geminiProvider: TextProvider = createProviders(envRecord);
+      const geminiProvider: TextProvider = createProviders(envRecord, undefined, observeAiCall);
       const input=transcriptInputSchema.parse(body.transcript);
       if(!geminiProvider.modelConfigured())throw new ServiceError('The story editor is not connected yet. Your original is kept.',503);
       await reserveAi(userId,env,'write');
@@ -59,7 +87,7 @@ export async function handleApi(request: Request, env: Bindings) {
     if (body.action === "transcribe") {
       // Transcription stays on Gemini for every language; the spoken language
       // is inferred from the audio by prompt convention.
-      const geminiProvider: TextProvider = createProviders(envRecord);
+      const geminiProvider: TextProvider = createProviders(envRecord, undefined, observeAiCall);
       const audio = z.object({ data: z.string().min(1).max(10000000).regex(/^[A-Za-z0-9+/=]+$/), mime: z.enum(["audio/webm", "audio/mp4", "audio/ogg", "audio/wav", "audio/mpeg"]) }).parse(body.audio);
       if (!geminiProvider.modelConfigured()) throw new ServiceError("Voice transcription is not connected yet.",503);
       await reserveAi(userId,env,'transcribe');
@@ -72,7 +100,7 @@ export async function handleApi(request: Request, env: Bindings) {
     // OpenAI-compatible adapter when configured; en/es and every routed
     // failure degrade to Gemini. Translation and transcription above never
     // construct this routed provider.
-    const providers: TextProvider = createProviders(envRecord, story.language);
+    const providers: TextProvider = createProviders(envRecord, story.language, observeAiCall);
     // Assistant questions can contain visual guesses. Only narrator turns reach research/writing.
     const context = JSON.stringify(action==='interview' ? interviewContext(story) : { name: story.name, language: story.language, occasion: story.occasion, intention:story.intention, ...(action==='write'?{storyFocus:storyFocus[story.occasion]}:{}), transcript: action==='photo'?story.turns:story.turns.filter(t=>t.role==='user'), historicalContext: story.sources.filter(s => s.selected) });
     if(context.length>60000)throw new ServiceError("This interview is getting long. Save it and begin a new chapter before another AI step.",400);
@@ -98,7 +126,7 @@ export async function handleApi(request: Request, env: Bindings) {
       // Images use the existing three-unit reservation, atomically bounded by
       // the account and site daily caps. No second quota migration is needed.
       await reserveAi(userId,env,'discover');
-      const image=await span('ai_illustrate',()=>generateStoryImage(env,{language:story.language,style,words:originalWords(story),instructions:story.artInstructions}));
+      const image=await span('ai_illustrate',()=>generateStoryImage(env,{language:story.language,style,words:originalWords(story),instructions:story.artInstructions},observeAiCall));
       return timedJson({image:{...image,style}},{'Cache-Control':'no-store'});
     }
     await reserveAi(userId,env,action);

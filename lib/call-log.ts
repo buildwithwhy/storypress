@@ -18,9 +18,16 @@ export interface AiCallMeta {
   language: string;
   thinking?: string | null;
   vertexLocation?: string | null;
+  // Optional per-request observer (Server-Timing spans): successful calls
+  // report their tokens and region so the wrapping request can surface them.
+  report?: AiCallReport;
 }
 
 export interface DbCallMeta { task: string; model: string; backend: string; }
+
+// Per-request observer signature: successful AI calls report the tokens the
+// API actually returned (mapped or raw) and the region the call resolved to.
+export type AiCallReport = (tokens: unknown, vertexLocation: string | null) => void;
 
 function emitAiCall(meta: AiCallMeta, ttftMs: number | null, totalMs: number, status: CallStatus, tokens?: unknown): void {
   console.error(JSON.stringify({
@@ -28,6 +35,10 @@ function emitAiCall(meta: AiCallMeta, ttftMs: number | null, totalMs: number, st
     thinking: meta.thinking ?? null, vertexLocation: meta.vertexLocation ?? null,
     ttftMs, totalMs, status, ...(tokens === undefined ? {} : { tokens }),
   }));
+  // Only successful calls feed Server-Timing: spans are attached to the JSON
+  // response of the request that started them, and a failed call either
+  // throws past its span or is retried (fallbacks), which reports on its own.
+  if (status === 'ok' && meta.report) meta.report(tokens, meta.vertexLocation ?? null);
 }
 
 function emitDbCall(meta: DbCallMeta, ttftMs: number | null, totalMs: number, status: CallStatus): void {
