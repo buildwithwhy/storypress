@@ -6,16 +6,44 @@ export type Account={id:string;email?:string};
 // amounts rather than inventing numbers.
 export type AccountConfig={user:Account|null;supabase:{url:string;key:string}|null;storage:boolean;linkSharing:boolean;dailyUnits:number|null;sampleOnly?:boolean;billing:BillingStatus;pricing:Pricing|null};
 let client:SupabaseClient|null=null;
-export async function setupAccount(onUser:(user:Account|null)=>void){
+export async function setupAccount(onUser:(user:Account|null,config?:AccountConfig)=>void){
  const response=await fetch('/api/account');if(!response.ok)throw new Error('Account connection unavailable. Reload to try again.');
- const config=await response.json() as AccountConfig;
+ let config=await response.json() as AccountConfig;
  if(config.supabase){
   client=createClient(config.supabase.url,config.supabase.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const {data}=await client.auth.getSession();config.user=data.session?.user||null;
-  const {data:subscription}=client.auth.onAuthStateChange((_event,session)=>onUser(session?.user||null));
+  // The boot fetch above is necessarily anonymous — the Supabase client does
+  // not exist yet when the app needs its config — so the server answered it
+  // with the signed-out free-tier defaults (todo_dotc5MdR: a restored session
+  // rendered the usage panel as "0 of 3 free stories used" even with a paid
+  // plan and reserved stories). With a session on hand, re-read the payload
+  // with the owner's bearer so plan, counter, draws, and pack balance are
+  // real. A failed re-read keeps the boot config rather than blocking sign-in.
+  if(data.session)config=await signedInAccountConfig({id:data.session.user.id,email:data.session.user.email||''})??config;
+  // A sign-in after boot (email code, Google, checkout return) needs the same
+  // re-read: the listener receives the refreshed config so the panel's plan
+  // and usage match the newly signed-in owner. Token refreshes never refetch.
+  const {data:subscription}=client.auth.onAuthStateChange((event,session)=>{
+   const user=session?{id:session.user.id,email:session.user.email||''}:null;
+   onUser(user);
+   if(event==='SIGNED_IN'&&user)void signedInAccountConfig(user).then(next=>{if(next)onUser(user,next);});
+  });
   return {config,dispose:()=>subscription.subscription.unsubscribe()};
  }
  return {config,dispose:()=>{}};
+}
+// Re-reads the account payload with the owner's bearer (the anonymous boot
+// fetch cannot carry it) and stamps the session user onto the result — the
+// server reports user:null for the re-read since it sees only the bearer.
+// Returns null when the re-read fails; the caller then keeps the boot config
+// (billing degrades to the signed-out defaults, the same behavior a signed-out
+// visitor gets) instead of failing sign-in over a panel detail.
+async function signedInAccountConfig(user:Account):Promise<AccountConfig|null>{
+ try{
+  const response=await fetch('/api/account',{headers:await accountHeaders()});
+  if(!response.ok)return null;
+  return {...await response.json() as AccountConfig,user};
+ }catch(error){console.error(JSON.stringify({event:'account_refresh_failed',message:error instanceof Error?error.message:String(error)}));return null;}
 }
 export async function accountHeaders(){const {data}=client?await client.auth.getSession():{data:{session:null}};return data.session?{Authorization:`Bearer ${data.session.access_token}`} as Record<string,string>:{};}
 export async function accountRequest(body?:unknown,id?:string){
