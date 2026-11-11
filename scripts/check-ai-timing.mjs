@@ -105,7 +105,8 @@ try {
   for await (const chunk of vertex.interviewStream(PROMPT, STORY, vertex.modelFor('interview'), new AbortController().signal, 'interview')) void chunk;
   assert.ok(!('tokens' in callLines()[0]), 'tokens omitted when the stream carried none');
 
-  // --- C. AI-Studio whole-result: no thinking config on this path, unverified
+  // --- C. AI-Studio whole-result: the resolved thinking level reaches the
+  // interactions body too (default LOW for the default model), unverified
   // usage shape logged raw, vertexLocation null.
   globalThis.fetch = async () => Response.json({ output_text: 'fixture output', usage: { unverifiedField: 'shape-1', otherCount: 4 } });
   const studio = createProviders({ GEMINI_API_KEY: 'k', NIMBLE_API_KEY: 'fixture-nimble' }, 'en');
@@ -114,7 +115,7 @@ try {
   assert.equal(callLines().length, 1);
   assertAiShape(callLines()[0]);
   assert.equal(callLines()[0].backend, 'ai-studio');
-  assert.equal(callLines()[0].thinking, null, 'the interactions body sends no thinking config');
+  assert.equal(callLines()[0].thinking, 'LOW', 'the interactions body carries the default-model thinking level');
   assert.equal(callLines()[0].vertexLocation, null, 'non-Vertex lines carry no region');
   assert.deepEqual(callLines()[0].tokens, { raw: { unverifiedField: 'shape-1', otherCount: 4 } }, 'unverified usage shapes are logged raw');
 

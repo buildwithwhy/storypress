@@ -20,11 +20,14 @@ const calls = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (url, init) => {
   calls.push({ url: String(url), headers: init.headers, body: JSON.parse(init.body) });
-  return Response.json(String(url).includes('aiplatform.googleapis.com')
+  const sse = String(url).includes('streamGenerateContent');
+  const payload = String(url).includes('aiplatform.googleapis.com') || String(url).includes('streamGenerateContent')
     ? { candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'fixture output' }] } }] }
     : String(url).includes('openrouter.ai')
       ? { choices: [{ message: { content: 'fixture output' } }] }
-      : { output_text: 'fixture output' });
+      : { output_text: 'fixture output' };
+  if (sse) return new Response(`data: ${JSON.stringify(payload)}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+  return Response.json(payload);
 };
 
 try {
@@ -94,6 +97,32 @@ try {
   const defaultCloud = createProviders({ ...credentials, GEMINI_BACKEND: 'vertex' });
   await defaultCloud.gemini('Fixture', 'Fixture');
   assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'LOW' }, 'Preserve the existing default-model cost control');
+
+  // Per-task thinking: an explicit GEMINI_*_THINKING setting reaches every
+  // request shape that can carry it — Vertex whole-result, Vertex streaming,
+  // AI-Studio streaming (GenerateContent) and the AI-Studio interactions body
+  // — and it survives a model override, which previously dropped thinking
+  // config entirely. Invalid values fail loudly instead of silently sending
+  // default thinking.
+  const thinkingStudio = createProviders({ ...credentials, GEMINI_BACKEND: 'ai-studio', GEMINI_INTERVIEW_THINKING: 'minimal' });
+  await thinkingStudio.gemini('Fixture', 'Fixture', true, thinkingStudio.modelFor('interview'), 'interview');
+  assert.deepEqual(calls.at(-1).body.generation_config, { thinking_level: 'minimal' }, 'The interactions body carries the per-task thinking override');
+  for await (const _ of thinkingStudio.interviewStream('Fixture', 'Fixture', thinkingStudio.modelFor('interview'), new AbortController().signal, 'interview')) void _;
+  assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'MINIMAL' }, 'AI-Studio streaming carries the per-task thinking override');
+  await createProviders({ ...credentials, GEMINI_BACKEND: 'ai-studio' }).gemini('Fixture', 'Fixture', true, 'gemini-3.8-flash', 'interview');
+  assert.deepEqual(calls.at(-1).body.generation_config, { thinking_level: 'low' }, 'The default-model thinking level reaches the interactions body too');
+  await createProviders({ ...credentials, GEMINI_BACKEND: 'ai-studio' }).gemini('Fixture', 'Fixture', true, 'gemini-test-other', 'interview');
+  assert.equal(calls.at(-1).body.generation_config, undefined, 'Non-default models keep sending no unconfigured thinking level');
+
+  const thinkingVertex = createProviders({ ...credentials, GEMINI_BACKEND: 'vertex', GEMINI_INTERVIEW_THINKING: 'minimal', GEMINI_INTERVIEW_MODEL: 'gemini-test-interview' });
+  await thinkingVertex.gemini('Fixture', 'Fixture', true, thinkingVertex.modelFor('interview'), 'interview');
+  assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'MINIMAL' }, 'Vertex whole-result carries the thinking override even with a model override set');
+  for await (const _ of thinkingVertex.interviewStream('Fixture', 'Fixture', thinkingVertex.modelFor('interview'), new AbortController().signal, 'interview')) void _;
+  assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'MINIMAL' }, 'Vertex streaming carries the thinking override even with a model override set');
+
+  const beforeInvalidThinking = calls.length;
+  await assert.rejects(createProviders({ ...credentials, GEMINI_BACKEND: 'vertex', GEMINI_INTERVIEW_THINKING: 'nonsense' }).gemini('Fixture', 'Fixture', true, 'gemini-3.8-flash', 'interview'), error => error instanceof ServiceError && error.status === 503, 'Invalid thinking levels fail loudly');
+  assert.equal(calls.length, beforeInvalidThinking, 'A rejected thinking setting must fail before sending a request');
 
   const beforeMissingKey = calls.length;
   await assert.rejects(createProviders({ GEMINI_BACKEND: 'vertex', GOOGLE_CLOUD_PROJECT: 'routing-fixture', GEMINI_API_KEY: 'mock-studio' }).gemini('Fixture', 'Fixture'), ServiceError);

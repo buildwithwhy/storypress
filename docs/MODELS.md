@@ -18,6 +18,20 @@ Per-task routing is available, but **no task default has changed**. Resolution i
 
 Set `GEMINI_BACKEND=vertex` for the Google Cloud billing route. AI Studio is a separate supported text backend with separate billing; Google Cloud welcome credits do not cover its Developer API. Keys belong only in server environment settings. The frontend never selects arbitrary models.
 
+### Thinking level
+
+Each task also accepts an optional thinking-level setting, resolved independently of the model choice and applied to every request shape that can carry it (Vertex whole-result and streaming, AI-Studio streaming, and AI-Studio interactions). Values are case-insensitive `minimal`, `low`, `medium`, or `high`; an invalid value fails the request before it is sent:
+
+| Task | Optional server environment setting | Default |
+| --- | --- | --- |
+| Interview | `GEMINI_INTERVIEW_THINKING` | `LOW` |
+| Newspaper writing | `GEMINI_WRITING_THINKING` | `LOW` |
+| Photo interpretation | `GEMINI_PHOTO_THINKING` | `LOW` |
+| Recorded-answer transcription | `GEMINI_TRANSCRIPTION_THINKING` | `LOW` |
+| Research planning and source editing | `GEMINI_RESEARCH_THINKING` | `LOW` |
+
+Without a task setting, the default model (`gemini-3.8-flash` or via `GEMINI_MODEL`) sends `thinkingLevel LOW` — today's effective Vertex behavior, now carried by the AI-Studio interactions body too — while a model override sends no thinking config. An explicit setting survives model overrides.
+
 ## Language routing
 
 Story text follows the narrator's **story language** — the required, user-chosen language on every story. Text providers are constructed per request from the environment:
