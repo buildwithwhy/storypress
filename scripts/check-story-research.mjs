@@ -28,7 +28,7 @@ let queue = [];
 globalThis.fetch = async (url, init) => {
   const next = queue.shift();
   assert.ok(next, 'Unexpected external request');
-  next.check?.(String(url), JSON.parse(init.body));
+  next.check?.(String(url), JSON.parse(init.body), init);
   return Response.json(next.body);
 };
 const model = (task, output, check) => ({
@@ -78,7 +78,7 @@ try {
 
   const source = { id: 'fixture', title: 'Public restaurant history', url: 'https://example.org/restaurant-history', publisher: 'Public archive', date: '', description: 'A public history.', connection: 'This may relate to the place you mentioned.', question: 'Does this look like the restaurant you remember?', selected: false };
   queue = [
-    { check: (url, body) => { assert.ok(url.includes('nimbleway.com')); assert.equal(body.query, suggestion.query); assert.ok(!JSON.stringify(body).includes('PRIVATE_')); assert.ok(!JSON.stringify(body).includes('base64')); }, body: { results: [{ title: source.title, url: source.url, content: 'A public restaurant history.' }] } },
+    { check: (url, body, init) => { assert.ok(url.includes('nimbleway.com')); assert.equal(body.query, suggestion.query); assert.ok(body.query.length <= 260, 'Nimble query must be capped at the provider seam'); assert.equal(body.max_results, 6); assert.equal(body.full_content, true); assert.ok(init.signal instanceof AbortSignal, 'Nimble request must carry a timeout signal'); assert.ok(!JSON.stringify(body).includes('PRIVATE_')); assert.ok(!JSON.stringify(body).includes('base64')); }, body: { results: [{ title: source.title, url: source.url, content: 'A public restaurant history.' }] } },
     model('research', { sources: [source, { ...source, url: 'https://invented.example/archive' }] }, body => {
       const context = JSON.parse(body.contents[0].parts[0].text);
       assert.equal(context.reviewedResearchSearch, suggestion.query);
@@ -96,6 +96,18 @@ try {
 
   queue = [model('research', { query: 'Islington public history' }), { body: { results: [] } }];
   assert.equal((await handleApi(request('discover'), env)).status, 200, 'General discovery still uses the research model');
+  // A timed-out Nimble request (signal fires, fetch rejects with TimeoutError)
+  // must surface the friendly error instead of hanging or crashing.
+  let searchFetch;
+  try {
+    searchFetch = globalThis.fetch;
+    globalThis.fetch = (url, init) => init.signal.aborted ? Promise.reject(init.signal.reason) : Promise.reject(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    const timedOut = await handleApi(request('discover', { researchSearch: { query: suggestion.query, approved: true } }), env);
+    assert.equal(timedOut.status, 500, 'A timed-out search must fail gracefully with the friendly error');
+    assert.ok((await timedOut.json()).error.includes('did not finish'));
+  } finally {
+    globalThis.fetch = searchFetch;
+  }
   queue = [model('photo', { visibleDetails: [], possibleContext: [], question: 'What do you remember?', searchQueries: [] })];
   assert.equal((await handleApi(request('photo', { photoConsent: true }), env)).status, 200);
   queue = [model('transcribe', 'A fictional recording.')];
@@ -106,4 +118,4 @@ try {
 } finally {
   globalThis.fetch = originalFetch;
 }
-console.log('Passed: API model dispatch, remembered research suggestions, explicit query approval, exact Nimble query, no automatic search, narrator-only context, and source URL filtering.');
+console.log('Passed: API model dispatch, remembered research suggestions, explicit query approval, exact Nimble query, Nimble timeout signal and query cap, no automatic search, narrator-only context, and source URL filtering.');

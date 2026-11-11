@@ -362,11 +362,19 @@ async function* interviewStream(system:string,input:string,model:string,signal:A
  },tokensFromGenerateContent);
 }
 function parseJson<T>(text: string, schema: z.ZodType<T>): T { const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""); try { return schema.parse(JSON.parse(cleaned)); } catch { throw new ServiceError("The editor’s response could not be read. Please try again; your words have been kept."); } }
+// Interim guard: a hung Nimble call must not dominate a discover action
+// (production baseline ~19s total, nimble span ~11.5s). 15s bounds the full
+// action well under ~25s worst case while staying above the healthy baseline.
+const NIMBLE_TIMEOUT_MS = 15000;
+// Mirrors the plan schema's max(260) so the provider seam stays safe even if a
+// caller bypasses the schema.
+const NIMBLE_MAX_QUERY_CHARS = 260;
 async function nimble(query: string, locale: string): Promise<ResearchResult[]> {
   const key = setting("NIMBLE_API_KEY");
   if (!key) throw new ServiceError("Historical search is not connected yet. You can continue with your own memories.", 503);
+  const boundedQuery = query.slice(0, NIMBLE_MAX_QUERY_CHARS);
   return timedAiCall(aiMeta("nimble", "web-search", "nimble", null, null), async timer => {
-    const res = await fetch("https://sdk.nimbleway.com/v2/search", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ query, locale, max_results: 6, search_depth: "standard", full_content: true, output_format: "plain_text" }), signal: AbortSignal.timeout(45000) });
+    const res = await fetch("https://sdk.nimbleway.com/v2/search", { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: boundedQuery, locale, max_results: 6, search_depth: "standard", full_content: true, output_format: "plain_text" }), signal: AbortSignal.timeout(NIMBLE_TIMEOUT_MS) });
     timer.firstByte();
     if (!res.ok) throw new ServiceError("Historical search could not finish. Please try again, or continue with your own memories.");
     const parsed = z.object({ results: z.array(z.object({ title: z.string(), url: z.string().url(), content: z.string().nullish(), description: z.string().nullish() })) }).safeParse(await res.json());
