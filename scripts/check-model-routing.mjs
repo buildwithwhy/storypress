@@ -120,6 +120,25 @@ try {
   for await (const _ of thinkingVertex.interviewStream('Fixture', 'Fixture', thinkingVertex.modelFor('interview'), new AbortController().signal, 'interview')) void _;
   assert.deepEqual(calls.at(-1).body.generationConfig.thinkingConfig, { thinkingLevel: 'MINIMAL' }, 'Vertex streaming carries the thinking override even with a model override set');
 
+  // Regression: Google's May 2026 Interactions revision replaced the
+  // whole-result output_text/outputs[] fields with steps[], where only
+  // model_output steps carry narration text. The helper must read both
+  // shapes and never leak thought steps into story text. Mocked; no paid API.
+  const textFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).includes('/v1beta/interactions')) return Response.json({
+      id: 'int_fixture',
+      steps: [
+        { type: 'thought', content: [{ type: 'text', text: 'internal scratch that must not leak' }] },
+        { type: 'model_output', content: [{ type: 'text', text: 'steps shape output' }] },
+      ],
+    });
+    return textFetch(url, init);
+  };
+  const stepsProvider = createProviders({ ...credentials, GEMINI_BACKEND: 'ai-studio' });
+  assert.equal(await stepsProvider.gemini('Fixture instructions', 'Fixture input', true), 'steps shape output', 'Whole-result interactions read the steps[] response shape');
+  globalThis.fetch = textFetch;
+
   const beforeInvalidThinking = calls.length;
   await assert.rejects(createProviders({ ...credentials, GEMINI_BACKEND: 'vertex', GEMINI_INTERVIEW_THINKING: 'nonsense' }).gemini('Fixture', 'Fixture', true, 'gemini-3.8-flash', 'interview'), error => error instanceof ServiceError && error.status === 503, 'Invalid thinking levels fail loudly');
   assert.equal(calls.length, beforeInvalidThinking, 'A rejected thinking setting must fail before sending a request');

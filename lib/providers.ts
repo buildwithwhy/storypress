@@ -256,11 +256,18 @@ function modelConfigured(): boolean {
   return backend() === "ai-studio" && !!setting("GEMINI_API_KEY");
 }
 
-// The AI-Studio /interactions whole-result shape: either a flat output_text
-// or per-output text parts. Shared by the non-streaming call and the
-// streaming fallback below.
-function interactionText(data: { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[] }): string | undefined {
-  return data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+// The AI-Studio /interactions whole-result shape: either a flat output_text,
+// per-output text parts (legacy), or the May 2026 steps[] revision where only
+// model_output steps carry narration text. All three still reach this helper,
+// so it reads any of them; thought steps must never leak into story text.
+function interactionText(data: {
+  output_text?: string;
+  outputs?: { text?: string; content?: { text?: string }[] }[];
+  steps?: { type?: string; text?: string; content?: { text?: string }[] }[];
+}): string | undefined {
+  const fromOutputs = data.output_text || data.outputs?.map(o => o.text || o.content?.map(p => p.text || "").join("") || "").join("");
+  const fromSteps = data.steps?.map(s => s.type === "thought" ? "" : s.text || s.content?.map(p => p.text || "").join("") || "").join("");
+  return fromOutputs || fromSteps || undefined;
 }
 async function gemini(system: string, input: ModelInput, json = true, model?: string, task?: string): Promise<string> {
   const selectedModel = validateModel(model ?? (setting("GEMINI_MODEL") || DEFAULT_MODEL));
@@ -276,7 +283,7 @@ async function gemini(system: string, input: ModelInput, json = true, model?: st
     const res = await fetch("https://generativelanguage.googleapis.com/v1beta/interactions", { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body: JSON.stringify({ model: selectedModel, system_instruction: system + (json ? " Output valid JSON without markdown fences." : ""), input, store: false, ...(thinking ? { generation_config: { thinking_level: thinking.toLowerCase() } } : {}) }), signal: AbortSignal.timeout(55000) });
     timer.firstByte();
     if (!res.ok) throw providerError(res.status);
-    const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[]; usage?: unknown };
+    const data = await res.json() as { output_text?: string; outputs?: { text?: string; content?: { text?: string }[] }[]; steps?: { type?: string; text?: string; content?: { text?: string }[] }[]; usage?: unknown };
     // Usage field names on this body are unverified; logged raw, never guessed.
     timer.setTokens(rawTokens(data.usage));
     const output = interactionText(data);
