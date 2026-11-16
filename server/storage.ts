@@ -195,8 +195,8 @@ export async function reserveStory(userId:string,env:Bindings){
 // PostgREST aggregate syntax (count(*), sum(column)) appears here: this
 // project's PostgREST rejects those select shapes outright, so raw rows are
 // summed and counted in JS. The read order below is fixed (entitlements,
-// counts, month draws, pack grants, pack draws) — the check suites' fetch
-// mocks queue responses in exactly that order.
+// counts, today's AI usage, month draws, pack grants, pack draws) — the
+// check suites' fetch mocks queue responses in exactly that order.
 export async function billingStatus(env:Bindings,userId:string|null):Promise<BillingStatus>{
  // Env-tuned sizes ride the payload so the UI interpolates them; the dormant
  // mirror in server/vercel.mjs hand-copies this shape — keep the two in sync.
@@ -213,6 +213,15 @@ export async function billingStatus(env:Bindings,userId:string|null):Promise<Bil
  const entitlement=Array.isArray(entitlementRows)?entitlementRows[0] as {plan?:string;addons?:string}|undefined:undefined;
  const countRows=await read(`storypress_story_counts?owner_id=eq.${userId}&select=stories_created`);
  const count=Array.isArray(countRows)?countRows[0] as {stories_created?:number}|undefined:undefined;
+ // Background discovery §5: today's user-scope AI usage — the same
+ // storypress_ai_usage row the reserve RPC increments (scope
+ // `user:<id>:<day>`, UTC day per the RPC). A missing row is honest zero
+ // usage; a failed read omits the field so the client's auto-discovery guard
+ // fails closed instead of firing blind.
+ const usageDay=new Date().toISOString().slice(0,10);
+ const usageRows=await read(`storypress_ai_usage?scope=eq.${encodeURIComponent(`user:${userId}:${usageDay}`)}&select=units`);
+ const usedRow=Array.isArray(usageRows)?usageRows[0] as {units?:unknown}|undefined:undefined;
+ const dailyAiUnitsUsed=usageRows===null?undefined:usedRow?.units===undefined?0:Number(usedRow.units)||0;
  // The window row matches the RPC's UTC calendar month; the pack balance is
  // granted credits minus drawn rows (draws never exceed grants under the
  // reserve lock; the clamp keeps a transient skew from displaying negative).
@@ -232,7 +241,7 @@ export async function billingStatus(env:Bindings,userId:string|null):Promise<Bil
  // 'lifetime') reads as the free tier, so no account payload can ever emit
  // a retired plan and a stray legacy row renders fail-safe rather than
  // crashing the panel. The reserve RPC still meters the DB row itself.
- const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:packBalance});
+ const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:packBalance,...(dailyAiUnitsUsed===undefined?{}:{dailyAiUnitsUsed})});
  return parsed.success?parsed.data:fallback();
 }
 

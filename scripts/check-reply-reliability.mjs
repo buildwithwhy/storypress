@@ -113,8 +113,10 @@ assert.ok(/if\(preemption\.releaseLatch\)submitting\.current=false;/.test(tsx),
 // The failed reply renders inline beside the failed turn — after the
 // "Thinking…" indicator (or the make progress panel that replaces it during a
 // make), before the transcript — with a Retry button, and the off-screen
-// top-banner retry button is gone.
-assert.ok(/mode === "type" && \(busy \|\| researching\) && \(makePhase \|\| researching \? <MakeProgress[^]*reply-error/.test(tsx),
+// top-banner retry button is gone. Background discovery (spec art_GaoPsELF)
+// keyed the indicator off the busy lock only: an in-flight background discover
+// no longer renders waited progress.
+assert.ok(/mode === "type" && busy && \(makePhase \? <MakeProgress[^]*reply-error/.test(tsx),
   'the inline reply error renders after the working indicator, beside the failed turn');
 const inlineBlock=tsx.match(/reply-error[^<]*<[^>]*>[\s\S]{0,400}?retryInterview/);
 assert.ok(inlineBlock,'the inline reply error carries the Retry button (re-asks the question)');
