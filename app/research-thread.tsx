@@ -8,6 +8,7 @@ const copy={
   privacy:'Only this wording goes to web search. Leave out private names and addresses.',
   unavailable:'Search is unavailable right now. You can keep telling your story.',searching:'Looking for a useful connection…',
   discoveries:'Discoveries from your story',background:'Choose what connects with your memory. Included sources appear as separate background in your newspaper.',
+  lastQuery:'Last search wording:',
   read:'Read source',talk:'Talk about this',include:'Include as background in my newspaper',
   empty:'No useful connection this time. You can change the wording or carry on with your story.'
  },
@@ -16,6 +17,7 @@ const copy={
   privacy:'只有这段文字会用于网络搜索。请不要填写私人姓名或地址。',
   unavailable:'搜索暂时无法使用，你可以继续讲述故事。',searching:'正在寻找相关资料……',
   discoveries:'从你的故事中发现的线索',background:'哪些资料与你的回忆有关，由你判断。选中的资料会作为独立的背景内容放进报纸。',
+  lastQuery:'最近一次搜索用语：',
   read:'阅读来源',talk:'聊聊这个',include:'作为背景资料放进我的报纸',
   empty:'这次没有找到有用的资料。你可以修改搜索用语，或继续讲述故事。'
  },
@@ -24,6 +26,7 @@ const copy={
   privacy:'Solo este texto se enviará a la búsqueda web. Evita nombres privados y direcciones.',
   unavailable:'La búsqueda no está disponible ahora. Puedes seguir contando tu historia.',searching:'Buscando una conexión útil…',
   discoveries:'Descubrimientos de tu historia',background:'Elige qué se relaciona con tu recuerdo. Las fuentes que incluyas aparecerán como contexto en una sección aparte.',
+  lastQuery:'Texto de la última búsqueda:',
   read:'Leer la fuente',talk:'Hablar de esto',include:'Incluir como contexto en mi periódico',
   empty:'Esta vez no encontramos una conexión útil. Puedes cambiar el texto de búsqueda o seguir con tu historia.'
  }
@@ -69,6 +72,7 @@ export function ResearchThread({story,disabled,canSearch,searching,searched,onSe
   {story.sources.length>0&&<details className="research-thread-discoveries" open={searched}>
    <summary>{c.discoveries} <span>({story.sources.length})</span></summary>
    <p className="research-thread-note">{c.background}</p>
+   {story.researchQueries?.length?<p className="research-thread-note research-thread-last-query">{c.lastQuery} {story.researchQueries[story.researchQueries.length-1]}</p>:null}
    <div className="research-thread-sources">{story.sources.map(source=>{
     const url=safeSourceUrl(source.url);
     return <article className="research-thread-source" key={source.id}>
