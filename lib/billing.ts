@@ -20,11 +20,24 @@ export const billingStatusSchema=z.object({
  pack30Credits:z.number().int().min(1),
  pack100Credits:z.number().int().min(1),
  subscriptionStoriesThisMonth:z.number().int().min(0),
- packCreditsRemaining:z.number().int().min(0)
+ packCreditsRemaining:z.number().int().min(0),
+ // Background discovery §5: today's user-scope AI usage against
+ // DAILY_AI_UNIT_CAP, read from the same storypress_ai_usage row the reserve
+ // RPC increments. Optional: absent when Supabase is unset or the read
+ // degraded — the client then fails closed on auto-fire, never on manual use.
+ dailyAiUnitsUsed:z.number().int().min(0).optional()
 });
 export type BillingStatus=z.infer<typeof billingStatusSchema>;
 export const billingFlagSchema=z.object({configured:z.boolean()});
 export type BillingFlag=z.infer<typeof billingFlagSchema>;
+
+// Daily AI capacity (background discovery spec §5): the reserve RPC caps
+// every authenticated account at 40 units/day (migration 202610110001 —
+// discover costs 3, interview/transcribe/write 1). The server reports today's
+// usage beside this cap; the client's auto-discovery guard subtracts. The
+// field is absent while Supabase is unset (the owner-private pilot has no
+// quota) — unknown capacity never auto-fires, manual research is unaffected.
+export const DAILY_AI_UNIT_CAP=40;
 
 // Wave 8 §3: the price payload the server vouches for — four Stripe price
 // objects (minor units + currency, exactly what the price rows carry) fetched
