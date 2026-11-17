@@ -191,7 +191,10 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const v = interviewCopy[story.language];
  const d = presentation[story.language];
  const g = shareGroupsCopy[story.language];
- const cc = confirmCopy[story.language];
+ // The consent offer speaks the offered draft's language: it appears only in
+ // an empty account, where the app story is still the default language.
+ const ccLanguage=draftOffer?.snapshot.story.language??story.language;
+ const cc = confirmCopy[ccLanguage];
  const p = photoCopy[story.language];
  const f = flowCopy[story.language];
  const sc=saveCopy[story.language];
@@ -714,7 +717,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&cloudStatus==='error'&&<div className="message error no-print" role="alert">{sc.error}<span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></div>}
   {resumedDraft&&<div className="message no-print" role="status">{sharingCopy[story.language].resumed}<button onClick={()=>setResumedDraft(false)} aria-label={sharingCopy[story.language].close}><X size={18}/></button></div>}
-  {draftOffer&&<ConfirmDialog title={cc.consentTitle} body={cc.consentBody} detail={draftPreviewLabel(story.language,draftOffer.snapshot)} confirmLabel={cc.accept} cancelLabel={cc.decline} onConfirm={acceptDraftOffer} onCancel={declineDraftOffer}/>}
+  {draftOffer&&<ConfirmDialog title={cc.consentTitle} body={cc.consentBody} detail={draftPreviewLabel(ccLanguage,draftOffer.snapshot)} confirmLabel={cc.accept} cancelLabel={cc.decline} onConfirm={acceptDraftOffer} onCancel={declineDraftOffer}/>}
   {checkoutNotice&&<div className="message no-print" role="status">{checkoutNotice==='confirmed'?paywallCopy[story.language].checkoutConfirmed:paywallCopy[story.language].checkoutPending}<button onClick={()=>setCheckoutNotice('')} aria-label="Dismiss message"><X size={18}/></button></div>}
   {stage === "home" && <main className="home">
    <section className="intro"><p className="eyebrow"><span/> {d.eyebrow}</p><h1>{story.language === "zh" ? <>每个人生，<br/>都值得<span>上头版。</span></> : story.language === "es" ? <>Toda vida merece<br/><span>su portada.</span></> : <>Every life has<br/>a <span>front page.</span></>}</h1><p className="intro-text">{story.language === "zh" ? "聊聊你的回忆，找回那个世界。我们一起把它变成一份值得珍藏、分享的作品。" : story.language === "es" ? "Cuenta un recuerdo. Redescubre su mundo. Juntos crearemos un recuerdo para conservar y compartir." : "Tell a memory. Rediscover its world. Together, we’ll turn it into a keepsake worth sharing."}</p>
