@@ -105,7 +105,11 @@ async function applyPackGrantForSession(env:Bindings,ownerId:string,sessionId:st
  }
  // A sibling event's grant (or a redelivery) conflicts on checkout_session_id
  // and reads back empty — the no-op is the exactly-once guarantee at work.
- await db(env,'storypress_pack_grants?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,credits},{prefer:'return=representation, resolution=ignore-conflicts'});
+ // PostgREST only honors resolution=ignore-duplicates here: it silently drops
+ // unrecognized resolution values (lenient Prefer handling), which turned a
+ // conflicted grant into a plain insert and a unique violation — the Nov 17
+ // duplicate-replay 503. With the valid value a full conflict reads back [].
+ await db(env,'storypress_pack_grants?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,credits},{prefer:'return=representation, resolution=ignore-duplicates'});
 }
 
 export async function billingApi(request:Request,env:Bindings){
@@ -270,8 +274,22 @@ export async function stripeWebhook(request:Request,env:Bindings){
   if(!effect)return json({received:true,ignored:event.type});
   // Idempotency claim: the insert conflicts on event_id for redeliveries, so
   // a replay consumes nothing and writes nothing (§ acceptance: single
-  // entitlement write per event).
-  const claimed=await db(env,'storypress_billing_events?on_conflict=event_id','POST',{event_id:event.id},{prefer:'return=representation, resolution=ignore-conflicts'}) as unknown[]|null;
+  // entitlement write per event). resolution=ignore-duplicates is the one
+  // value PostgREST honors for DO NOTHING; a fully conflicted insert reads
+  // back as an empty array.
+  let claimed:unknown[]|null;
+  try{
+   claimed=await db(env,'storypress_billing_events?on_conflict=event_id','POST',{event_id:event.id},{prefer:'return=representation, resolution=ignore-duplicates'}) as unknown[]|null;
+  }catch(error){
+   // A non-OK insert is not proof the event is unprocessed: the claim row may
+   // already exist. A SELECT decides — a present row is a redelivery (ack, no
+   // effects); an absent row means storage genuinely failed and the error must
+   // still 5xx so Stripe retries a truly-unprocessed event.
+   if(!(error instanceof ServiceError))throw error;
+   const rows=await db(env,`storypress_billing_events?event_id=eq.${encodeURIComponent(event.id)}&select=event_id`) as unknown[]|null;
+   if(Array.isArray(rows)&&rows.length)return json({received:true,duplicate:true});
+   throw error;
+  }
   if(!Array.isArray(claimed)||!claimed.length)return json({received:true,duplicate:true});
   try{
    const owner=await resolveEventOwner(env,event.data.object);
