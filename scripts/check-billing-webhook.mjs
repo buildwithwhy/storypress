@@ -39,7 +39,7 @@ const auth=()=>({data:{id:user,email:'fictional@example.invalid'},check:url=>{as
 const sign=(raw,t=Math.floor(Date.now()/1000))=>`t=${t},v1=${createHmac('sha256',stripeEnv.STRIPE_WEBHOOK_SECRET).update(`${t}.${raw}`).digest('hex')}`;
 const webhookRequest=(raw,sig)=>new Request(`${base}/api/stripe-webhook`,{method:'POST',headers:{'Content-Type':'application/json',...(sig===undefined?{}:{'stripe-signature':sig})},body:raw});
 const billingRequest=(body,headers={})=>new Request(`${base}/api/billing`,{method:'POST',headers:{'Content-Type':'application/json',Origin:base,...headers},body:JSON.stringify(body)});
-const claimInsert={data:[{event_id:'claimed'}],check:(url,init)=>{assert.ok(url.includes('storypress_billing_events?on_conflict=event_id'),`Claim insert expected, got ${url}`);assert.match(String(init.headers.Prefer),/ignore-conflicts/);}};
+const claimInsert={data:[{event_id:'claimed'}],check:(url,init)=>{assert.ok(url.includes('storypress_billing_events?on_conflict=event_id'),`Claim insert expected, got ${url}`);assert.match(String(init.headers.Prefer),/ignore-duplicates/,'resolution=ignore-duplicates is the only DO NOTHING value PostgREST honors');}};
 const entitlementUpsert=expected=>({data:[{owner_id:expected.owner_id}],check:(url,init)=>{
  assert.ok(url.includes('storypress_entitlements?on_conflict=owner_id'),`Entitlement upsert expected, got ${url}`);
  assert.match(String(init.headers.Prefer),/merge-duplicates/);
@@ -59,17 +59,18 @@ const lineItemsFor=(sessionId,price)=>({data:{object:'list',data:[{price:{id:pri
 // constraint conflict a sibling event (or redelivery) hits — the no-op.
 const grantInsert=(sessionId,credits,rows=[{checkout_session_id:sessionId}])=>({data:rows,check:(url,init)=>{
  assert.ok(url.includes('storypress_pack_grants?on_conflict=checkout_session_id'),`Pack grant insert expected, got ${url}`);
- assert.match(String(init.headers.Prefer),/ignore-conflicts/);
+ assert.match(String(init.headers.Prefer),/ignore-duplicates/,'resolution=ignore-duplicates is the only DO NOTHING value PostgREST honors');
  assert.deepEqual(JSON.parse(init.body),{owner_id:user,checkout_session_id:sessionId,credits});
  assert.ok(!url.includes('storypress_entitlements'),`A pack grant must never write the plan (got ${url})`);
  assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
 }});
-// The five billing reads billingStatus performs for a signed-in owner, in its
-// fixed order: entitlements, story counts, this month's draws, pack grants
-// sum, pack draws count.
+// The six billing reads billingStatus performs for a signed-in owner, in its
+// fixed order: entitlements, story counts, today's AI usage, this month's
+// draws, pack grants sum, pack draws count.
 const ownerState=(state={})=>[
  {data:state.entitlements??[]},
  {data:state.counts??[]},
+ {data:state.usage??[]},
  {data:state.draws??[]},
  {data:state.grants??[]},
  {data:state.packDraws??[]}];
@@ -202,6 +203,32 @@ try{
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{received:true,duplicate:true});
   assert.equal(queue.length,0,'a replayed pack event must not grant again');
+ }
+ {
+  // Regression (the Nov 17 redelivery 503): the claim insert can fail with a
+  // non-OK response even though the claim row already exists — the code used
+  // to send resolution=ignore-conflicts, a value PostgREST silently ignores,
+  // so a conflict ran as a plain insert and returned the live project's
+  // unique-violation shape instead of []. The webhook must fall back to a
+  // SELECT and acknowledge an existing claim row without granting.
+  const uniqueViolation={status:409,data:{code:'23505',message:'duplicate key value violates unique constraint "storypress_billing_events_event_id_key"',hint:null,details:null}};
+  const packBody=subscriptionEvent('evt_dup_claim_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  queue=[{...claimInsert,data:null,status:uniqueViolation.status},
+   {data:[{event_id:'evt_dup_claim_1'}],check:url=>{assert.ok(url.includes('storypress_billing_events?event_id=eq.'),`claim lookup expected, got ${url}`);}}];
+  const response=await worker.fetch(webhookRequest(packBody,sign(packBody)),stripeEnv);
+  assert.equal(response.status,200,'a claimed event must be acknowledged even when the insert errors');
+  assert.deepEqual(await response.json(),{received:true,duplicate:true});
+  assert.equal(queue.length,0,'no line-items lookup or grant may follow a duplicate claim');
+ }
+ {
+  // The other side of the fallback: the insert fails AND no claim row exists —
+  // a genuine storage failure must still 5xx so Stripe keeps retrying.
+  const body=subscriptionEvent('evt_outage_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:user}});
+  queue=[{...claimInsert,data:null,status:503},
+   {data:[],check:url=>{assert.ok(url.includes('storypress_billing_events?event_id=eq.'),`claim lookup expected, got ${url}`);}}];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,503,'an unclaimed event behind a failed insert must keep failing');
+  assert.equal(queue.length,0,'nothing may be granted behind a failed claim');
  }
  {
   // A price that maps to no pack — the retired lifetime price lands here —
@@ -345,7 +372,7 @@ try{
    ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{credits:30}],packDraws:[{id:'draw_1'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29});
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29,dailyAiUnitsUsed:0});
   assert.equal(queue.length,0);
  }
  {
@@ -361,13 +388,14 @@ try{
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    {data:[{plan:'subscription',addons:'[]'}]},
    {data:[{stories_created:54}]},
+   {data:[]},
    {data:[{stories_created:12}]},
    pgrstError('PGRST200','Could not find a relationship between \'storypress_pack_grants\' and \'sum\' in the schema cache'),
    pgrstError('PGRST100','failed to parse select parameter (* is not valid inside select)')];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:54,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:12,packCreditsRemaining:0},'two failed pack reads must degrade only the pack balance, never zero the whole billing block');
-  assert.equal(queue.length,0,'all five billing reads were attempted despite two failing');
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:54,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:12,packCreditsRemaining:0,dailyAiUnitsUsed:0},'two failed pack reads must degrade only the pack balance, never zero the whole billing block');
+  assert.equal(queue.length,0,'all six billing reads were attempted despite two failing');
  }
  {
   // Positive: raw rows present on both pack tables — grants sum their credits
@@ -380,7 +408,7 @@ try{
    ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:7}],draws:[{stories_created:5}],grants:[{credits:30},{credits:100}],packDraws:[{id:'d1'},{id:'d2'},{id:'d3'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:5,packCreditsRemaining:127},'grant and draw rows aggregate in JS to the real balances');
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:5,packCreditsRemaining:127,dailyAiUnitsUsed:0},'grant and draw rows aggregate in JS to the real balances');
   assert.equal(queue.length,0);
  }
  {
@@ -393,12 +421,13 @@ try{
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    {status:401,data:{code:'42501',message:'permission denied for table storypress_entitlements'}},
    {data:[{stories_created:9}]},
+   {data:[]},
    {data:[{stories_created:4}]},
    {data:[{credits:30}]},
    {data:[{id:'d1'}]}];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:4,packCreditsRemaining:29},'one failed billing table must cost only its own field');
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:4,packCreditsRemaining:29,dailyAiUnitsUsed:0},'one failed billing table must cost only its own field');
   assert.equal(queue.length,0);
  }
  {
@@ -451,7 +480,7 @@ try{
   queue=[auth(),...ownerState()];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),{...stripeEnv,STRIPE_SECRET_KEY:undefined});
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0});
+  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0,dailyAiUnitsUsed:0});
   assert.equal(queue.length,0);
  }
  {
