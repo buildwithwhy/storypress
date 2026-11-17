@@ -44,7 +44,9 @@ import {photoCopy} from '../lib/photo-copy';
 import {flowCopy} from '../lib/flow-copy';
 import {interviewFetchSignal,replyProblemText,photoArrivalDuringReply} from '../lib/reply-recovery';
 import {artworkPath,artworkCopy,chosenArtwork,artworkCaption,artworkAlt,artHeadroom,ART_HEADROOM_MIN,shouldAutoIllustrate} from '../lib/artwork';
-import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,writeChangedDraft,prepareGuestHandoff,prepareGoogleHandoff,resumeGuestHandoff,restoreAccountDraft,type DraftSnapshot} from '../lib/draft-handoff';
+import {DRAFT_PREFIX,GUEST_DRAFT_KEY,accountDraftKey,readDraft,readOwnerlessDraft,writeChangedDraft,prepareGuestHandoff,prepareGoogleHandoff,resumeGuestHandoff,acceptGuestHandoff,restoreAccountDraft,type DraftSnapshot,type DraftLoad,type DraftOffer} from '../lib/draft-handoff';
+import {ConfirmDialog} from './confirm-dialog';
+import {confirmCopy,draftPreviewLabel} from '../lib/confirm-copy';
 import {tellStageActions,mobileActionCopy} from '../lib/mobile-actions';
 import {MobileActionBar} from './mobile-action-bar';
 import {MakeProgress} from './make-progress';
@@ -74,6 +76,9 @@ function StoryApp() {
 function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flushDraft:MutableRefObject<()=>void>;patchBilling:(billing:BillingStatus)=>void}) {
  const [storageKey,setStorageKey]=useState(account.user?accountDraftKey(account.user.id):GUEST_DRAFT_KEY);
  const [resumedDraft,setResumedDraft]=useState(false);
+ // A pending consent offer for an ownerless guest draft (device-draft
+ // privacy): only an explicit accept moves the draft into the account.
+ const [draftOffer,setDraftOffer]=useState<DraftOffer|null>(null);
  const [earlierDraft,setEarlierDraft]=useState(false);
  const [saved,setSaved]=useState<SavedStory|null>(null);
  const [cloudStatus,setCloudStatus]=useState<SaveStatus>('idle');
@@ -186,6 +191,10 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const v = interviewCopy[story.language];
  const d = presentation[story.language];
  const g = shareGroupsCopy[story.language];
+ // The consent offer speaks the offered draft's language: it appears only in
+ // an empty account, where the app story is still the default language.
+ const ccLanguage=draftOffer?.snapshot.story.language??story.language;
+ const cc = confirmCopy[ccLanguage];
  const p = photoCopy[story.language];
  const f = flowCopy[story.language];
  const sc=saveCopy[story.language];
@@ -221,15 +230,24 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  async function flushThenNavigate(next:Stage){try{if(account.user)await saveCurrent();navigate(next);}catch(problem){setError((problem as Error).message);}}
  function persistDraft(){if(!draftState.current.ready)return;try{lastWrittenDraft.current=writeChangedDraft(localStorage,draftState.current.storageKey,currentDraft(),lastWrittenDraft.current,account.user?.id);setSaveError(false);}catch{setSaveError(true);}}
  useEffect(()=>{const flush=()=>persistDraft();flushDraft.current=flush;window.addEventListener('pagehide',flush);return()=>{window.removeEventListener('pagehide',flush);if(flushDraft.current===flush)flushDraft.current=()=>{};};},[flushDraft]);
+ // One application path for a loaded draft — boot resume and a consented
+ // import land in exactly the same state, so an accepted offer behaves like
+ // the owner's own return.
+ function applyLoadedDraft(loaded:DraftLoad,signedIn:boolean){
+  setStorageKey(loaded.key);setSaveError(loaded.failed);
+  if(signedIn)saver.current?.replace(loaded.snapshot?.story||initialStory,loaded.snapshot?.saved||null);
+  if(loaded.snapshot){setStory(loaded.snapshot.story);setInput(loaded.snapshot.story.draft||'');setSaved(loaded.snapshot.saved);}
+  if(loaded.resumed&&loaded.snapshot){const resumeStage=loaded.snapshot.stage||'tell';setStage(resumeStage==='paper'&&!loaded.snapshot.story.paper?'tell':resumeStage==='home'?'tell':resumeStage);restoredMode.current=loaded.snapshot.mode||'type';setMode(loaded.snapshot.mode||'type');setVoicePaused(true);setResumedDraft(true);}
+  if(!loaded.failed){const snapshot=loaded.snapshot;const resumeStage=snapshot?.stage||'tell';lastWrittenDraft.current=JSON.stringify({story:{...(snapshot?.story||initialStory),draft:snapshot?.story.draft||''},saved:snapshot?.saved||null,stage:loaded.resumed?(resumeStage==='paper'&&!snapshot?.story.paper?'tell':resumeStage==='home'?'tell':resumeStage):'home',mode:loaded.resumed?snapshot?.mode||'type':'type'});}
+  if(signedIn&&account.user)setEarlierDraft(loaded.key!==accountDraftKey(account.user.id)&&!!readDraft(localStorage,accountDraftKey(account.user.id)));
+ }
  useEffect(() => {
   try{
-   const loaded=account.user?resumeGuestHandoff(localStorage,account.user,Date.now(),sessionStorage):{key:GUEST_DRAFT_KEY,snapshot:readDraft(localStorage,GUEST_DRAFT_KEY)||(!account.supabase?readDraft(localStorage,STORAGE):null),resumed:false,failed:false};
-   setStorageKey(loaded.key);setSaveError(loaded.failed);
-   if(account.user)saver.current?.replace(loaded.snapshot?.story||initialStory,loaded.snapshot?.saved||null);
-   if(loaded.snapshot){setStory(loaded.snapshot.story);setInput(loaded.snapshot.story.draft||'');setSaved(loaded.snapshot.saved);}
-   if(loaded.resumed&&loaded.snapshot){const resumeStage=loaded.snapshot.stage||'tell';setStage(resumeStage==='paper'&&!loaded.snapshot.story.paper?'tell':resumeStage==='home'?'tell':resumeStage);restoredMode.current=loaded.snapshot.mode||'type';setMode(loaded.snapshot.mode||'type');setVoicePaused(true);setResumedDraft(true);}
-   if(!loaded.failed){const snapshot=loaded.snapshot;const resumeStage=snapshot?.stage||'tell';lastWrittenDraft.current=JSON.stringify({story:{...(snapshot?.story||initialStory),draft:snapshot?.story.draft||''},saved:snapshot?.saved||null,stage:loaded.resumed?(resumeStage==='paper'&&!snapshot?.story.paper?'tell':resumeStage==='home'?'tell':resumeStage):'home',mode:loaded.resumed?snapshot?.mode||'type':'type'});}
-   if(account.user)setEarlierDraft(loaded.key!==accountDraftKey(account.user.id)&&!!readDraft(localStorage,accountDraftKey(account.user.id)));
+   // Signed out, the landing reads only ownerless drafts: a draft another
+   // account owns is invisible here, never merely un-imported.
+   const loaded=account.user?resumeGuestHandoff(localStorage,account.user,Date.now(),sessionStorage):{key:GUEST_DRAFT_KEY,snapshot:readOwnerlessDraft(localStorage,GUEST_DRAFT_KEY)||(!account.supabase?readOwnerlessDraft(localStorage,STORAGE):null),resumed:false,failed:false};
+   setDraftOffer(loaded.offer??null);
+   applyLoadedDraft(loaded,!!account.user);
   }catch{setSaveError(true);}
   setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);setMode(bootInputMode(restoredMode.current,data.liveVoice));}).catch(()=>{});
  }, []);
@@ -278,6 +296,15 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  useEffect(()=>{if(!ready||!saver.current)return;saver.current.update({...story,draft:input});const timer=setTimeout(()=>{void saver.current?.flush().catch(()=>{});},700);return()=>clearTimeout(timer);},[story,input,ready]);
  useEffect(()=>()=>saver.current?.dispose(),[]);
  function prepareSignIn(email?:string){try{return email===undefined?prepareGoogleHandoff(localStorage,sessionStorage,currentDraft()):prepareGuestHandoff(localStorage,email,currentDraft());}catch{setSaveError(true);throw new Error(sharingCopy[story.language].handoffFailure);}}
+ // Consent-gated import (device-draft privacy): accepting applies the same
+ // resume path as the owner's own return; declining closes the offer and
+ // leaves every storage byte untouched.
+ function acceptDraftOffer(){
+  const offer=draftOffer;if(!offer||!account.user)return;
+  setDraftOffer(null);
+  try{const loaded=acceptGuestHandoff(localStorage,account.user,offer.intentId,Date.now(),sessionStorage);if(loaded.resumed)applyLoadedDraft(loaded,true);}catch{setSaveError(true);}
+ }
+ function declineDraftOffer(){setDraftOffer(null);}
  async function restoreEarlierDraft(){if(!account.user)return;cancelResearch();requestId.current++;autoArtTried.current=false;setSwitching(true);try{await saveCurrent();const previous=restoreAccountDraft(localStorage,account.user.id);if(!previous)return;saver.current?.replace(previous.story,previous.saved);setStorageKey(accountDraftKey(account.user.id));setStory(previous.story);setInput(previous.story.draft||'');setSaved(previous.saved);setStage(previous.story.paper?'paper':'tell');setEarlierDraft(false);setResumedDraft(false);setShowAccount(false);}catch(problem){setError((problem as Error).message);}finally{setSwitching(false);}}
  useEffect(()=>{setSetupName(story.name);setSetupOccasion(story.occasion);setSetupIntention(story.intention);setSetupPresentation(story.presentation);},[story.name,story.occasion,story.intention,story.presentation]);
  useEffect(()=>{if(ready&&stage!=='home'&&!story.recordingCollectionId)patch({recordingCollectionId:crypto.randomUUID()});},[ready,stage,story.recordingCollectionId]);
@@ -690,6 +717,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&cloudStatus==='error'&&<div className="message error no-print" role="alert">{sc.error}<span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></div>}
   {resumedDraft&&<div className="message no-print" role="status">{sharingCopy[story.language].resumed}<button onClick={()=>setResumedDraft(false)} aria-label={sharingCopy[story.language].close}><X size={18}/></button></div>}
+  {draftOffer&&<ConfirmDialog title={cc.consentTitle} body={cc.consentBody} detail={draftPreviewLabel(ccLanguage,draftOffer.snapshot)} confirmLabel={cc.accept} cancelLabel={cc.decline} onConfirm={acceptDraftOffer} onCancel={declineDraftOffer}/>}
   {checkoutNotice&&<div className="message no-print" role="status">{checkoutNotice==='confirmed'?paywallCopy[story.language].checkoutConfirmed:paywallCopy[story.language].checkoutPending}<button onClick={()=>setCheckoutNotice('')} aria-label="Dismiss message"><X size={18}/></button></div>}
   {stage === "home" && <main className="home">
    <section className="intro"><p className="eyebrow"><span/> {d.eyebrow}</p><h1>{story.language === "zh" ? <>每个人生，<br/>都值得<span>上头版。</span></> : story.language === "es" ? <>Toda vida merece<br/><span>su portada.</span></> : <>Every life has<br/>a <span>front page.</span></>}</h1><p className="intro-text">{story.language === "zh" ? "聊聊你的回忆，找回那个世界。我们一起把它变成一份值得珍藏、分享的作品。" : story.language === "es" ? "Cuenta un recuerdo. Redescubre su mundo. Juntos crearemos un recuerdo para conservar y compartir." : "Tell a memory. Rediscover its world. Together, we’ll turn it into a keepsake worth sharing."}</p>

@@ -5,6 +5,8 @@ import {type SavedStory} from '../lib/story-saver';
 import {accountRequest} from '../lib/account-client';
 import {inviteApi} from '../lib/invite-client';
 import {inviteCopy,suggestedQuestion,formatEndDate} from '../lib/invite-copy';
+import {ConfirmDialog} from './confirm-dialog';
+import {confirmCopy} from '../lib/confirm-copy';
 import {storageErrorText} from '../lib/storage-copy';
 
 type InviteRow={id:string;question:string;status:'open'|'expired'|'revoked';expiresAt:string;createdAt:string};
@@ -17,7 +19,11 @@ type ContributionRow={id:string;inviteId:string|null;authorLabel:string;contribu
 // local save cannot clobber the guest's words.
 export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{language:Story['language'];occasion:Story['occasion'];storyName?:string;saved:SavedStory;onSave:()=>Promise<SavedStory|null>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;}){
  const c=inviteCopy[language];
+ const cc=confirmCopy[language];
  const [invites,setInvites]=useState<InviteRow[]>([]);
+ // Invite revoke asks through the in-app dialog (device-draft privacy,
+ // founder item 5) instead of native confirm().
+ const [revokeRow,setRevokeRow]=useState<InviteRow|null>(null);
  const [contributions,setContributions]=useState<ContributionRow[]>([]);
  const seed=suggestedQuestion(language,occasion,storyName);
  const [question,setQuestion]=useState(seed);
@@ -63,7 +69,7 @@ export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{langu
   <details className="invite-open-list" open>
    <summary className="text-button">{c.openTitle}</summary>
    {invites.length?<div className="invite-list">{invites.map(row=><div className="invite-row" key={row.id}><strong>{row.question}</strong><span className={'invite-status'+(row.status==='open'?'':' closed')}>{statusLabel(row.status)}</span><small>{c.ends} {formatEndDate(language,row.expiresAt)}</small>
-    <button className="text-button" disabled={pending||row.status!=='open'} onClick={()=>void run(async()=>{if(!confirm(c.revokeConfirm))return;await inviteApi({action:'revoke',inviteId:row.id});setNotice(c.revoked);await refresh();})}>{c.revoke}</button></div>)}</div>:<p className="quiet left">{c.none}</p>}
+    <button className="text-button" disabled={pending||row.status!=='open'} onClick={()=>setRevokeRow(row)}>{c.revoke}</button></div>)}</div>:<p className="quiet left">{c.none}</p>}
   </details>
   <details className="invite-review-list" open>
    <summary className="text-button">{c.reviewTitle}{waiting.length?` · ${waiting.length}`:''}</summary>
@@ -77,6 +83,7 @@ export function Invites({language,occasion,storyName,saved,onSave,onLoad}:{langu
     </div>
    </div>):<p className="quiet left">{c.reviewEmpty}</p>}
   </details>
+  {revokeRow&&<ConfirmDialog title={c.revokeConfirm} confirmLabel={c.revoke} cancelLabel={cc.cancel} onConfirm={()=>{const row=revokeRow;setRevokeRow(null);void run(async()=>{await inviteApi({action:'revoke',inviteId:row.id});setNotice(c.revoked);await refresh();});}} onCancel={()=>setRevokeRow(null)}/>}
   {notice&&<p role="status" className="sharing-notice"><Check size={16}/>{notice}</p>}{error&&<p role="alert" className="error">{error}</p>}
  </section>;
 }
