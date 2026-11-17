@@ -5,7 +5,9 @@ import {downloadableEdition} from '../lib/edition-download';
 import {accountRequest,signInWithGoogle,signOut,type AccountConfig} from '../lib/account-client';
 import {sharingCopy} from '../lib/sharing-copy';
 import {shareFlowCopy} from '../lib/share-flow-copy';
-import {clearAccountDraft} from '../lib/draft-handoff';
+import {GUEST_DRAFT_KEY,DRAFT_PREFIX,readDraft,type DraftSnapshot} from '../lib/draft-handoff';
+import {ConfirmDialog} from './confirm-dialog';
+import {confirmCopy,draftPreviewLabel} from '../lib/confirm-copy';
 import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {editionRowNote,parseStoryRows,type StoryListRow} from '../lib/editions';
@@ -15,9 +17,13 @@ import {paywallCopy} from '../lib/paywall-copy';
 import {EmailSignIn} from './email-sign-in';
 import {readerCopy} from '../lib/reader';
 import {artifactSharePayload,shareSheetAvailable} from '../lib/share-payload';
-export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,storageKey,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose,onViewPlans,cardsTrigger}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void;onViewPlans?:()=>void;cardsTrigger?:ReactNode}){
+export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose,onViewPlans,cardsTrigger}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void;onViewPlans?:()=>void;cardsTrigger?:ReactNode}){
  const c={...sharingCopy[story.language],...shareFlowCopy[story.language]},sc=saveCopy[story.language];const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[emailPending,setEmailPending]=useState(false),[rows,setRows]=useState<StoryListRow[]>([]);
  const user=config.supabase?config.user:null,linkField=useRef<HTMLInputElement>(null);
+ const cc=confirmCopy[story.language];
+ // The in-app confirm surface (device-draft privacy): draft import and
+ // sign-out each ask through ConfirmDialog instead of native confirm().
+ const [dialog,setDialog]=useState<null|{kind:'import';draft:DraftSnapshot}|{kind:'logout'}>(null);
  const url=saved?.share_token?`${location.origin}/s/${saved.share_token}`:'';
  async function run(fn:()=>Promise<void>){setPending(true);setNotice('');setError('');try{await fn();}catch(e){if((e as Error).name!=='AbortError')setError((e as Error).message);}finally{setPending(false);}}
  async function refresh(){if(user){const data=await accountRequest();setRows(parseStoryRows(data.stories));}}
@@ -52,9 +58,16 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
  {accountOnly&&<p className="account-email"><Lock size={15}/>{user.email}</p>}
  {!accountOnly&&url&&<div className="share-link"><label className="sr-only" htmlFor="published-story-link">{readerCopy[story.language].link}</label><input id="published-story-link" ref={linkField} type="url" value={url} readOnly spellCheck={false} dir="ltr" onFocus={e=>e.currentTarget.select()}/><div className="sharing-actions"><a className="secondary" href={url} target="_blank" rel="noreferrer">{c.openReader}</a></div><button className="text-button" disabled={pending} onClick={()=>void run(async()=>{await onChangeSharing('private');})}>{c.off}</button></div>}
  {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><UpgradePanel billing={config.billing} language={story.language} ownerTree onViewPlans={onViewPlans}/><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}{editionRowNote(row,rows,story.language)&&<span className="saved-story-edition">{editionRowNote(row,rows,story.language)}</span>}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
- <div className="sharing-actions">{onRestoreEarlier&&<button className="text-button" disabled={pending} onClick={onRestoreEarlier}>{c.earlierDraft}</button>}<button className="text-button" disabled={pending} onClick={()=>void run(async()=>{if(!confirm(c.importConfirm))return;const raw=localStorage.getItem('storypress-draft-v1:guest')||localStorage.getItem('storypress-draft-v1');if(!raw)return;const parsed=JSON.parse(raw);await onLoad(storySchema.parse(parsed.story||parsed),null);onClose?.();})}>{c.import}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmLogout))return;void run(async()=>{await onSave();await signOut();clearAccountDraft(localStorage,storageKey,user.id);});}}>{c.logout}</button></div></>}
+ <div className="sharing-actions">{onRestoreEarlier&&<button className="text-button" disabled={pending} onClick={onRestoreEarlier}>{c.earlierDraft}</button>}<button className="text-button" disabled={pending} onClick={()=>{
+ let device:DraftSnapshot|null=readDraft(localStorage,GUEST_DRAFT_KEY);
+ if(!device){const raw=localStorage.getItem(DRAFT_PREFIX);if(raw){try{const parsed=JSON.parse(raw) as DraftSnapshot|{story:unknown};device={story:storySchema.parse('story' in parsed?parsed.story:parsed),saved:null};}catch{return;}}}
+ // A draft owned by another account is invisible here — the button offers
+ // nothing rather than importing a stranger's words (device-draft privacy).
+ if(!device||(device.owner&&device.owner.userId!==user?.id))return;
+ setDialog({kind:'import',draft:device});}}>{c.import}</button><button className="text-button" disabled={pending} onClick={()=>setDialog({kind:'logout'})}>{c.logout}</button></div></>}
  </>}
  {accountError&&<div><p role="alert" className="error">{sc.error} {accountError}</p>{user&&<><p>{sc.separateHelp}</p><button className="secondary" disabled={pending} onClick={()=>void run(async()=>{await onSaveSeparate();await refresh();setNotice(c.saved);})}>{sc.saveSeparate}</button></>}</div>}
+ {dialog&&<ConfirmDialog title={dialog.kind==='import'?c.importConfirm:c.confirmLogout} body={dialog.kind==='import'?cc.consentBody:undefined} detail={dialog.kind==='import'?draftPreviewLabel(story.language,dialog.draft):undefined} confirmLabel={dialog.kind==='import'?cc.accept:c.logout} cancelLabel={cc.cancel} onConfirm={()=>{const current=dialog;setDialog(null);if(current.kind==='import')void run(async()=>{await onLoad(storySchema.parse(current.draft.story),null);onClose?.();});else void run(async()=>{await onSave();await signOut();});}} onCancel={()=>setDialog(null)}/>}
  {notice&&<p role="status" className="sharing-notice"><Check size={16}/>{notice}</p>}{error&&<p role="alert" className="error">{error}</p>}
  </section>;
 }

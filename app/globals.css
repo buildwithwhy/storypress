@@ -115,6 +115,8 @@
 .edition-switcher button[aria-pressed="true"]{border-color:var(--green);background:#e9eedf;color:var(--green);font-weight:600}
 /* My stories provenance note under a translated copy's title. */
 .saved-story-edition{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:2px}
+.confirm-modal h2{font-size:30px;margin:10px 0 6px}.confirm-modal p{line-height:1.65}.confirm-detail{font-size:13px;color:#5a6557;background:#fffdf6;border:1px solid #d8dccd;border-radius:8px;padding:12px 14px;margin:6px 0 4px;overflow-wrap:anywhere}
+
 
 /* Interview action width contract (spec art_z9pItTE1 item 5): the tell-stage
    action rows — question view (send + skip) and ready view (create + keep
