@@ -32,6 +32,9 @@ export function shouldAutoIllustrate(story:Story,context:AutoArtContext):boolean
  return context.eligible&&artHeadroom(story)>=ART_HEADROOM_MIN;
 }
 export function artworkPath(story:Story){return chosenArtwork(story)==='generated'?story.generatedArt?.data:undefined;}
+// The sample's illustration is a curated bundled static asset (illustrated-sample
+// spec), served from public/artwork — never generated, never an AI unit.
+export const sampleArtworkPath='/artwork/sample-moon-night.webp';
 // Client-side storage headroom for adding generated artwork: the guard the
 // manual buttons and the default-illustration auto-run share. The image
 // schema caps a single illustration at 300,000 chars; the device draft

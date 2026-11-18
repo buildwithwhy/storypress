@@ -1,5 +1,6 @@
 import { initialStory, sampleMemory, samplePaper, sampleSource, type Paper, type Source, type Story } from "./story";
 import { openingQuestion } from './story-modes';
+import { startCopy } from './start-copy';
 
 type SampleEdition = { name: string; memory: string; followup: string; paper: Paper; source: Source };
 export const sampleEditions: Record<Story["language"], SampleEdition> = {
@@ -35,26 +36,38 @@ export function createSampleStory(language: Story["language"]): Story {
   return { ...initialStory, language, name: sample.name, sample: true, turns: [{ role: "assistant", text: openingQuestion({language,occasion:'life'}) }, { role: "user", text: sample.memory }, { role: "assistant", text: sample.followup }] };
 }
 
+// The picker's language switch: a sample rebuilds wholesale — its curated
+// editions ship complete, so every turn, source and paper follows the picker
+// and no half-translated sample can exist. A real story keeps its words:
+// only the language moves, plus an untouched opening question re-asked in
+// the new language (a single, never-answered assistant turn).
+export function storyForLanguage(story: Story, language: Story["language"]): Story {
+  if (story.sample) return createSampleStory(language);
+  const starterIndex = startCopy[story.language].prompts.findIndex(p => p.question === story.turns[0]?.text);
+  const untouchedOpening = story.turns.length === 1 && story.turns[0].role === 'assistant' && (starterIndex >= 0 || story.turns[0].text === openingQuestion(story) || story.turns[0].text === openingQuestion({ language: story.language, occasion: 'life' }));
+  return { ...story, language, ...(untouchedOpening ? { turns: [{ role: 'assistant', text: starterIndex >= 0 ? startCopy[language].prompts[starterIndex].question : openingQuestion({ language, occasion: story.occasion }) }] } : {}) };
+}
+
 export const presentation = {
   en: {
     eyebrow: "ONCE UPON OUR TIME", previewLabel: "YOUR ORDINARY, EXTRAORDINARY LIFE", previewAria: "Example personal newspaper", stickerTop: "Made of", stickerBottom: "your memories.", caption: "A fictional story. A real piece of history.",
     steps: [{ title: "A little conversation", description: "One thoughtful question at a time." }, { title: "A spark of recognition", description: "Discover the world around your memory." }, { title: "Something to keep", description: "Your words, beautifully brought together." }],
     footer: "Made with your memories. Kept in your voice.", sampleBanner: "Fictional sample story · curated historical source · no live search", tryOwn: "Try your own", replaceSample: "Replace this draft with the fictional sample? Download your original words first if you want to keep them.",
-    masthead: "Once & Ours", topline: "THE STORIES THAT MAKE US", edition: "PERSONAL EDITION · NO. 01", unnamed: "A life, in your own words", sample: "FICTIONAL SAMPLE", reviewed: "REVIEWED BY THE STORYTELLER", draft: "DRAFT · FOR YOUR REVIEW", kickers: { life: "FROM THE FAMILY ARCHIVE", wedding: "A LOVE STORY", graduation: "THE NEXT CHAPTER" }, illustration: "THE NIGHT WE LOOKED UP", decoration: "Decorative illustration", photo: "Photograph supplied by the storyteller", kept: "A little piece of a life.", colophon: "YOUR WORDS. YOUR WORLD.", madeWith: "Made with Once & Ours",
+    masthead: "Once & Ours", topline: "THE STORIES THAT MAKE US", edition: "PERSONAL EDITION · NO. 01", unnamed: "A life, in your own words", sample: "FICTIONAL SAMPLE", reviewed: "REVIEWED BY THE STORYTELLER", draft: "DRAFT · FOR YOUR REVIEW", kickers: { life: "FROM THE FAMILY ARCHIVE", wedding: "A LOVE STORY", graduation: "THE NEXT CHAPTER" }, illustration: "THE NIGHT WE LOOKED UP", decoration: "Decorative illustration", photo: "Photograph supplied by the storyteller", kept: "A little piece of a life.", colophon: "YOUR WORDS. YOUR WORLD.", madeWith: "Made with Once & Ours", sampleArtAlt: "A 1969 living room at night, a family crowded around the television to watch the Moon landing while Grandma brings sandwiches and the real moon glows through the window.",
     paperEyebrow: "SOMETHING TO KEEP", paperTitle: "Your story, in print.", paperIntro: "Read it slowly. Make it yours. Keep the details that matter.", headline: "Headline", introduction: "Introduction", paragraphs: "Your story (a blank line starts a new paragraph)", quote: "Pull quote (use your own exact words)", compare: "Compare with my original words", downloadWords: "Download original words", downloadStory: "Download full story", original: "Your original words", asTold: "AS YOU TOLD IT", makeProgress: { title: "Making your newspaper", drafting: "Writing your words into the paper", layingOut: "Laying out your front page" },
   },
   zh: {
     eyebrow: "从前，有我们的故事。", previewLabel: "平凡的日子，不平凡的人生", previewAria: "个人故事报纸示例", stickerTop: "这里珍藏着", stickerBottom: "你的回忆。", caption: "一个虚构的故事，一段真实的历史。",
     steps: [{ title: "从聊聊天开始", description: "一次一个问题，慢慢找回细节。" }, { title: "唤起一点熟悉的感觉", description: "重访记忆里的那个世界。" }, { title: "留下一份珍藏", description: "把你的话，编成属于你的故事。" }],
     footer: "珍藏你的回忆，保留你的声音。", sampleBanner: "虚构故事示例 · 精选历史资料 · 未进行实时搜索", tryOwn: "讲讲你自己的故事", replaceSample: "要用虚构示例替换当前草稿吗？如果想保留草稿，请先下载你的原话。",
-    masthead: "人生故事报", topline: "故事里，有我们的人生", edition: "个人珍藏版 · 第01期", unnamed: "用自己的话，讲自己的人生", sample: "虚构故事示例", reviewed: "讲述者已确认", draft: "草稿 · 请你审阅", kickers: { life: "来自家庭记忆", wedding: "我们的爱情故事", graduation: "人生的新篇章" }, illustration: "那一夜，我们一起仰望", decoration: "装饰插画", photo: "讲述者提供的照片", kept: "人生的一小段，值得珍藏。", colophon: "你的话语，你的世界。", madeWith: "由 Once & Ours 制作",
+    masthead: "人生故事报", topline: "故事里，有我们的人生", edition: "个人珍藏版 · 第01期", unnamed: "用自己的话，讲自己的人生", sample: "虚构故事示例", reviewed: "讲述者已确认", draft: "草稿 · 请你审阅", kickers: { life: "来自家庭记忆", wedding: "我们的爱情故事", graduation: "人生的新篇章" }, illustration: "那一夜，我们一起仰望", decoration: "装饰插画", photo: "讲述者提供的照片", kept: "人生的一小段，值得珍藏。", colophon: "你的话语，你的世界。", madeWith: "由 Once & Ours 制作", sampleArtAlt: "1969年的夜晚，一家人挤在客厅的电视机前观看登月直播，外婆端来点心，窗外一轮明月高悬。",
     paperEyebrow: "留下一份珍藏", paperTitle: "你的故事，跃然纸上。", paperIntro: "慢慢读，改成你喜欢的样子，留下那些重要的细节。", headline: "标题", introduction: "导语", paragraphs: "你的故事（空一行开始新段落）", quote: "精选原话（请保留你的原句）", compare: "对照我最初说的话", downloadWords: "下载我的原话", downloadStory: "下载完整故事", original: "你的原话", asTold: "正如你所讲述的", makeProgress: { title: "正在制作你的报纸", drafting: "把你的话写进报纸", layingOut: "排好你的头版" },
   },
   es: {
     eyebrow: "ÉRASE UNA VEZ, NUESTRA HISTORIA.", previewLabel: "TU VIDA COTIDIANA, EXTRAORDINARIA", previewAria: "Ejemplo de periódico personal", stickerTop: "Hecho de", stickerBottom: "tus recuerdos.", caption: "Una historia ficticia. Un pedacito de historia real.",
     steps: [{ title: "Una pequeña conversación", description: "Una pregunta a la vez, con calma." }, { title: "Algo que te resulta familiar", description: "Redescubre el mundo de tus recuerdos." }, { title: "Algo para conservar", description: "Tus palabras, reunidas con cariño." }],
     footer: "Hecho con tus recuerdos. Contado con tu voz.", sampleBanner: "Historia ficticia · fuente histórica seleccionada · sin búsqueda en directo", tryOwn: "Cuenta la tuya", replaceSample: "¿Sustituir este borrador por el ejemplo ficticio? Descarga primero tus palabras si quieres conservarlas.",
-    masthead: "Once & Ours", topline: "LAS HISTORIAS QUE NOS HACEN", edition: "EDICIÓN PERSONAL · N.º 01", unnamed: "Una vida, con tus palabras", sample: "EJEMPLO FICTICIO", reviewed: "REVISADO POR QUIEN LO CONTÓ", draft: "BORRADOR · PARA TU REVISIÓN", kickers: { life: "DEL ARCHIVO FAMILIAR", wedding: "UNA HISTORIA DE AMOR", graduation: "EL PRÓXIMO CAPÍTULO" }, illustration: "AQUELLA NOCHE MIRAMOS AL CIELO", decoration: "Ilustración decorativa", photo: "Fotografía de quien cuenta la historia", kept: "Un pedacito de una vida.", colophon: "TUS PALABRAS. TU MUNDO.", madeWith: "Hecho con Once & Ours",
+    masthead: "Once & Ours", topline: "LAS HISTORIAS QUE NOS HACEN", edition: "EDICIÓN PERSONAL · N.º 01", unnamed: "Una vida, con tus palabras", sample: "EJEMPLO FICTICIO", reviewed: "REVISADO POR QUIEN LO CONTÓ", draft: "BORRADOR · PARA TU REVISIÓN", kickers: { life: "DEL ARCHIVO FAMILIAR", wedding: "UNA HISTORIA DE AMOR", graduation: "EL PRÓXIMO CAPÍTULO" }, illustration: "AQUELLA NOCHE MIRAMOS AL CIELO", decoration: "Ilustración decorativa", photo: "Fotografía de quien cuenta la historia", kept: "Un pedacito de una vida.", colophon: "TUS PALABRAS. TU MUNDO.", madeWith: "Hecho con Once & Ours", sampleArtAlt: "Un salón de 1969 por la noche: una familia reunida ante el televisor para ver la llegada a la Luna, la abuela trayendo comida y la Luna brillando tras la ventana.",
     paperEyebrow: "ALGO PARA CONSERVAR", paperTitle: "Tu historia, en papel.", paperIntro: "Léela con calma. Hazla tuya. Conserva los detalles que importan.", headline: "Titular", introduction: "Introducción", paragraphs: "Tu historia (deja una línea en blanco entre párrafos)", quote: "Cita destacada (usa tus palabras exactas)", compare: "Comparar con mis palabras originales", downloadWords: "Descargar mis palabras", downloadStory: "Descargar la historia completa", original: "Tus palabras originales", asTold: "TAL COMO LO CONTASTE", makeProgress: { title: "Creando tu periódico", drafting: "Escribiendo tus palabras en el periódico", layingOut: "Preparando tu portada" },
   },
 };
