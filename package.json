@@ -9,7 +9,8 @@
     "start": "node scripts/dev-server.mjs",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
     "build:vercel": "node scripts/bundle.mjs --vercel",
-    "check:vercel": "node scripts/check-vercel.mjs"
+    "check:vercel": "node scripts/check-vercel.mjs",
+    "check:sample": "node scripts/check-sample.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.117.3",
