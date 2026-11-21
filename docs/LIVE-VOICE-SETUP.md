@@ -2,7 +2,7 @@
 
 ## Production access
 
-As of October 16, 2026, live voice is enabled on the main Vercel site for any signed-in Storypress account. Google sign-in and email sign-in use the same access check. The former `STORYPRESS_LIVE_TEST_EMAILS` setting is ignored; it is no longer an access restriction.
+As of October 16, 2026, live voice is enabled on the main Vercel site for any signed-in Once & Ours account. Google sign-in and email sign-in use the same access check. The former `STORYPRESS_LIVE_TEST_EMAILS` setting is ignored; it is no longer an access restriction.
 
 The owner completed a real microphone conversation on production. Playback continuity, buffering and cleanup were subsequently improved after reports of beeping and delay. Regression checks cover audio handling, but a further real multi-turn conversation is needed to assess those symptoms.
 
@@ -28,7 +28,7 @@ The live panel shows the remaining session time and a one-minute warning. Pausin
 
 ## Testing with another person
 
-1. Open https://storypress-app.vercel.app/ and choose English, 中文 or Español from the visible language buttons.
+1. Open https://ours.hopperlace.ai/ and choose English, 中文 or Español from the visible language buttons.
 2. Start a story and sign in. Talk live is the default conversation mode for signed-in users with live voice available.
 3. Intentionally start the call and allow the microphone. Give a longer answer, pause/resume, interrupt a reply, correct a fact and type during the same conversation.
 4. Finish and check the transcript and the keep/discard recording choice. Recordings are device-only in this build; download a backup before refreshing if wanted.

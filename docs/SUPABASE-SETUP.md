@@ -85,6 +85,7 @@ The sign-in panel offers **Continue with Google** in English, Chinese and Spanis
 
 1. In Google Cloud project `storyteller-511316`, configure Google Auth Platform branding and audience for Storypress, then create a **Web application** OAuth client. For public access, use an external audience in production; testing mode only permits listed test users.
 2. Add these authorized JavaScript origins:
+   - `https://ours.hopperlace.ai` (canonical production origin)
    - `https://storypress-app.vercel.app`
    - `https://storypress-memories.coppermango10.chatgpt.site`
 3. Add this authorized redirect URI: `https://ciciuohgtvsdkeakfiht.supabase.co/auth/v1/callback`.

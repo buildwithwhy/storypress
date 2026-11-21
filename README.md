@@ -1,10 +1,10 @@
-# Storypress
+# Once & Ours
 
 **Every life has a front page.**
 
-Storypress helps people turn their memories into illustrated personal newspapers worth keeping. Speak or type, answer a few thoughtful questions, and shape the result in your own words. No writing experience or technical confidence needed.
+Once & Ours helps people turn their memories into illustrated personal newspapers worth keeping. Speak or type, answer a few thoughtful questions, and shape the result in your own words. No writing experience or technical confidence needed.
 
-Built at the AI Engineer MLH hackathon, Storypress is designed with older storytellers, families, and multilingual households in mind.
+Built at the AI Engineer MLH hackathon, Once & Ours is designed with older storytellers, families, and multilingual households in mind.
 
 ## Start with your story
 
@@ -25,6 +25,6 @@ Each starting point guides the opening question and interview focus. The convers
 
 ## A work in progress
 
-Storypress is an early prototype in a private pilot. Public sign-up, books, and payments are not available yet. Approved editions can use revocable, unlisted links on deployments where sharing is enabled. Mobile voice support still needs testing across real devices.
+Once & Ours is an early prototype in a private pilot. Public sign-up, books, and payments are not available yet. Approved editions can use revocable, unlisted links on deployments where sharing is enabled. Mobile voice support still needs testing across real devices.
 
-For the people building Storypress: [development notes](docs/DEVELOPMENT.md).
+For the people building Once & Ours: [development notes](docs/DEVELOPMENT.md).
