@@ -17,7 +17,7 @@ import {StoryStart} from './app/story-start.tsx';
 import {UpgradePanel} from './app/sharing.tsx';
 import {PricingPanel} from './app/pricing.tsx';
 import {billingStatusSchema,freeStoryLimitReached} from './lib/billing.ts';
-import {checkoutReturnId,startCheckout,confirmCheckout} from './lib/billing-client.ts';
+import {checkoutReturnId,startCheckout,startBillingPortal,confirmCheckout} from './lib/billing-client.ts';
 import {paywallCopy} from './lib/paywall-copy.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(StoryStart,props));
 export const renderPanel=props=>renderToStaticMarkup(React.createElement(UpgradePanel,props));
@@ -27,7 +27,7 @@ export {billingStatusSchema,freeStoryLimitReached,checkoutReturnId,startCheckout
 // Resolve React from this repository while importing the generated check.
 import fs from 'node:fs/promises';
 const path=new URL('../work/paywall-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {render,renderPanel,renderPricing,billingStatusSchema,freeStoryLimitReached,checkoutReturnId,startCheckout,confirmCheckout,paywallCopy}=await import(path.href);
+const {render,renderPanel,renderPricing,billingStatusSchema,freeStoryLimitReached,checkoutReturnId,startCheckout,startBillingPortal,confirmCheckout,paywallCopy}=await import(path.href);
 
 const base={disabled:false,hasDraft:false,needsSignIn:false,fromShared:false,freeLimit:3,onUpgrade:()=>{},onStart:()=>{},onContinue:()=>{},children:null};
 
@@ -104,6 +104,18 @@ assert.ok(entitledPanel.includes('12 de 50 historias este mes'),'the monthly usa
 assert.ok(entitledPanel.includes('Quedan 27 créditos de paquete'),'remaining pack credits render');
 assert.ok(!entitledPanel.includes('Ir al pago')&&!entitledPanel.includes('Mensual'),'an entitled owner is not offered checkout again');
 
+// Manage billing (the Stripe customer portal entry): the entitled panel offers
+// it in every language; free, dormant, and guarded-off panels never do.
+const manageCopy={en:'Manage billing',zh:'管理订阅',es:'Gestionar facturación'};
+for(const language of ['en','zh','es']){
+ const panel=renderPanel({language,ownerTree:true,billing:{...entitled,plan:'subscription'}});
+ assert.ok(panel.includes(manageCopy[language]),`the entitled account panel offers billing management in ${language}`);
+ assert.ok(panel.includes('class="secondary manage-billing"'),`the manage-billing button uses the manage-billing variant in ${language}`);
+ assert.ok(!renderPanel({language,ownerTree:true,billing:freeUnder}).includes(manageCopy[language]),`a free owner is not offered billing management in ${language}`);
+ assert.ok(!renderPanel({language,ownerTree:true,billing:dormant}).includes(manageCopy[language]),`a dormant panel never shows a manage button that would only error in ${language}`);
+}
+assert.ok(!renderPanel({language:'en',ownerTree:false,billing:entitled}).includes(manageCopy.en),'outside the owner tree nothing renders at all');
+
 // A stray legacy plan value must fail safe: the read boundary maps anything
 // the DB CHECK still permits but the schema no longer carries back to the
 // free tier — the panel renders the free state it validates, never a crash.
@@ -166,6 +178,7 @@ globalThis.fetch=async(url,init)=>{
  assert.equal(url,'/api/billing','billing requests stay same-origin');
  return {ok:true,status:200,json:async()=>requestBody.action==='checkout'
   ?{url:'https://checkout.stripe.com/pay/mock'}
+  :requestBody.action==='portal'?{url:'https://billing.stripe.com/p/mock'}
   :{billing:{configured:true,plan:'subscription',addons:[],storiesCreated:4,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}}};
 };
 assert.equal(await startCheckout('annual'),'https://checkout.stripe.com/pay/mock');
@@ -178,7 +191,7 @@ assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the
 globalThis.fetch=originalFetch;
 
 // ---- paywall copy module: shape, placeholders, and language coverage ----
-const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','monthlyUsage','packCredits','entitledActive','monthly','annual','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending','pricingTitle','pricingIntro','viewPlans','freeName','freePrice','freeAllowance','subscriptionName','capAllowance','saveBadge','priceMonthly','priceAnnual','packTitle','packNote','packBuy','pricePack30','pricePack100','pricesUnavailable'].sort();
+const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','monthlyUsage','packCredits','entitledActive','monthly','annual','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending','pricingTitle','pricingIntro','viewPlans','freeName','freePrice','freeAllowance','subscriptionName','capAllowance','saveBadge','priceMonthly','priceAnnual','packTitle','packNote','packBuy','pricePack30','pricePack100','pricesUnavailable','manageBilling'].sort();
 for(const language of ['en','zh','es']){
  const copy=paywallCopy[language];
  assert.deepEqual(Object.keys(copy).sort(),expectedKeys,`${language} carries exactly the paywall copy keys`);

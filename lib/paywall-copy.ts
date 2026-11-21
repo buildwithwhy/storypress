@@ -63,6 +63,7 @@ export interface PaywallCopy{
  pricePack30:string; // dormant fallback copy
  pricePack100:string; // dormant fallback copy
  pricesUnavailable:string; // configured but the Stripe price payload is unavailable
+ manageBilling:string; // Stripe customer portal entry in the account panel (subscribers only)
 }
 export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
  en:{
@@ -97,7 +98,8 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   packBuy:'Buy the {size}-story pack',
   pricePack30:'$12',
   pricePack100:'$29',
-  pricesUnavailable:'Plan amounts are unavailable right now — please check back soon.'
+  pricesUnavailable:'Plan amounts are unavailable right now — please check back soon.',
+  manageBilling:'Manage billing'
  },
  zh:{
   limitTitle:'你已经用完 {limit} 个免费故事',
@@ -131,7 +133,8 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   packBuy:'购买 {size} 个故事包',
   pricePack30:'$12',
   pricePack100:'$29',
-  pricesUnavailable:'方案价格暂时无法显示，请稍后再来。'
+  pricesUnavailable:'方案价格暂时无法显示，请稍后再来。',
+  manageBilling:'管理订阅'
  },
  es:{
   limitTitle:'Has usado tus {limit} historias gratis',
@@ -165,6 +168,7 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   packBuy:'Compra el paquete de {size} historias',
   pricePack30:'$12',
   pricePack100:'$29',
-  pricesUnavailable:'Los precios no están disponibles en este momento; vuelve pronto.'
+  pricesUnavailable:'Los precios no están disponibles en este momento; vuelve pronto.',
+  manageBilling:'Gestionar facturación'
  }
 };

@@ -130,8 +130,30 @@ grant.
 4. Reveal the signing secret (`whsec_...`), set it as
    `STRIPE_WEBHOOK_SECRET`, and redeploy.
 
-There is no self-serve billing portal in v1: plan changes and cancellations
-happen through you, in the Stripe Dashboard.
+## Customer portal
+
+Subscribers manage their own billing through Stripe's customer portal: the
+account panel's **Manage billing** button posts to `/api/billing` with
+`{"action":"portal"}`, and the worker creates a portal session for the exact
+Stripe customer id the app's own checkout and webhook path wrote to the
+entitlement row (`POST /v1/billing_portal/sessions`, return URL derived from
+the request origin — no domain is configured anywhere in the repo). An owner
+with no Stripe customer id is refused cleanly; no portal session is created.
+
+1. In the Stripe Dashboard, open **Customer portal** (Settings → Billing →
+   Customer portal) and click **Activate** for the live mode configuration.
+2. Enable exactly these three features (leave everything else off):
+   - **Cancel subscription** — cancellations take effect **at period end**
+     (do not enable immediate cancellation; access should run to the paid end
+     of the period).
+   - **Update payment method** — card details the subscriber can change.
+   - **Invoice history** — the subscriber can read and download past invoices.
+3. No app configuration is needed: the portal configuration lives in Stripe,
+   and the session request carries only the customer id and return URL.
+
+The customer portal is configured per Stripe mode. If you test checkout in
+Preview (test mode), activate a test-mode portal configuration too — a live
+session request against a customer of the other mode fails.
 
 ## What stays free
 
