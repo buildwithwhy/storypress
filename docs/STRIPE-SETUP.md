@@ -1,6 +1,6 @@
 # Stripe billing setup
 
-Storypress ships as freemium: three self-started stories per account, then
+Once & Ours ships as freemium: three self-started stories per account, then
 either a capped subscription (monthly $9.99 or annual $59 — up to 50 new
 stories per calendar month) or a one-time story pack (30 credits for $12 or
 100 credits for $29, never expiring) — per the approved wave-8 pricing spec
@@ -34,9 +34,9 @@ without schema churn.
 The deployed checkout origin is an environment fact, derived from the
 incoming request at runtime — no domain is hardcoded in code. Point the
 webhook endpoint at whichever origin the deployment actually serves, and
-repoint it when that origin changes. (`storypress.buildwithwhy.com` is a
-planned name whose DNS is not configured; nothing in the app depends on
-it.)
+repoint it when that origin changes. (`https://ours.hopperlace.ai` is the
+canonical production origin; `storypress.buildwithwhy.com` 308-redirects
+to it, and `storypress-app.vercel.app` remains a valid deployment origin.)
 
 ## Products and prices
 
@@ -217,9 +217,23 @@ pack credits.
     and Español — the cap, out-of-credit and pack messages, upgrade panel
     and return banner are localized.
 
-When the test-mode round-trip is green, switch the live variables in
-Production (secret key, webhook secret, four price IDs) and repeat steps 2,
-5 and 8 on a real card before announcing the paywall.
+## Going live
+
+When the test-mode round-trip is green, switch Production to live mode — in
+order:
+
+1. Create the **live-mode** webhook endpoint in the Stripe Dashboard at
+   `https://ours.hopperlace.ai/api/stripe-webhook`, subscribed to exactly
+   the five events listed above (`checkout.session.completed`,
+   `checkout.session.async_payment_succeeded`,
+   `customer.subscription.updated`, `customer.subscription.deleted`,
+   `invoice.paid`), and copy its live `whsec_...` signing secret.
+2. Switch the Production environment variables to live mode — live
+   `STRIPE_SECRET_KEY` (`sk_live_...`), the live webhook secret, and the
+   four live price IDs — and redeploy.
+3. Repeat steps 2, 5 and 8 of the test-mode checklist on a real card
+   (subscription purchase, pack purchases, and cancellation) before
+   announcing the paywall.
 
 ## Future video add-on (hook, not v1)
 

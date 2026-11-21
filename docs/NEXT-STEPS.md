@@ -1,4 +1,4 @@
-# Connect and test Storypress
+# Connect and test Once & Ours
 
 Continue the project in this folder. Product context: a very simple interface for older and nontechnical people to tell stories in their language. Thoughtful interviewing prompts should help them recall specific scenes. Nimble optionally finds a relevant historical item that may unlock another memory. The result is an editable personal newspaper with testimony separate from sourced context. ValueCompass is out of scope for today.
 

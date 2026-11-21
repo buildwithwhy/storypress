@@ -1,4 +1,4 @@
-# Storypress interview evaluation
+# Once & Ours interview evaluation
 
 Decision, October 15: build and establish a Google baseline first. Interview quality is a first-class comparison, separate from voice pleasantness and final keepsake quality. No comparative provider trial has been run and no winner has been selected.
 
