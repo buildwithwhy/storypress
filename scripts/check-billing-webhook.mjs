@@ -340,6 +340,7 @@ try{
    assert.equal(form.get('client_reference_id'),user);
    assert.equal(form.get('success_url'),`${base}/?billing_checkout={CHECKOUT_SESSION_ID}`,'the success return must carry the session template so the client can run the status rescue');
    assert.equal(form.get('cancel_url'),`${base}/`);
+   assert.equal(form.get('allow_promotion_codes'),'true','Stripe-side promotion codes must be allowed at checkout');
   }}];
   const response=await worker.fetch(billingRequest({action:'checkout',mode,plan},authorized),stripeEnv);
   assert.equal(response.status,200,`checkout ${mode}/${plan}`);
