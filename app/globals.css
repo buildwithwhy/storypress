@@ -150,4 +150,25 @@
 @keyframes make-stage-pulse{50%{transform:scale(.55);opacity:.45}}
 .paper-page .make-progress{max-width:800px;margin:0 auto 18px}
 
+/* DRAFT legal pages (/terms /privacy /refunds) — founder review required.
+   One readable column in the pricing-page design language: serif headings,
+   a prominent draft banner up top, and founder-question callouts that refuse
+   to be skimmed over. */
+.legal-page{max-width:720px;margin:30px auto 60px;padding:0 20px}
+.legal-draft-banner{background:#eee4c9;border:1px solid #d9c48d;border-radius:8px;padding:13px 17px;font-size:12px;line-height:1.6;color:#796236;font-weight:550;margin-bottom:30px}
+.legal-page>h1{font-size:44px;margin:0 0 8px}
+.legal-updated{font-size:11px;color:#818977;margin-bottom:20px}
+.legal-intro{font-size:15px;line-height:1.75;color:#637267;margin-bottom:28px}
+.legal-section{margin-bottom:30px}
+.legal-section h2{font-size:24px;margin-bottom:11px}
+.legal-section p{font-size:14px;line-height:1.8;color:#4c5a50;margin-bottom:11px}
+.legal-question{background:#f2ede0;border-left:3px solid #bd8f36;border-radius:0 6px 6px 0;padding:11px 14px}
+.legal-question strong{color:#8a6a24;letter-spacing:.6px}
+.legal-related{border-top:1px solid var(--line);padding-top:18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.legal-related-label{font-size:10px;letter-spacing:1.7px;font-weight:650;color:#818977}
+.footer-legal{display:flex;gap:2px;flex-wrap:wrap}
+.footer-legal button{font-size:10px;padding:2px 4px;text-decoration:underline;text-underline-offset:2px}
+.footer-legal button:hover{color:#937022}
+@media(max-width:800px){.legal-page>h1{font-size:36px}.legal-section h2{font-size:21px}}
+
 
