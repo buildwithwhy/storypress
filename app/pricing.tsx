@@ -1,5 +1,6 @@
 import {useState} from 'react';
 import {paywallCopy} from '../lib/paywall-copy';
+import {legalCopy} from '../lib/legal-copy';
 import {startCheckout,type CheckoutPlan} from '../lib/billing-client';
 import {annualSavePercent,formatPrice,type BillingStatus,type Pricing} from '../lib/billing';
 import {type Story} from '../lib/story';
@@ -18,9 +19,17 @@ import {type Story} from '../lib/story';
 // there is no checkout mode or entitlement write for it.
 export function PricingPanel({billing,pricing,language}:{billing:BillingStatus;pricing:Pricing|null;language:Story['language']}){
  const c=paywallCopy[language];
+ const l=legalCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
+ // SUGGESTED CHANGE — DRAFT, founder review required: the immediate-start
+ // consent checkbox (Consumer Contracts Regulations 2013 pathway). Giving
+ // consent starts supply on payment and loses the 14-day cancellation right;
+ // declining keeps the right and starts supply only after it expires. A
+ // follow-up must pass this consent to Stripe's `consent_collection` (or the
+ // webhook equivalent) so the acknowledgement is recorded, not just ticked.
+ const [consented,setConsented]=useState(false);
  async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
  const dormant=!billing.configured;
  const free=billing.plan==='free';
@@ -43,26 +52,33 @@ export function PricingPanel({billing,pricing,language}:{billing:BillingStatus;p
    </ul>
   </section>
   {free?<>
+   {/* SUGGESTED CHANGE — DRAFT, founder review required: consent checkbox
+       gating every pay button until ticked. Renders only when payment is
+       actually available (canPay), so dormant/entitled views are untouched. */}
+   {canPay&&<label className="pricing-consent checkbox">
+    <input type="checkbox" checked={consented} onChange={e=>setConsented(e.target.checked)}/>
+    {l.checkoutConsentLabel}
+   </label>}
    <section className="pricing-card">
     <h3>{c.subscriptionName}</h3>
     <div className="upgrade-cadence pricing-cadence" role="group" aria-label={c.planHeading}>
-     <button className={cadence==='monthly'?'secondary selected':'secondary'} aria-pressed={cadence==='monthly'} disabled={busy} onClick={()=>setCadence('monthly')}><span>{c.monthly}</span>{monthlyAmount&&<span className="pricing-amount">{monthlyAmount}</span>}</button>
-     <button className={cadence==='annual'?'secondary selected':'secondary'} aria-pressed={cadence==='annual'} disabled={busy} onClick={()=>setCadence('annual')}><span>{c.annual}</span>{annualAmount&&<span className="pricing-amount">{annualAmount}</span>}{savePercent!=null&&<span className="pricing-badge">{c.saveBadge.replace('{percent}',String(savePercent))}</span>}</button>
+     <button className={cadence==='monthly'?'secondary selected':'secondary'} aria-pressed={cadence==='monthly'} disabled={busy||(canPay&&!consented)} onClick={()=>setCadence('monthly')}><span>{c.monthly}</span>{monthlyAmount&&<span className="pricing-amount">{monthlyAmount}</span>}</button>
+     <button className={cadence==='annual'?'secondary selected':'secondary'} aria-pressed={cadence==='annual'} disabled={busy||(canPay&&!consented)} onClick={()=>setCadence('annual')}><span>{c.annual}</span>{annualAmount&&<span className="pricing-amount">{annualAmount}</span>}{savePercent!=null&&<span className="pricing-badge">{c.saveBadge.replace('{percent}',String(savePercent))}</span>}</button>
     </div>
     <p className="pricing-note">{c.capAllowance.replace('{cap}',String(billing.subscriptionMonthlyCap))}</p>
-    {canPay&&<div className="pricing-pay"><button className="primary" disabled={busy} onClick={()=>void pay(cadence)}>{c.checkout}</button>{busy&&<p className="quiet left" role="status">{c.checkoutBusy}</p>}</div>}
+    {canPay&&<div className="pricing-pay"><button className="primary" disabled={busy||!consented} onClick={()=>void pay(cadence)}>{c.checkout}</button>{busy&&<p className="quiet left" role="status">{c.checkoutBusy}</p>}</div>}
    </section>
    <section className="pricing-card">
     <h3>{c.packTitle.replace('{size}',String(billing.pack30Credits))}</h3>
     {pack30Amount&&<p className="pricing-amount">{pack30Amount}</p>}
     <p className="pricing-note">{c.packNote}</p>
-    {canPay&&<button className="secondary" disabled={busy} onClick={()=>void pay('pack30')}>{c.packBuy.replace('{size}',String(billing.pack30Credits))}</button>}
+    {canPay&&<button className="secondary" disabled={busy||!consented} onClick={()=>void pay('pack30')}>{c.packBuy.replace('{size}',String(billing.pack30Credits))}</button>}
    </section>
    <section className="pricing-card">
     <h3>{c.packTitle.replace('{size}',String(billing.pack100Credits))}</h3>
     {pack100Amount&&<p className="pricing-amount">{pack100Amount}</p>}
     <p className="pricing-note">{c.packNote}</p>
-    {canPay&&<button className="secondary" disabled={busy} onClick={()=>void pay('pack100')}>{c.packBuy.replace('{size}',String(billing.pack100Credits))}</button>}
+    {canPay&&<button className="secondary" disabled={busy||!consented} onClick={()=>void pay('pack100')}>{c.packBuy.replace('{size}',String(billing.pack100Credits))}</button>}
    </section>
   </>:<p className="upgrade-plan" role="status">{c.entitledActive}</p>}
   {dormant&&<p className="quiet left">{c.dormant}</p>}
