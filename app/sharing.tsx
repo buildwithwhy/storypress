@@ -103,7 +103,7 @@ export function UpgradePanel({billing,language,ownerTree,planFirst=false,onViewP
  if(!ownerTree)return null;
  const free=billing.plan==='free';
  const planLine=free?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):c.entitledActive;
- async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
+ async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan,language));}catch(problem){setError((problem as Error).message);setBusy(false);}}
  async function manage(){setBusy(true);setError('');try{location.assign(await startBillingPortal());}catch(problem){setError((problem as Error).message);setBusy(false);}}
  return <div className="upgrade-panel">
   <h3 className="upgrade-heading" ref={headingRef} tabIndex={-1}>{c.planHeading}</h3>

@@ -29,8 +29,11 @@ export function checkoutReturnId(search:string):string|undefined{
 
 // Opens Stripe checkout and returns the session URL; the component navigates.
 // Dormant deployments refuse from the server (503) and the panel says so.
-export async function startCheckout(plan:CheckoutPlan):Promise<string>{
- return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan})).url;
+// The app language rides along so the server sets the hosted page's locale
+// and its ToS consent text in that language (consent_collection, founder
+// order Nov 22).
+export async function startCheckout(plan:CheckoutPlan,language:'en'|'zh'|'es'):Promise<string>{
+ return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan,language})).url;
 }
 
 // Opens the Stripe customer portal (cancel at period end, update card,

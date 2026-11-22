@@ -64,6 +64,15 @@ const grantInsert=(sessionId,credits,rows=[{checkout_session_id:sessionId}])=>({
  assert.ok(!url.includes('storypress_entitlements'),`A pack grant must never write the plan (got ${url})`);
  assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
 }});
+// A ToS agreement ledger insert (founder order Nov 22): one row per checkout
+// session on the pack-grant pattern, only the accepted state ever recorded.
+const tosAgreementInsert=(sessionId,rows=[{checkout_session_id:sessionId}])=>({data:rows,check:(url,init)=>{
+ assert.ok(url.includes('storypress_tos_agreements?on_conflict=checkout_session_id'),`ToS agreement insert expected, got ${url}`);
+ assert.match(String(init.headers.Prefer),/ignore-duplicates/,'resolution=ignore-duplicates is the only DO NOTHING value PostgREST honors');
+ assert.deepEqual(JSON.parse(init.body),{owner_id:user,checkout_session_id:sessionId,terms_of_service:'accepted'});
+ assert.ok(!url.includes('storypress_entitlements'),`A ToS record must never write the plan (got ${url})`);
+ assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
+}});
 // The six billing reads billingStatus performs for a signed-in owner, in its
 // fixed order: entitlements, story counts, today's AI usage, this month's
 // draws, pack grants sum, pack draws count.
@@ -78,7 +87,7 @@ const ownerState=(state={})=>[
 // selects before the fix (reproduced with an owner JWT, Nov 11) — the guard
 // per read must degrade the field, not zero the block.
 const pgrstError=(code,message)=>({status:400,data:{code,message,hint:null,details:null}});
-const checkoutEvent=(id,overrides={})=>({id,type:'checkout.session.completed',data:{object:{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',customer_details:{email:'fictional@example.invalid'},metadata:{userId:user},...overrides}}});
+const checkoutEvent=(id,overrides={})=>({id,type:'checkout.session.completed',data:{object:{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',customer_details:{email:'fictional@example.invalid'},metadata:{userId:user},consent:{terms_of_service:'accepted'},...overrides}}});
 
 try{
  // --- Signature enforcement: nothing is parsed or changed on a bad signature ---
@@ -124,7 +133,7 @@ try{
  // --- A signed checkout.session.completed flips the plan exactly once ---
  const signedBody=JSON.stringify(checkoutEvent('evt_checkout_1'));
  {
-  queue=[claimInsert,entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active',stripe_customer_id:'cus_mock'})];
+  queue=[claimInsert,tosAgreementInsert('cs_mock'),entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active',stripe_customer_id:'cus_mock'})];
   const response=await worker.fetch(webhookRequest(signedBody,sign(signedBody)),stripeEnv);
   assert.equal(response.status,200,'signed checkout.session.completed must be accepted');
   assert.deepEqual(await response.json(),{received:true});
@@ -161,8 +170,8 @@ try{
  {
   // A pack checkout grants credits exactly once per session and never touches
   // the plan: the price decides the effect, not the payment mode.
-  queue=[claimInsert,lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_mock',30)];
-  const body=subscriptionEvent('evt_pack_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  queue=[claimInsert,tosAgreementInsert('cs_mock'),lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_mock',30)];
+  const body=subscriptionEvent('evt_pack_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{received:true});
@@ -170,8 +179,8 @@ try{
  }
  {
   // The 100-pack maps from its own price env, via the async event type.
-  queue=[claimInsert,lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_100),grantInsert('cs_mock',100)];
-  const body=subscriptionEvent('evt_pack_2','checkout.session.async_payment_succeeded',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  queue=[claimInsert,tosAgreementInsert('cs_mock'),lineItemsFor('cs_mock',stripeEnv.STRIPE_PRICE_PACK_100),grantInsert('cs_mock',100)];
+  const body=subscriptionEvent('evt_pack_2','checkout.session.async_payment_succeeded',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.equal(queue.length,0);
@@ -182,11 +191,11 @@ try{
   // exactly-once — the second insert reads back empty and nothing else is
   // written. The event-id claim alone cannot provide this: the two events
   // carry different ids.
-  const session={id:'cs_dup',mode:'payment',payment_status:'paid',metadata:{userId:user}};
+  const session={id:'cs_dup',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}};
   const body1=subscriptionEvent('evt_pack_a','checkout.session.completed',session);
   const body2=subscriptionEvent('evt_pack_b','checkout.session.async_payment_succeeded',session);
-  queue=[claimInsert,lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30),
-         claimInsert,lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30,[])];
+  queue=[claimInsert,tosAgreementInsert('cs_dup'),lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30),
+         claimInsert,tosAgreementInsert('cs_dup',[]),lineItemsFor('cs_dup',stripeEnv.STRIPE_PRICE_PACK_30),grantInsert('cs_dup',30,[])];
   const first=await worker.fetch(webhookRequest(body1,sign(body1)),stripeEnv);
   assert.equal(first.status,200);
   assert.deepEqual(await first.json(),{received:true});
@@ -223,7 +232,7 @@ try{
  {
   // The other side of the fallback: the insert fails AND no claim row exists —
   // a genuine storage failure must still 5xx so Stripe keeps retrying.
-  const body=subscriptionEvent('evt_outage_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:user}});
+  const body=subscriptionEvent('evt_outage_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   queue=[{...claimInsert,data:null,status:503},
    {data:[],check:url=>{assert.ok(url.includes('storypress_billing_events?event_id=eq.'),`claim lookup expected, got ${url}`);}}];
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
@@ -234,8 +243,8 @@ try{
   // A price that maps to no pack — the retired lifetime price lands here —
   // fails closed: a logged skip, no grant, and no entitlement write of any
   // kind. A payment-mode session can never flip the plan.
-  queue=[claimInsert,lineItemsFor('cs_mock','mock-price-retired')];
-  const body=subscriptionEvent('evt_pack_unknown_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  queue=[claimInsert,tosAgreementInsert('cs_mock'),lineItemsFor('cs_mock','mock-price-retired')];
+  const body=subscriptionEvent('evt_pack_unknown_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{received:true});
@@ -243,12 +252,42 @@ try{
  }
  {
   // Line items that cannot be fetched (Stripe 404s) fail closed the same way.
-  queue=[claimInsert,{status:404,data:null}];
-  const body=subscriptionEvent('evt_pack_nolines_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user}});
+  queue=[claimInsert,tosAgreementInsert('cs_mock'),{status:404,data:null}];
+  const body=subscriptionEvent('evt_pack_nolines_1','checkout.session.completed',{id:'cs_mock',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{received:true});
   assert.equal(queue.length,0,'unresolvable line items must write nothing');
+ }
+
+ // --- ToS consent fail-closed (founder order, Nov 22) ---
+ {
+  // consent='not_accepted': acknowledged like a skip — the claim stands, no
+  // agreement row, no line-items lookup, no grant, no plan write.
+  const body=subscriptionEvent('evt_tos_refused_1','checkout.session.completed',{id:'cs_refused',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'not_accepted'}});
+  queue=[claimInsert];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'a refused ToS consent must provision nothing');
+ }
+ {
+  // Consent absent entirely (a payload from before consent_collection, or a
+  // consent block Stripe did not populate) blocks exactly the same way.
+  const body=subscriptionEvent('evt_tos_absent_1','checkout.session.completed',{id:'cs_absent',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}});
+  queue=[claimInsert];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'absent ToS consent must provision nothing');
+ }
+ {
+  // The pack path is gated identically: no accepted consent, no grant.
+  const body=subscriptionEvent('evt_tos_pack_1','checkout.session.completed',{id:'cs_refused_pack',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'not_accepted'}});
+  queue=[claimInsert];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.equal(queue.length,0,'a refused ToS consent must not grant pack credits');
  }
 
  // --- Owner resolution beyond session metadata ---
@@ -269,8 +308,9 @@ try{
   // service-role key.
   queue=[claimInsert,
    {data:{users:[{id:user,email:'fictional@example.invalid'}]},check:(url,init)=>{assert.ok(url.includes('/auth/v1/admin/users?email='),`admin email lookup expected, got ${url}`);assert.equal(init.headers.apikey,stripeEnv.SUPABASE_SECRET_KEY,'email lookup must use the service-role key');}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active',stripe_customer_id:'cus_mock'})];
-  const body=subscriptionEvent('evt_email_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:null,customer_details:{email:'fictional@example.invalid'}});
+  const body=subscriptionEvent('evt_email_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:null,customer_details:{email:'fictional@example.invalid'},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.equal(queue.length,0);
@@ -280,8 +320,9 @@ try{
   queue=[claimInsert,
    {data:{email:'fictional@example.invalid'},check:url=>{assert.ok(url.endsWith('/v1/customers/cus_mock'),`customer lookup expected, got ${url}`);}},
    {data:{users:[{id:user,email:'fictional@example.invalid'}]}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active',stripe_customer_id:'cus_mock'})];
-  const body=subscriptionEvent('evt_customer_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:null,customer_details:null,customer:'cus_mock'});
+  const body=subscriptionEvent('evt_customer_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:null,customer_details:null,customer:'cus_mock',consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.equal(queue.length,0);
@@ -289,7 +330,7 @@ try{
  {
   // An owner that cannot be resolved: acknowledged without effects, no write.
   queue=[claimInsert];
-  const body=subscriptionEvent('evt_unmatched_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:'not-a-uuid'}});
+  const body=subscriptionEvent('evt_unmatched_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:'not-a-uuid'},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{received:true,unmatched:true});
@@ -310,9 +351,9 @@ try{
   queue=[claimInsert,
    {status:500,data:{message:'database unavailable'}},
    {data:null,check:url=>{assert.ok(url.includes('storypress_billing_events?event_id=eq.'),`claim release expected, got ${url}`);}}];
-  const body=subscriptionEvent('evt_fail_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:user}});
+  const body=subscriptionEvent('evt_fail_1','checkout.session.completed',{id:'cs_mock',mode:'subscription',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'}});
   const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
-  assert.equal(response.status,503,'a failed entitlement write must fail the delivery');
+  assert.equal(response.status,503,'a failed billing write must fail the delivery');
   assert.equal(queue.length,0,'the claim must be released for redelivery');
  }
 
@@ -341,11 +382,35 @@ try{
    assert.equal(form.get('success_url'),`${base}/?billing_checkout={CHECKOUT_SESSION_ID}`,'the success return must carry the session template so the client can run the status rescue');
    assert.equal(form.get('cancel_url'),`${base}/`);
    assert.equal(form.get('allow_promotion_codes'),'true','Stripe-side promotion codes must be allowed at checkout');
+   // Founder order (Nov 22): hosted Checkout requires terms-of-service
+   // acceptance, in the buyer's language, with PR #76's consent copy.
+   assert.equal(form.get('consent_collection[terms_of_service]'),'required','the ToS checkbox must be required at hosted Checkout');
+   assert.equal(form.get('locale'),'en');
+   assert.equal(form.get('custom_text[terms_of_service_acceptance][message]'),'I ask Once & Ours to start supplying the digital content immediately, and I acknowledge that once supply begins I lose my 14-day right to cancel this purchase.','the ToS custom text reuses PR #76\'s consent copy verbatim');
   }}];
   const response=await worker.fetch(billingRequest({action:'checkout',mode,plan},authorized),stripeEnv);
   assert.equal(response.status,200,`checkout ${mode}/${plan}`);
   assert.deepEqual(await response.json(),{url:'https://checkout.stripe.com/pay/mock'});
   assert.equal(queue.length,0);
+ }
+ {
+  // Localized UX (scope §4): the language rides from the client, sets the
+  // hosted page's locale, and selects that language's consent copy — zh and
+  // es carry their own PR #76 wording, never the English string.
+  for(const [language,label] of [
+   ['zh','我请求 Once & Ours 立即开始提供数字内容，并确认：供应一经开始，我将失去本次购买的14天冷静期取消权。'],
+   ['es','Pido que Once & Ours comience a suministrar el contenido digital de inmediato, y reconozco que, una vez iniciado el suministro, pierdo mi derecho de desistimiento de 14 días sobre esta compra.'],
+  ]){
+   queue=[auth(),{data:{id:'cs_mock',url:'https://checkout.stripe.com/pay/mock'},check:(url,init)=>{
+    const form=new URLSearchParams(init.body);
+    assert.equal(form.get('consent_collection[terms_of_service]'),'required',`${language}: the ToS checkbox must be required`);
+    assert.equal(form.get('locale'),language,`${language}: hosted Checkout renders in the buyer's language`);
+    assert.equal(form.get('custom_text[terms_of_service_acceptance][message]'),label,`${language}: the ToS custom text is the localized PR #76 consent copy`);
+   }}];
+   const response=await worker.fetch(billingRequest({action:'checkout',mode:'subscription',language},authorized),stripeEnv);
+   assert.equal(response.status,200,`checkout locale ${language}`);
+   assert.equal(queue.length,0);
+  }
  }
  {
   // Missing price env (e.g. annual unset) refuses cleanly.
@@ -365,10 +430,12 @@ try{
  {
   // Webhook-lag rescue: a paid session for this owner, verified server-side,
   // flips the plan and the returned status reflects it — including the wave-8
-  // owner state (this month's draws, remaining pack credits).
-  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  // owner state (this month's draws, remaining pack credits). The accepted
+  // ToS consent is recorded on the ledger before the entitlement write.
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'accepted'}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{credits:30}],packDraws:[{id:'draw_1'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
@@ -383,9 +450,10 @@ try{
   // every signed-in account. Both pack reads fail here with those exact error
   // shapes: the pack balance degrades to zero while every other field keeps
   // the owner's real values, and all five reads are still attempted.
-  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'accepted'}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    {data:[{plan:'subscription',addons:'[]'}]},
    {data:[{stories_created:54}]},
@@ -402,9 +470,10 @@ try{
   // Positive: raw rows present on both pack tables — grants sum their credits
   // and draws count their rows in JS, so two packs (30 + 100) minus three
   // draws read as 127 remaining credits.
-  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'accepted'}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:7}],draws:[{stories_created:5}],grants:[{credits:30},{credits:100}],packDraws:[{id:'d1'},{id:'d2'},{id:'d3'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
@@ -416,9 +485,10 @@ try{
   // Per-read resilience: the entitlement read fails (a revoked key 401s) but
   // the other four succeed — the plan degrades to free while the counter,
   // month draws, and pack balance stay real, instead of the block collapsing.
-  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'accepted'}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_mock'),
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
    {status:401,data:{code:'42501',message:'permission denied for table storypress_entitlements'}},
    {data:[{stories_created:9}]},
@@ -434,9 +504,10 @@ try{
  {
   // The rescue grants packs identically: the expanded line items resolve the
   // price, the grant keys on the session id, and the plan never flips.
-  const session={id:'cs_pack',mode:'payment',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},line_items:{data:[{price:{id:stripeEnv.STRIPE_PRICE_PACK_30}}]}};
+  const session={id:'cs_pack',mode:'payment',payment_status:'paid',customer:'cus_mock',metadata:{userId:user},consent:{terms_of_service:'accepted'},line_items:{data:[{price:{id:stripeEnv.STRIPE_PRICE_PACK_30}}]}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_pack?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_pack'),
    grantInsert('cs_pack',30),
    ...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}],grants:[{credits:30}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_pack'},authorized),stripeEnv);
@@ -447,15 +518,29 @@ try{
  {
   // Fail closed on the rescue too: a payment-mode session whose price maps to
   // no pack grants and writes nothing (its inline price resolves, so no
-  // line-items fetch happens).
-  const session={id:'cs_retired',mode:'payment',payment_status:'paid',metadata:{userId:user},line_items:{data:[{price:'mock-price-retired'}]}};
+  // line-items fetch happens). The accepted consent is still recorded — the
+  // agreement is a fact about the buyer, independent of the grant's fate.
+  const session={id:'cs_retired',mode:'payment',payment_status:'paid',metadata:{userId:user},consent:{terms_of_service:'accepted'},line_items:{data:[{price:'mock-price-retired'}]}};
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_retired?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   tosAgreementInsert('cs_retired'),
    ...ownerState()];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_retired'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.equal((await response.json()).billing.plan,'free');
   assert.equal(queue.length,0,'an unrecognized pack price must write nothing on the rescue path');
+ }
+ {
+  // The rescue path fails closed too: a paid session without consent writes
+  // nothing — the status block reads the unchanged free tier.
+  const session={id:'cs_notos',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_notos?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   ...ownerState({entitlements:[{plan:'free',addons:'[]'}],counts:[{stories_created:3}]})];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_notos'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).billing.plan,'free','the rescue must not provision without accepted ToS consent');
+  assert.equal(queue.length,0,'a refused consent on the rescue must write nothing');
  }
  {
   // Someone else's session must not flip this owner's plan.
