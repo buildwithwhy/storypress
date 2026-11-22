@@ -1,17 +1,15 @@
 import {legalCopy, type LegalPageId} from '../lib/legal-copy';
 import {type Story} from '../lib/story';
 
-// DRAFT legal pages (/terms /privacy /refunds) — not legal advice, founder
-// review required. Presentational and copy-driven, like the pricing page: the
-// language follows the header language picker (story.language), the draft
-// banner is always visible, and `question: true` paragraphs render as
-// prominent founder-question callouts. Cross-links stay inside the SPA.
+// Legal pages (/terms /privacy /refunds). Presentational and copy-driven,
+// like the pricing page: the language follows the header language picker
+// (story.language) and `question: true` paragraphs render as prominent
+// founder-question callouts. Cross-links stay inside the SPA.
 export function LegalPage({id, language, onOpen}:{id:LegalPageId; language:Story['language']; onOpen:(id:LegalPageId)=>void}){
   const c=legalCopy[language];
   const page=c.pages[id];
   const others=(Object.keys(c.links) as LegalPageId[]).filter(k=>k!==id);
   return <main className="legal-page" lang={language}>
-    <p className="legal-draft-banner" role="note">{c.draftBanner}</p>
     <h1>{page.title}</h1>
     <p className="legal-updated">{page.updated}</p>
     <p className="legal-intro">{page.intro}</p>
