@@ -34,7 +34,8 @@ const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscri
  if(input.mode==='payment'?(input.plan!=='pack30'&&input.plan!=='pack100'):(input.plan!=='monthly'&&input.plan!=='annual'))ctx.addIssue({code:z.ZodIssueCode.custom,message:`${input.mode} checkout does not carry plan ${input.plan}`});
 });
 const statusInput=z.object({action:z.literal('status'),sessionId:z.string().trim().min(1).max(200)});
-const billingInput=z.union([checkoutInput,statusInput]);
+const portalInput=z.object({action:z.literal('portal')});
+const billingInput=z.union([checkoutInput,statusInput,portalInput]);
 
 function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100'){
  const price=mode==='payment'?(plan==='pack30'?env.STRIPE_PRICE_PACK_30:env.STRIPE_PRICE_PACK_100):plan==='annual'?env.STRIPE_PRICE_SUBSCRIPTION_ANNUAL:env.STRIPE_PRICE_SUBSCRIPTION_MONTHLY;
@@ -52,6 +53,31 @@ async function createCheckoutSession(env:Bindings,userId:string,email:string,mod
  const response=await fetch(`${STRIPE_API}/v1/checkout/sessions`,{method:'POST',headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`,'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),signal:AbortSignal.timeout(15000)});
  const session=await response.json().catch(()=>null) as {url?:string}|null;
  if(!response.ok||!session?.url)throw new ServiceError('Payment could not be started. Please try again shortly.',502);
+ return session.url;
+}
+
+// ---- Billing portal sessions ----
+
+// The customer id for the caller is only ever the one the app's own checkout
+// and webhook path wrote to the entitlement row — no client-supplied customer
+// id is trusted. A failed read propagates (retryable 503, no portal opens
+// blind); a row without an id is the honest "nothing to manage yet" case.
+async function readStripeCustomerId(env:Bindings,userId:string):Promise<string|null>{
+ const rows=await db(env,`storypress_entitlements?owner_id=eq.${userId}&select=stripe_customer_id`) as unknown[]|null;
+ const value=Array.isArray(rows)?(rows[0] as {stripe_customer_id?:unknown}|undefined)?.stripe_customer_id:undefined;
+ return typeof value==='string'&&value.startsWith('cus_')?value:null;
+}
+
+async function createPortalSession(env:Bindings,customerId:string,origin:string){
+ // Same pattern as the checkout session: form-encoded POST, no stripe-node SDK
+ // (the worker bundle targets platform:'browser'), request-derived origin for
+ // the return URL — never a hardcoded domain. The portal's features (cancel
+ // at period end, update card, invoice history) are configured Stripe-side;
+ // see docs/STRIPE-SETUP.md.
+ const form=new URLSearchParams({customer:customerId,return_url:origin+'/'});
+ const response=await fetch(`${STRIPE_API}/v1/billing_portal/sessions`,{method:'POST',headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`,'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),signal:AbortSignal.timeout(15000)});
+ const session=await response.json().catch(()=>null) as {url?:string}|null;
+ if(!response.ok||!session?.url)throw new ServiceError('Billing management could not be opened. Please try again shortly.',502);
  return session.url;
 }
 
@@ -121,11 +147,18 @@ export async function billingApi(request:Request,env:Bindings){
   const input=billingInput.parse(JSON.parse(await request.text()));
   if(!billingConfigured(env)){
    // Dormancy (§2): without Stripe env nothing blocks and nothing crashes —
-   // checkout refuses cleanly and status reports the free tier.
-   if(input.action==='checkout')throw new ServiceError('Online payment is not connected yet. Your stories remain fully available.',503);
+   // checkout and the portal refuse cleanly and status reports the free tier.
+   if(input.action!=='status')throw new ServiceError('Online payment is not connected yet. Your stories remain fully available.',503);
    return json({billing:await billingStatus(env,user.id)});
   }
   if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,new URL(request.url).origin)});
+  if(input.action==='portal'){
+   // Fail closed: without the app-written customer id there is nothing to
+   // manage — a clean refusal, never a Stripe call with a guessed customer.
+   const customerId=await readStripeCustomerId(env,user.id);
+   if(!customerId)throw new ServiceError('Billing management opens after your first subscription checkout.',400,'portal_unavailable');
+   return json({url:await createPortalSession(env,customerId,new URL(request.url).origin)});
+  }
   // The rescue verifies the session server-side; a paid session belonging to
   // this owner flips the plan (subscription) or grants its pack credits
   // (payment). The browser's report of success is never trusted — only what

@@ -33,6 +33,14 @@ export async function startCheckout(plan:CheckoutPlan):Promise<string>{
  return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan})).url;
 }
 
+// Opens the Stripe customer portal (cancel at period end, update card,
+// invoices) and returns the session URL; the component navigates. The server
+// refuses cleanly when the owner has no Stripe customer yet (400) or billing
+// is dormant (503) — the panel surfaces the message.
+export async function startBillingPortal():Promise<string>{
+ return (await billingRequest<{url:string}>({action:'portal'})).url;
+}
+
 // Webhook-lag rescue (paywall §5): the session is verified SERVER-side before
 // any entitlement change — the browser's report of success is never trusted.
 // While a webhook may still be in flight a stale billing block reads as

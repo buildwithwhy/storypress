@@ -11,7 +11,7 @@ import {confirmCopy,draftPreviewLabel} from '../lib/confirm-copy';
 import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {editionRowNote,parseStoryRows,type StoryListRow} from '../lib/editions';
-import {startCheckout,type CheckoutPlan} from '../lib/billing-client';
+import {startCheckout,startBillingPortal,type CheckoutPlan} from '../lib/billing-client';
 import {type BillingStatus} from '../lib/billing';
 import {paywallCopy} from '../lib/paywall-copy';
 import {EmailSignIn} from './email-sign-in';
@@ -92,10 +92,12 @@ export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:B
  const free=billing.plan==='free';
  const planLine=free?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):c.entitledActive;
  async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
+ async function manage(){setBusy(true);setError('');try{location.assign(await startBillingPortal());}catch(problem){setError((problem as Error).message);setBusy(false);}}
  return <div className="upgrade-panel">
   <p className="upgrade-plan" role="status">{planLine}</p>
   {!free&&<p className="upgrade-plan upgrade-usage" role="status">{c.monthlyUsage.replace('{used}',String(billing.subscriptionStoriesThisMonth)).replace('{cap}',String(billing.subscriptionMonthlyCap))}</p>}
   {billing.packCreditsRemaining>0&&<p className="upgrade-plan upgrade-usage" role="status">{c.packCredits.replace('{size}',String(billing.packCreditsRemaining))}</p>}
+  {billing.configured&&!free&&<button className="secondary manage-billing" disabled={busy} onClick={()=>void manage()}>{c.manageBilling}</button>}
   {onViewPlans&&<button className="secondary view-plans" onClick={onViewPlans}>{c.viewPlans}<ArrowRight size={17}/></button>}
   {billing.configured&&free&&<><div className="upgrade-cadence" role="group" aria-label={c.planHeading}>
    <button className={cadence==='monthly'?'secondary selected':'secondary'} aria-pressed={cadence==='monthly'} disabled={busy} onClick={()=>setCadence('monthly')}>{c.monthly}</button>

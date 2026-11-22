@@ -491,11 +491,53 @@ try{
   assert.equal(queue.length,0);
  }
  {
+  // Behind auth: a portal request without identity is refused before anything.
+  queue=[];
+  const response=await worker.fetch(billingRequest({action:'portal'}),stripeEnv);
+  assert.equal(response.status,401,'portal without identity must be refused');
+  assert.equal(queue.length,0,'refused portal makes no upstream calls');
+ }
+ {
+  // Fail closed: the entitlement row carries no Stripe customer id — the
+  // caller never checked out through the app. A clean 400 (never a 500), and
+  // no portal session is created with a guessed customer.
+  queue=[auth(),{data:[],check:url=>{assert.ok(url.includes('storypress_entitlements?owner_id=eq.'),`entitlement customer read expected, got ${url}`);assert.ok(url.includes('select=stripe_customer_id'),'the read must fetch only the customer id');}}];
+  const response=await worker.fetch(billingRequest({action:'portal'},authorized),stripeEnv);
+  assert.equal(response.status,400,'a user without a Stripe customer id must be refused cleanly, not 500');
+  assert.equal((await response.json()).code,'portal_unavailable','the refusal carries a typed code');
+  assert.equal(queue.length,0,'no portal session may be created without a Stripe customer id');
+ }
+ {
+  // Dormant portal refuses cleanly, like checkout.
+  queue=[auth()];
+  const response=await worker.fetch(billingRequest({action:'portal'},authorized),{...stripeEnv,STRIPE_SECRET_KEY:undefined});
+  assert.equal(response.status,503,'dormant portal must refuse cleanly');
+  assert.equal(queue.length,0);
+ }
+ {
+  // Happy path: the app-written customer id opens the portal; the return URL
+  // derives from the request origin (never a hardcoded domain); the response
+  // carries the session url for the client to navigate to.
+  queue=[auth(),
+   {data:[{stripe_customer_id:'cus_mock'}]},
+   {data:{id:'bps_mock',url:'https://billing.stripe.com/p/session/mock'},check:(url,init)=>{
+    assert.equal(url,'https://api.stripe.com/v1/billing_portal/sessions');
+    assert.equal(init.headers.Authorization,`Bearer ${stripeEnv.STRIPE_SECRET_KEY}`);
+    const form=new URLSearchParams(init.body);
+    assert.equal(form.get('customer'),'cus_mock','the portal session must open for the caller’s own customer');
+    assert.equal(form.get('return_url'),`${base}/`,'the return URL must derive from the request origin');
+   }}];
+  const response=await worker.fetch(billingRequest({action:'portal'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{url:'https://billing.stripe.com/p/session/mock'});
+  assert.equal(queue.length,0);
+ }
+ {
   const response=await worker.fetch(new Request(`${base}/api/billing`,{method:'GET'}),stripeEnv);
   assert.equal(response.status,405,'GET /api/billing must be refused');
  }
 
- console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout flips and price-mapped pack grants exactly-once per session across sibling events and redeliveries (fail-closed on unknown prices and missing line items), replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, checkout identity and price variants (payment mode pack-only), webhook-lag rescue granting packs identically with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
+ console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout flips and price-mapped pack grants exactly-once per session across sibling events and redeliveries (fail-closed on unknown prices and missing line items), replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, checkout identity and price variants (payment mode pack-only), portal sessions behind auth (fail-closed without a Stripe customer id, dormant refusal, request-origin return URL), webhook-lag rescue granting packs identically with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
  process.exitCode=0;
 }catch(error){
  // Full object — a failing check must show its stack and location.
