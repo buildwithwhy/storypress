@@ -59,7 +59,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: 'Who we are and what the service does', paragraphs: [
             'Once & Ours is a personal storytelling app. You share a memory by typing, dictating, or talking through a live spoken interview, and the service helps you shape it into an illustrated keepsake — a newspaper, booklet, or letter you can read, edit, download, print, and share with people you choose. The service offers AI-assisted interviewing, translation between English, Simplified Chinese, and Spanish, AI-generated illustration, and optional research that surfaces public historical context related to what you have told it.',
-            'The service is operated by HOPPERLACE LTD, company number 16532585, whose registered office is at 71-75 Shelton Street, Covent Garden, London WC2H 9JQ ("we", "us"). You can reach us at yuyu@hopperlace.ai.',
+            'The service is operated by HOPPERLACE LTD, company number 16532585, whose registered office is at 71-75 Shelton Street, Covent Garden, London WC2H 9JQ ("we", "us"). The service is available at https://www.onceandours.com. You can reach us at yuyu@hopperlace.ai.',
           ]},
           {heading: 'Accounts', paragraphs: [
             'To save your stories to your account you sign in with an email code or a Google account. You are responsible for keeping access to your email address safe, for the words and photographs you upload, and for using the service lawfully. Guest work stays in your browser until you sign in.',
@@ -69,8 +69,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'Your stories and AI-generated content', paragraphs: [
             'You own the words and photographs you contribute. AI-generated illustrations are clearly labelled as illustration. AI output is generated automatically and may be inaccurate, incomplete, or not to your taste — you should review every keepsake before you share it, and edited AI illustrations and translations remain subject to those limits. You grant us only the limited permission needed to store, process, and display your content in order to run the service for you (for example, passing your recorded words to an AI provider to transcribe them, or your photograph to generate the illustration you asked for). We do not use your private story content to advertise to other people.',
-            'QUESTION FOR FOUNDER: the intended copyright treatment of AI-generated illustrations (who may use them, and any licence limits to state here) has not been decided. No statement of ownership over AI-generated illustrations is made until you decide.',
-          ], question: true},
+            'AI-generated illustrations are licensed to you, royalty-free, for use in the keepsakes you create — print, share, and keep them without further payment. We do not claim ownership of AI-generated illustrations and make no promise that any illustration is unique or protected by copyright.',
+          ]},
           {heading: 'Free stories, subscriptions, and the monthly fair-use cap', paragraphs: [
             'You can try the service for free: 3 free stories before a paid plan is needed to keep telling new stories. Paid plans are a monthly or annual subscription, priced in US dollars as shown at checkout.',
             'A subscription covers up to 50 stories you start in each calendar month (measured in UTC). This fair-use cap keeps the service fast and affordable for everyone; unused capacity does not roll over. Everything you have already made stays yours to read, print, and share whichever plan you are on.',
@@ -80,13 +80,11 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'Renewal and cancellation of subscriptions', paragraphs: [
             'Subscriptions renew automatically at the end of each billing period — monthly plans monthly, annual plans yearly — until you cancel. You can cancel at any time, self-serve, through the Manage billing link (the Stripe customer portal) in the app. Cancelling stops future renewals; you keep full access until the end of the period you have already paid for, and you are not charged again after that. Credit packs you have bought are unaffected.',
-            'QUESTION FOR FOUNDER: the Stripe customer portal ("Manage billing") is work in progress and is not live in the product yet. These terms describe the intended self-serve cancellation flow; they should not go live before that flow does.',
-          ], question: true},
+          ]},
           {heading: 'Your cancellation right, and the immediate-start exception', paragraphs: [
             'If you buy from us as a consumer in the UK, consumer law gives you 14 days from the day of purchase to cancel most purchases and receive a full refund — including digital content, provided you have not agreed to its supply starting straight away.',
             'Because Once & Ours is digital and starts working the moment you pay, at checkout we ask for your express consent to start supply immediately. If you give that consent and supply begins, you acknowledge the 14-day cancellation right is lost for that purchase, as the Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013 allow. The consent checkbox is shown just before payment — the same wording appears in our refunds & cancellation page. If you do not give consent, you keep the 14-day right and we begin supply only after it expires.',
-            'QUESTION FOR FOUNDER: the brief cites regulation 36(3)(a) of the 2013 Regulations as the pathway for this mechanism; the draft is written around the immediate-start consent and acknowledgement the Regulations require, but the exact provision should be confirmed by a solicitor before launch.',
-          ], question: true},
+          ]},
           {heading: 'Disclaimers and liability', paragraphs: [
             'The service is provided with reasonable skill and care. AI features are automatic and can be wrong; the service is not a professional archive, genealogy, legal, or medical service, and keepsakes should not be relied on as authoritative records. Nothing in these terms limits liability for death or personal injury caused by negligence, for fraud, or for anything else the law does not allow to be limited. Otherwise our total liability for the service is limited to the amount you paid us in the 12 months before the claim.',
           ]},
@@ -112,15 +110,15 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'How AI is used, and who helps us', paragraphs: [
             'The AI features — interviewing, transcription of recordings, translation, photo interpretation, research planning, writing assistance, and illustration — send just the material needed for that step to our AI providers. Google (Gemini, via Google Cloud Vertex AI or AI Studio) handles most tasks; for stories told in Chinese, text generation can route to Qwen through OpenRouter; optional historical research uses Nimble to find public web sources. Photographs are sent for interpretation only when you choose to use that feature. Illustrations are AI-generated and always labelled as illustration.',
-            'QUESTION FOR FOUNDER: Nimble (public web research) is in the repo\u2019s service wiring and is listed here for completeness, but it was not in the original processor list — confirm you are happy naming it.',
-          ], question: true},
+            'Nimble is a third-party processor that carries out this historical-research step on our instructions; it is the discovery provider in use today.',
+          ]},
           {heading: 'Payments and email delivery', paragraphs: [
-            'Payments and subscriptions are handled by Stripe. Your card details go to Stripe, not to us — we keep only your plan state and the identifiers Stripe needs to recognise your subscription. Sign-in codes are delivered by email through Supabase Auth using Resend as the sending service (from the address signin@buildwithwhy.com).',
+            'Payments and subscriptions are handled by Stripe. Your card details go to Stripe, not to us — we keep only your plan state and the identifiers Stripe needs to recognise your subscription. Sign-in codes are delivered by email through Supabase Auth using Resend as the sending service.',
           ]},
           {heading: 'Retention and deletion', paragraphs: [
             'Your stories and photographs are kept until you or the law ask us to remove them. Deleting a story from My stories removes it and its photograph. Deleting your account removes your stories, photographs, and account data.',
-            'QUESTION FOR FOUNDER: a self-serve account-deletion flow is not built in the product yet. This section describes the intended behaviour; it should not go live before deletion exists (or is offered on request at yuyu@hopperlace.ai).',
-          ], question: true},
+            'There is no self-serve account-deletion flow in the app yet. Until one ships, you can have your account and its data deleted by emailing yuyu@hopperlace.ai; we will complete the deletion within 30 days of your request. This email-based process is interim and will be replaced when in-app deletion ships.',
+          ]},
           {heading: 'Your rights under UK GDPR', paragraphs: [
             'You have the right to be told how your data is used (this notice); to see a copy of it; to have inaccurate data corrected; to have it erased; to object to or restrict some processing; to have your data ported to another service where the law allows; and to complain to the Information Commissioner\u2019s Office (ico.org.uk). To exercise any right, or to ask anything at all about your data, write to yuyu@hopperlace.ai.',
           ]},
@@ -133,8 +131,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: 'Cancelling a subscription', paragraphs: [
             'You can cancel any time, self-serve, through the Manage billing link in the app — this opens the Stripe customer portal, where subscriptions and invoices are managed. You do not need to email us to cancel, and we do not charge a cancellation fee.',
-            'QUESTION FOR FOUNDER: the Manage billing (Stripe customer portal) link is work in progress. Until it is live, cancellations and any billing change should be handled on request at yuyu@hopperlace.ai.',
-          ], question: true},
+            'Cancelling takes effect at the end of your current billing period. If you cannot use the Manage billing link for any reason, email yuyu@hopperlace.ai and we will handle the cancellation or any billing change for you.',
+          ]},
           {heading: 'What cancelling does', paragraphs: [
             'Cancelling stops the next renewal. You keep full access to your plan\u2019s features until the end of the period you have already paid for; after that, your account continues on the free tier and everything you have made stays yours to read, print, and share. Credit packs you have bought are yours regardless of your plan.',
           ]},
@@ -143,8 +141,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'The 14-day cancellation right, and the immediate-start exception', paragraphs: [
             'As a UK consumer you normally have 14 days from purchase to cancel and receive a full refund. Once & Ours is digital content that starts working the moment you pay, so at checkout we ask for your express consent to begin supply immediately. If you give that consent, the 14-day right does not apply to that purchase once supply begins, as the Consumer Contracts (Information, Cancellation and Additional Charges) Regulations 2013 allow. The checkout checkbox says this in plain words before you pay.',
-            'QUESTION FOR FOUNDER: the brief cites regulation 36(3)(a) of the 2013 Regulations; confirm the exact provision with a solicitor before launch.',
-          ], question: true},
+          ]},
           {heading: 'Goodwill refunds', paragraphs: [
             'Even outside the statutory window, if something went wrong — a double charge, a story credit that did not arrive, or you bought by mistake and have barely used the service — write to yuyu@hopperlace.ai. Goodwill refunds are granted at the founder\u2019s discretion; we would rather lose a fee than leave you unfairly out of pocket.',
           ]},
@@ -171,7 +168,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: '我们是谁，服务是什么', paragraphs: [
             'Once & Ours 是一款个人叙事应用。你可以通过打字、口述或实时语音访谈来讲述一段回忆，服务会帮你把它整理成一份配有插图的纪念作品——报纸、小册子或信件，可以阅读、编辑、下载、打印，并分享给你选择的人。服务提供 AI 辅助访谈、英语/简体中文/西班牙语互译、AI 插图生成，以及可选的历史背景检索（仅查找公开资料）。',
-            '本服务由 HOPPERLACE LTD（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ，下称"我们"）运营。联系方式：yuyu@hopperlace.ai。',
+            '本服务由 HOPPERLACE LTD（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ，下称"我们"）运营，服务网址为 https://www.onceandours.com。联系方式：yuyu@hopperlace.ai。',
           ]},
           {heading: '账户', paragraphs: [
             '要把故事保存到账户，请使用邮箱验证码或 Google 账户登录。你有责任保管好自己的邮箱安全，对你上传的文字和照片负责，并合法使用本服务。访客作品在你登录前只保存在浏览器中。',
@@ -181,8 +178,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: '你的故事与 AI 生成内容', paragraphs: [
             '你贡献的文字和照片归你所有。AI 生成的插图会明确标注为插图。AI 输出为自动生成，可能不准确、不完整或不如预期——分享前请务必审阅；经编辑的 AI 插图和译文同样受此限制。你仅授予我们为运营服务而存储、处理和展示你的内容所必需的有限许可（例如：把你录下的话传给 AI 服务商以转写文字，或把你选择的照片用于生成你所要求的插图）。我们不会利用你的私人故事内容向其他人投放广告。',
-            '创始人待确认问题：AI 生成插图的版权处理方式（谁可以使用、需在此注明何种许可限制）尚未确定。在你作出决定前，本页不会对 AI 生成插图的归属作任何陈述。',
-          ], question: true},
+            'AI 生成的插图以免版税许可的方式提供给你，可用于你制作的纪念品——可随时打印、分享和保存，无需另行付费。我们不对 AI 生成插图主张所有权，也不承诺任何插图具有独特性或受版权保护。',
+          ]},
           {heading: '免费故事、订阅与每月公平用量上限', paragraphs: [
             '你可以免费试用：创作 3 个免费故事；之后需付费方案才能继续创作新故事。付费方案为按月或按年订阅，价格以美元计，以结账页面显示为准。',
             '订阅方案每个日历月（按 UTC 计算）最多可开始创作 50 个故事。此公平用量上限是为了让服务对所有人都保持快速和可负担；未用完的额度不结转。无论使用哪种方案，你已创作的一切都永远归你，可随时阅读、打印和分享。',
@@ -192,13 +189,11 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: '订阅的续期与取消', paragraphs: [
             '订阅在每个计费周期结束时自动续期——按月方案每月续期，按年方案每年续期——直至你取消。你可以随时通过应用内的"管理订阅"链接（Stripe 客户门户）自助取消。取消后不再续期；你仍可完整使用至已付费周期结束，此后不再扣款。已购买的点数包不受影响。',
-            '创始人待确认问题：Stripe 客户门户（"管理订阅"）功能正在开发中，尚未上线。本条款描述的是计划中的自助取消流程；该流程上线前，本页不应先行发布。',
-          ], question: true},
+          ]},
           {heading: '冷静期取消权与"立即开始供应"的例外', paragraphs: [
             '作为英国消费者，依据消费者保护法律，多数购买行为自购买之日起14天内可取消并获得全额退款——数字内容亦然，前提是你未同意其立即开始供应。',
             '由于 Once & Ours 属于数字内容且付费后立即生效，我们会在结账时请求你明确同意立即开始供应。如你作出该同意且供应已开始，即确认该次购买不再享有14天冷静期取消权（依据《2013年消费者合同（信息、取消和附加费用）条例》所允许）。该同意勾选框会在付款前显示——其措辞与"退款与取消"页面一致。如你不作出同意，你保留14天取消权，我们将在期满后才开始供应。',
-            '创始人待确认问题：任务指引援引《2013年条例》第36(3)(a)条作为该机制的依据；本稿围绕条例所要求的"立即开始供应的同意与确认"撰写，但具体条款编号应由律师在发布前确认。',
-          ], question: true},
+          ]},
           {heading: '免责声明与责任', paragraphs: [
             '我们以合理的专业与谨慎提供服务。AI 功能为自动生成，可能出现错误；本服务并非专业的档案、族谱、法律或医疗服务，纪念作品不应被当作权威记录依赖。本条款不限制因过失导致死亡或人身伤害、欺诈或法律不允许限制的其他事项的责任。除此之外，我们对服务的赔偿责任总额以索赔前12个月内你向我们支付的金额为限。',
           ]},
@@ -224,15 +219,15 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'AI 的使用方式与协助我们的服务方', paragraphs: [
             'AI 功能——访谈、录音转写、翻译、照片解读、检索规划、写作辅助和插图——仅将该步骤所需的材料发送给我们的 AI 服务商。大部分任务由 Google（Gemini，经 Google Cloud Vertex AI 或 AI Studio）处理；以中文讲述的故事，文字生成可经 OpenRouter 路由至 Qwen；可选的历史背景检索使用 Nimble 查找公开网页资料。照片仅在你选择使用该功能时才会被发送用于解读。插图为 AI 生成，并始终标注为插图。',
-            '创始人待确认问题：Nimble（公开网页检索）在代码库的服务接线中，此处为完整起见一并列出，但原始服务方清单未包含它——请确认是否愿意将其列入。',
-          ], question: true},
+            'Nimble 是第三方服务方，受我们委托执行历史背景检索这一步骤；它是当前在用的检索服务提供方。',
+          ]},
           {heading: '支付与邮件送达', paragraphs: [
-            '支付与订阅由 Stripe 处理。你的银行卡信息发送给 Stripe 而非我们——我们只保存你的方案状态以及 Stripe 识别订阅所需的标识符。登录验证码通过 Supabase Auth 经 Resend 发送（发件地址为 signin@buildwithwhy.com）。',
+            '支付与订阅由 Stripe 处理。你的银行卡信息发送给 Stripe 而非我们——我们只保存你的方案状态以及 Stripe 识别订阅所需的标识符。登录验证码通过 Supabase Auth 经 Resend 发送。',
           ]},
           {heading: '保留与删除', paragraphs: [
             '你的故事和照片会一直保留，直到你或法律要求我们删除。在"我的故事"中删除故事即会连同其照片一并删除。删除账户将删除你的故事、照片和账户数据。',
-            '创始人待确认问题：自助删除账户的功能尚未开发。本节描述的是预期行为；在删除功能上线之前（或未提供经 yuyu@hopperlace.ai 申请删除的方式之前），本节不应先行发布。',
-          ], question: true},
+            '应用内自助删除账户的功能尚未上线。在此之前，你可以发邮件至 yuyu@hopperlace.ai 申请删除账户及其数据，我们会在收到申请后 30 天内完成删除。此邮件方式为过渡安排，待应用内删除功能上线后将予替换。',
+          ]},
           {heading: '你在英国 GDPR 下的权利', paragraphs: [
             '你有以下权利：了解数据如何被使用（即本声明）、获取数据副本、更正不准确的数据、删除数据、对部分处理提出异议或要求限制、在法律允许时将数据迁移至其他服务，以及向信息专员办公室（ico.org.uk）投诉。行使任何权利，或就你的数据提出任何问题，请致函 yuyu@hopperlace.ai。',
           ]},
@@ -245,8 +240,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: '取消订阅', paragraphs: [
             '你可随时通过应用内的"管理订阅"链接自助取消——该链接会打开 Stripe 客户门户，订阅与发票均在此管理。取消无需发邮件给我们，我们也不收取任何取消费用。',
-            '创始人待确认问题："管理订阅"（Stripe 客户门户）链接正在开发中。在其上线之前，取消及任何账单变更应通过 yuyu@hopperlace.ai 按申请处理。',
-          ], question: true},
+            '取消在当前计费周期结束时生效。如因任何原因无法使用“管理订阅”链接，请发邮件至 yuyu@hopperlace.ai，我们会为你办理取消或任何账单变更。',
+          ]},
           {heading: '取消后会发生什么', paragraphs: [
             '取消即停止下次续期。你仍可完整使用已付费周期内的方案功能；到期后，你的账户转为免费方案，你已创作的一切仍归你所有，可随时阅读、打印和分享。已购买的点数包与方案无关，始终属于你。',
           ]},
@@ -255,8 +250,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: '14天冷静期取消权与"立即开始供应"的例外', paragraphs: [
             '作为英国消费者，你通常自购买之日起14天内可取消并获得全额退款。Once & Ours 属于付费后立即生效的数字内容，因此我们在结账时请求你明确同意立即开始供应。如你作出该同意，供应开始后该次购买即不适用14天取消权（依据《2013年消费者合同（信息、取消和附加费用）条例》所允许）。结账勾选框会在付款前以平实语言说明这一点。',
-            '创始人待确认问题：任务指引援引《2013年条例》第36(3)(a)条；发布前请与律师确认具体条款。',
-          ], question: true},
+          ]},
           {heading: '善意退款', paragraphs: [
             '即使在法定期限之外，如果出现了问题——重复扣款、故事点数未到账，或你误购且几乎未使用服务——请致函 yuyu@hopperlace.ai。善意退款由创始人酌情决定；我们宁可损失一笔费用，也不愿让你蒙受不应有的损失。',
           ]},
@@ -283,7 +277,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: 'Quiénes somos y qué hace el servicio', paragraphs: [
             'Once & Ours es una aplicación de narrativa personal. Compartes un recuerdo escribiendo, dictando o conversando en una entrevista hablada en directo, y el servicio te ayuda a convertirlo en un recuerdo ilustrado —un periódico, un cuadernillo o una carta— que puedes leer, editar, descargar, imprimir y compartir con quienes tú elijas. El servicio ofrece entrevistas asistidas por IA, traducción entre inglés, chino simplificado y español, ilustraciones generadas por IA y, opcionalmente, una búsqueda de contexto histórico público relacionado con lo que has contado.',
-            'El servicio es operado por HOPPERLACE LTD, con número de compañía 16532585 y domicilio registrado en 71-75 Shelton Street, Covent Garden, London WC2H 9JQ ("nosotros"). Escríbenos a yuyu@hopperlace.ai.',
+            'El servicio es operado por HOPPERLACE LTD, con número de compañía 16532585 y domicilio registrado en 71-75 Shelton Street, Covent Garden, London WC2H 9JQ ("nosotros"). El servicio está disponible en https://www.onceandours.com. Escríbenos a yuyu@hopperlace.ai.',
           ]},
           {heading: 'Cuentas', paragraphs: [
             'Para guardar tus historias en tu cuenta, inicia sesión con un código por correo electrónico o con una cuenta de Google. Eres responsable de cuidar el acceso a tu correo electrónico, de las palabras y fotografías que subes y de usar el servicio conforme a la ley. El trabajo de invitado permanece en tu navegador hasta que inicies sesión.',
@@ -293,8 +287,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'Tus historias y el contenido generado por IA', paragraphs: [
             'Las palabras y fotografías que aportas te pertenecen. Las ilustraciones generadas por IA se etiquetan siempre como ilustración. Los resultados de la IA se generan automáticamente y pueden ser inexactos, incompletos o no ser de tu agrado: revisa cada recuerdo antes de compartirlo, y las ilustraciones y traducciones de IA editadas siguen sujetas a esos mismos límites. Solo nos concedes el permiso limitado necesario para almacenar, procesar y mostrar tu contenido a fin de prestarte el servicio (por ejemplo, pasar tus palabras grabadas a un proveedor de IA para transcribirlas, o tu fotografía para generar la ilustración que pediste). No usamos el contenido privado de tus historias para publicitar ante otras personas.',
-            'PREGUNTA PARA LA FUNDADORA: el tratamiento de derechos de autor previsto para las ilustraciones generadas por IA (quién puede usarlas y qué límites de licencia indicar aquí) no está decidido. No se hará ninguna declaración de titularidad sobre ellas hasta que decidas.',
-          ], question: true},
+            'Las ilustraciones generadas por IA se te conceden con una licencia libre de regalías para usarlas en los recuerdos que crees: imprímelas, compártelas y consérvalas sin pagos adicionales. No reivindicamos la propiedad de las ilustraciones generadas por IA y no garantizamos que sean únicas ni que estén protegidas por derechos de autor.',
+          ]},
           {heading: 'Historias gratuitas, suscripciones y límite mensual de uso razonable', paragraphs: [
             'Puedes probar el servicio gratis: 3 historias gratuitas antes de necesitar un plan de pago para seguir creando. Los planes de pago son una suscripción mensual o anual, con precio en dólares estadounidense según se muestre al pagar.',
             'Una suscripción cubre hasta 50 historias que inicies en cada mes calendario (medido en UTC). Este límite de uso razonable mantiene el servicio rápido y asequible para todos; la capacidad no usada no se acumula. Todo lo que ya hayas creado sigue siendo tuyo para leer, imprimir y compartir, sea cual sea tu plan.',
@@ -304,13 +298,11 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'Renovación y cancelación de suscripciones', paragraphs: [
             'Las suscripciones se renuevan automáticamente al final de cada período de facturación —los planes mensuales cada mes, los anuales cada año— hasta que canceles. Puedes cancelar en cualquier momento de forma autónoma mediante el enlace «Gestionar facturación» (el portal de cliente de Stripe) dentro de la aplicación. Cancelar detiene las próximas renovaciones; mantienes el acceso completo hasta el final del período ya pagado y no se te vuelve a cobrar después. Los paquetes de créditos comprados no se ven afectados.',
-            'PREGUNTA PARA LA FUNDADORA: el portal de cliente de Stripe («Gestionar facturación») está en desarrollo y aún no está disponible en el producto. Estos términos describen el flujo de cancelación autónoma previsto; no deben publicarse antes de que ese flujo exista.',
-          ], question: true},
+          ]},
           {heading: 'Tu derecho de desistimiento y la excepción de inicio inmediato', paragraphs: [
             'Si compras como consumidor en el Reino Unido, la legislación de consumo te da 14 días desde la compra para desistir de la mayoría de las compras y obtener un reembolso completo —también del contenido digital—, siempre que no hayas acordado que el suministro comience de inmediato.',
             'Como Once & Ours es contenido digital que empieza a funcionar en el momento del pago, al pagar te pedimos tu consentimiento expreso para comenzar el suministro de inmediato. Si das ese consentimiento y el suministro comienza, reconoces que se pierde el derecho de desistimiento de 14 días para esa compra, tal como permite el Reglamento de Contratos de Consumo (Información, Desistimiento y Cargos Adicionales) de 2013. La casilla de consentimiento se muestra justo antes del pago —el mismo texto aparece en nuestra página de reembolsos y cancelación—. Si no das el consentimiento, conservas el derecho de 14 días y el suministro comienza solo al expirar.',
-            'PREGUNTA PARA LA FUNDADORA: el encargo cita el artículo 36(3)(a) del Reglamento de 2013 como vía para este mecanismo; el borrador se redacta en torno al consentimiento y reconocimiento de inicio inmediato que exige el Reglamento, pero la disposición exacta debe confirmarla un abogado antes del lanzamiento.',
-          ], question: true},
+          ]},
           {heading: 'Exenciones de responsabilidad', paragraphs: [
             'Prestamos el servicio con la diligencia y profesionalidad razonables. Las funciones de IA son automáticas y pueden equivocarse; el servicio no es un archivo profesional ni un servicio genealógico, jurídico o médico, y los recuerdos no deben utilizarse como registros autoritativos. Nada en estos términos limita la responsabilidad por muerte o lesiones causadas por negligencia, por fraude ni por aquello que la ley no permita limitar. Por lo demás, nuestra responsabilidad total por el servicio queda limitada al importe que nos hayas pagado en los 12 meses anteriores a la reclamación.',
           ]},
@@ -336,15 +328,15 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'Cómo se usa la IA y quién nos ayuda', paragraphs: [
             'Las funciones de IA —entrevistar, transcribir grabaciones, traducir, interpretar fotografías, planificar la investigación, ayudar a redactar e ilustrar— envían solo el material necesario para cada paso a nuestros proveedores de IA. Google (Gemini, vía Google Cloud Vertex AI o AI Studio) gestiona la mayoría de las tareas; para las historias contadas en chino, la generación de texto puede dirigirse a Qwen a través de OpenRouter; la investigación histórica opcional usa Nimble para encontrar fuentes públicas en la web. Las fotografías solo se envían para su interpretación cuando eliges usar esa función. Las ilustraciones son generadas por IA y siempre se etiquetan como ilustración.',
-            'PREGUNTA PARA LA FUNDADORA: Nimble (investigación web pública) está en la configuración de servicios del repositorio y se lista aquí por exhaustividad, pero no figuraba en la lista original de encargados —confirma que te parece bien nombrarlo—.',
-          ], question: true},
+            'Nimble es un tercero encargado del tratamiento que realiza este paso de investigación histórica siguiendo nuestras instrucciones; es el proveedor de descubrimiento en uso actualmente.',
+          ]},
           {heading: 'Pagos y envío de correos', paragraphs: [
-            'Los pagos y las suscripciones los gestiona Stripe. Los datos de tu tarjeta van a Stripe, no a nosotros —solo guardamos el estado de tu plan y los identificadores que Stripe necesita para reconocer tu suscripción—. Los códigos de inicio de sesión se envían por correo mediante Supabase Auth usando Resend como servicio de envío (desde la dirección signin@buildwithwhy.com).',
+            'Los pagos y las suscripciones los gestiona Stripe. Los datos de tu tarjeta van a Stripe, no a nosotros —solo guardamos el estado de tu plan y los identificadores que Stripe necesita para reconocer tu suscripción—. Los códigos de inicio de sesión se envían por correo mediante Supabase Auth usando Resend como servicio de envío.',
           ]},
           {heading: 'Conservación y eliminación', paragraphs: [
             'Tus historias y fotografías se conservan hasta que tú o la ley nos pidamos eliminarlas. Al borrar una historia en Mis historias se eliminan ella y su fotografía. Eliminar tu cuenta borra tus historias, tus fotografías y los datos de tu cuenta.',
-            'PREGUNTA PARA LA FUNDADORA: todavía no existe un flujo de eliminación de cuenta en el producto. Esta sección describe el comportamiento previsto; no debe publicarse antes de que exista la eliminación (u ofrezca la opción por correo a yuyu@hopperlace.ai).',
-          ], question: true},
+            'Aún no existe un flujo de eliminación de cuenta en la aplicación. Hasta que esté disponible, puedes solicitar la eliminación de tu cuenta y sus datos escribiendo a yuyu@hopperlace.ai; completaremos la eliminación en un plazo de 30 días desde tu solicitud. Este proceso por correo es provisional y se sustituirá cuando exista la eliminación dentro de la aplicación.',
+          ]},
           {heading: 'Tus derechos conforme al RGPD del Reino Unido', paragraphs: [
             'Tienes derecho a saber cómo se usan tus datos (este aviso); a obtener una copia; a que se corrijan los datos inexactos; a que se supriman; a oponerte o limitar ciertos tratamientos; a portar tus datos a otro servicio cuando la ley lo permita; y a reclamar ante la Information Commissioner\u2019s Office (ico.org.uk). Para ejercer cualquier derecho, o con cualquier pregunta sobre tus datos, escribe a yuyu@hopperlace.ai.',
           ]},
@@ -357,8 +349,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
         sections: [
           {heading: 'Cancelar una suscripción', paragraphs: [
             'Puedes cancelar en cualquier momento de forma autónoma mediante el enlace «Gestionar facturación» de la aplicación —abre el portal de cliente de Stripe, donde se gestionan suscripciones y facturas—. No necesitas escribirnos para cancelar ni cobramos gastos de cancelación.',
-            'PREGUNTA PARA LA FUNDADORA: el enlace de «Gestionar facturación» (portal de cliente de Stripe) está en desarrollo. Hasta que esté disponible, las cancelaciones y cualquier cambio de facturación se atenderán por solicitud a yuyu@hopperlace.ai.',
-          ], question: true},
+            'La cancelación surte efecto al final del período de facturación en curso. Si por cualquier motivo no puedes usar el enlace «Gestionar facturación», escribe a yuyu@hopperlace.ai y gestionaremos la cancelación o cualquier cambio de facturación por ti.',
+          ]},
           {heading: 'Qué hace la cancelación', paragraphs: [
             'Cancelar detiene la próxima renovación. Mantienes acceso completo a las funciones de tu plan hasta el final del período ya pagado; después, tu cuenta continúa en el plan gratuito y todo lo que has creado sigue siendo tuyo para leer, imprimir y compartir. Los paquetes de créditos comprados son tuyos con independencia del plan.',
           ]},
@@ -367,8 +359,7 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
           ]},
           {heading: 'El derecho de 14 días y la excepción de inicio inmediato', paragraphs: [
             'Como consumidor del Reino Unido, normalmente tienes 14 días desde la compra para desistir y obtener un reembolso completo. Once & Ours es contenido digital que empieza a funcionar al pagar, así que al pagar te pedimos tu consentimiento expreso para comenzar el suministro de inmediato. Si das ese consentimiento, el derecho de 14 días no se aplica a esa compra una vez iniciado el suministro, tal como permite el Reglamento de Contratos de Consumo (Información, Desistimiento y Cargos Adicionales) de 2013. La casilla del pago lo dice en palabras claras antes de pagar.',
-            'PREGUNTA PARA LA FUNDADORA: el encargo cita el artículo 36(3)(a) del Reglamento de 2013; confirma la disposición exacta con un abogado antes del lanzamiento.',
-          ], question: true},
+          ]},
           {heading: 'Reembolsos por cortesía', paragraphs: [
             'Aun fuera del plazo legal, si algo salió mal —un doble cobro, un crédito de historia que no llegó, o compraste por error y apenas has usado el servicio— escribe a yuyu@hopperlace.ai. Los reembolsos por cortesía se conceden a discreción de la fundadora; preferimos perder una tarifa antes que dejarte con una pérdida injusta.',
           ]},
