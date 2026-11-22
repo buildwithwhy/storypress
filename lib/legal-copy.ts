@@ -1,16 +1,15 @@
 import {type Story} from './story';
 
-// DRAFT LEGAL PAGES — NOT LEGAL ADVICE.
+// LEGAL PAGES — FOUNDER-APPROVED DRAFTS, NOT LEGAL ADVICE.
 //
 // This module carries the /terms, /privacy and /refunds page copy in the
-// app's shared en/zh/es copy-object pattern. It exists for founder review:
-// every page renders a visible draft banner, and anything the author could
-// not verify against the repo or needs a founder decision on is a visible
-// "QUESTION FOR FOUNDER:" callout (the `question: true` flag on a paragraph).
-// The founder questions are also collected in the PR body. A qualified
-// solicitor must review before these pages are treated as final.
+// app's shared en/zh/es copy-object pattern. These pages are founder-approved
+// drafts that still require review by a qualified solicitor before they are
+// treated as final. This reminder is intentionally kept here, out of public
+// view: the on-page draft banner was removed for launch (Nov 2026) and must
+// stay out of the public pages until that solicitor review is complete.
 //
-// Product statements are grounded in the repo as of this draft: free
+// Product statements are grounded in the repo as of the Nov 2026 draft: free
 // allowance defaults to 3 stories (server/storage.ts freeStoryLimit), the
 // paid fair-use cap defaults to 50 stories started per UTC calendar month
 // (server/storage.ts subscriptionMonthlyCap, STORYPRESS_SUBSCRIPTION_MONTHLY_CAP),
@@ -27,7 +26,6 @@ export type LegalPageId = 'terms' | 'privacy' | 'refunds';
 export type LegalSection = {heading: string; paragraphs: string[]; question?: boolean};
 export type LegalPageCopy = {title: string; updated: string; intro: string; sections: LegalSection[]};
 export type LegalCopy = {
-  draftBanner: string;
   questionLabel: string;
   backHome: string;
   readAlso: string;
@@ -44,7 +42,6 @@ export function legalPageFromPath(path: string): LegalPageId | null {
 
 export const legalCopy: Record<Story['language'], LegalCopy> = {
   en: {
-    draftBanner: 'DRAFT for founder review — not legal advice. A qualified solicitor must review before these pages are final.',
     questionLabel: 'QUESTION FOR FOUNDER',
     backHome: 'Back to Once & Ours',
     readAlso: 'Related',
@@ -54,8 +51,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
     pages: {
       terms: {
         title: 'Terms of Service',
-        updated: 'Draft — last updated 21 November 2026',
-        intro: 'These terms are a draft for founder review and are not legal advice. They set out the ground rules for using Once & Ours, a personal storytelling service operated by HOPPERLACE LTD.',
+        updated: 'Last updated 22 November 2026',
+        intro: 'These terms set out the ground rules for using Once & Ours, a personal storytelling service operated by HOPPERLACE LTD.',
         sections: [
           {heading: 'Who we are and what the service does', paragraphs: [
             'Once & Ours is a personal storytelling app. You share a memory by typing, dictating, or talking through a live spoken interview, and the service helps you shape it into an illustrated keepsake — a newspaper, booklet, or letter you can read, edit, download, print, and share with people you choose. The service offers AI-assisted interviewing, translation between English, Simplified Chinese, and Spanish, AI-generated illustration, and optional research that surfaces public historical context related to what you have told it.',
@@ -89,14 +86,14 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
             'The service is provided with reasonable skill and care. AI features are automatic and can be wrong; the service is not a professional archive, genealogy, legal, or medical service, and keepsakes should not be relied on as authoritative records. Nothing in these terms limits liability for death or personal injury caused by negligence, for fraud, or for anything else the law does not allow to be limited. Otherwise our total liability for the service is limited to the amount you paid us in the 12 months before the claim.',
           ]},
           {heading: 'Changes, governing law, and contact', paragraphs: [
-            'These terms may change; material changes will be announced in the app. This draft is governed by the laws of England and Wales, and UK consumer rights you have under statute are unaffected by anything here. Questions, complaints, and refund requests: yuyu@hopperlace.ai.',
+            'These terms may change; material changes will be announced in the app. These terms are governed by the laws of England and Wales, and UK consumer rights you have under statute are unaffected by anything here. Questions, complaints, and refund requests: yuyu@hopperlace.ai.',
           ]},
         ],
       },
       privacy: {
         title: 'Privacy Notice',
-        updated: 'Draft — last updated 21 November 2026',
-        intro: 'This notice is a draft for founder review and is not legal advice. It explains what Once & Ours collects, where it lives, who helps us process it, and the rights you have under UK GDPR. Once & Ours is operated by HOPPERLACE LTD (company number 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contact: yuyu@hopperlace.ai.',
+        updated: 'Last updated 22 November 2026',
+        intro: 'This notice explains what Once & Ours collects, where it lives, who helps us process it, and the rights you have under UK GDPR. Once & Ours is operated by HOPPERLACE LTD (company number 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contact: yuyu@hopperlace.ai.',
         sections: [
           {heading: 'What we collect', paragraphs: [
             'Your account details: the email address you sign in with (by email code or Google) and the identifiers your sign-in provider returns.',
@@ -126,8 +123,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
       },
       refunds: {
         title: 'Refunds & cancellation',
-        updated: 'Draft — last updated 21 November 2026',
-        intro: 'This page is a draft for founder review and is not legal advice. It explains how to cancel a subscription, what happens to credit packs, and when refunds are given. Once & Ours is operated by HOPPERLACE LTD (company number 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contact: yuyu@hopperlace.ai.',
+        updated: 'Last updated 22 November 2026',
+        intro: 'This page explains how to cancel a subscription, what happens to credit packs, and when refunds are given. Once & Ours is operated by HOPPERLACE LTD (company number 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contact: yuyu@hopperlace.ai.',
         sections: [
           {heading: 'Cancelling a subscription', paragraphs: [
             'You can cancel any time, self-serve, through the Manage billing link in the app — this opens the Stripe customer portal, where subscriptions and invoices are managed. You do not need to email us to cancel, and we do not charge a cancellation fee.',
@@ -153,7 +150,6 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
     },
   },
   zh: {
-    draftBanner: '供创始人审阅的草稿——不构成法律意见。正式发布前须经合资格律师审阅。',
     questionLabel: '创始人待确认问题',
     backHome: '回到 Once & Ours',
     readAlso: '相关页面',
@@ -163,8 +159,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
     pages: {
       terms: {
         title: '服务条款',
-        updated: '草稿——最后更新于2026年11月21日',
-        intro: '本条款为供创始人审阅的草稿，不构成法律意见。条款规定了使用 Once & Ours（一款个人叙事应用）的基本规则，运营方为 HOPPERLACE LTD。',
+        updated: '最后更新于2026年11月22日',
+        intro: '本条款规定了使用 Once & Ours（一款个人叙事应用）的基本规则，运营方为 HOPPERLACE LTD。',
         sections: [
           {heading: '我们是谁，服务是什么', paragraphs: [
             'Once & Ours 是一款个人叙事应用。你可以通过打字、口述或实时语音访谈来讲述一段回忆，服务会帮你把它整理成一份配有插图的纪念作品——报纸、小册子或信件，可以阅读、编辑、下载、打印，并分享给你选择的人。服务提供 AI 辅助访谈、英语/简体中文/西班牙语互译、AI 插图生成，以及可选的历史背景检索（仅查找公开资料）。',
@@ -198,14 +194,14 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
             '我们以合理的专业与谨慎提供服务。AI 功能为自动生成，可能出现错误；本服务并非专业的档案、族谱、法律或医疗服务，纪念作品不应被当作权威记录依赖。本条款不限制因过失导致死亡或人身伤害、欺诈或法律不允许限制的其他事项的责任。除此之外，我们对服务的赔偿责任总额以索赔前12个月内你向我们支付的金额为限。',
           ]},
           {heading: '条款变更、适用法律与联系方式', paragraphs: [
-            '本条款可能变更；重大变更将在应用内公布。本草稿适用英格兰和威尔士法律；你依英国成文法享有的消费者权利不受本条款任何内容影响。问题、投诉与退款申请请发送至：yuyu@hopperlace.ai。',
+            '本条款可能变更；重大变更将在应用内公布。本条款适用英格兰和威尔士法律；你依英国成文法享有的消费者权利不受本条款任何内容影响。问题、投诉与退款申请请发送至：yuyu@hopperlace.ai。',
           ]},
         ],
       },
       privacy: {
         title: '隐私声明',
-        updated: '草稿——最后更新于2026年11月21日',
-        intro: '本声明为供创始人审阅的草稿，不构成法律意见。它说明 Once & Ours 收集哪些信息、存放于何处、由哪些服务方协助处理，以及你依英国 GDPR 享有的权利。Once & Ours 由 HOPPERLACE LTD 运营（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ）。联系方式：yuyu@hopperlace.ai。',
+        updated: '最后更新于2026年11月22日',
+        intro: '本声明说明 Once & Ours 收集哪些信息、存放于何处、由哪些服务方协助处理，以及你依英国 GDPR 享有的权利。Once & Ours 由 HOPPERLACE LTD 运营（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ）。联系方式：yuyu@hopperlace.ai。',
         sections: [
           {heading: '我们收集什么', paragraphs: [
             '账户信息：你登录所用的邮箱地址（邮箱验证码或 Google），以及登录服务方返回的标识符。',
@@ -235,8 +231,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
       },
       refunds: {
         title: '退款与取消',
-        updated: '草稿——最后更新于2026年11月21日',
-        intro: '本页面为供创始人审阅的草稿，不构成法律意见。它说明如何取消订阅、点数包如何处理、何种情况下退款。Once & Ours 由 HOPPERLACE LTD 运营（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ）。联系方式：yuyu@hopperlace.ai。',
+        updated: '最后更新于2026年11月22日',
+        intro: '本页面说明如何取消订阅、点数包如何处理、何种情况下退款。Once & Ours 由 HOPPERLACE LTD 运营（公司注册号 16532585，注册办事处：71-75 Shelton Street, Covent Garden, London WC2H 9JQ）。联系方式：yuyu@hopperlace.ai。',
         sections: [
           {heading: '取消订阅', paragraphs: [
             '你可随时通过应用内的"管理订阅"链接自助取消——该链接会打开 Stripe 客户门户，订阅与发票均在此管理。取消无需发邮件给我们，我们也不收取任何取消费用。',
@@ -262,7 +258,6 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
     },
   },
   es: {
-    draftBanner: 'BORRADOR para revisión de la fundadora — no es asesoría legal. Un abogado cualificado debe revisarlo antes de su publicación.',
     questionLabel: 'PREGUNTA PARA LA FUNDADORA',
     backHome: 'Volver a Once & Ours',
     readAlso: 'Relacionado',
@@ -272,8 +267,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
     pages: {
       terms: {
         title: 'Términos del servicio',
-        updated: 'Borrador — última actualización: 21 de noviembre de 2026',
-        intro: 'Estos términos son un borrador para revisión de la fundadora y no constituyen asesoría legal. Establecen las reglas básicas de uso de Once & Ours, una aplicación de narrativa personal operada por HOPPERLACE LTD.',
+        updated: 'Última actualización: 22 de noviembre de 2026',
+        intro: 'Estos términos establecen las reglas básicas de uso de Once & Ours, una aplicación de narrativa personal operada por HOPPERLACE LTD.',
         sections: [
           {heading: 'Quiénes somos y qué hace el servicio', paragraphs: [
             'Once & Ours es una aplicación de narrativa personal. Compartes un recuerdo escribiendo, dictando o conversando en una entrevista hablada en directo, y el servicio te ayuda a convertirlo en un recuerdo ilustrado —un periódico, un cuadernillo o una carta— que puedes leer, editar, descargar, imprimir y compartir con quienes tú elijas. El servicio ofrece entrevistas asistidas por IA, traducción entre inglés, chino simplificado y español, ilustraciones generadas por IA y, opcionalmente, una búsqueda de contexto histórico público relacionado con lo que has contado.',
@@ -307,14 +302,14 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
             'Prestamos el servicio con la diligencia y profesionalidad razonables. Las funciones de IA son automáticas y pueden equivocarse; el servicio no es un archivo profesional ni un servicio genealógico, jurídico o médico, y los recuerdos no deben utilizarse como registros autoritativos. Nada en estos términos limita la responsabilidad por muerte o lesiones causadas por negligencia, por fraude ni por aquello que la ley no permita limitar. Por lo demás, nuestra responsabilidad total por el servicio queda limitada al importe que nos hayas pagado en los 12 meses anteriores a la reclamación.',
           ]},
           {heading: 'Cambios, ley aplicable y contacto', paragraphs: [
-            'Estos términos pueden cambiar; los cambios importantes se anunciarán en la aplicación. Este borrador se rige por las leyes de Inglaterra y Gales, y los derechos de consumo del Reino Unido que te otorga la ley no quedan afectados por nada de lo aquí escrito. Preguntas, quejas y solicitudes de reembolso: yuyu@hopperlace.ai.',
+            'Estos términos pueden cambiar; los cambios importantes se anunciarán en la aplicación. Estos términos se rigen por las leyes de Inglaterra y Gales, y los derechos de consumo del Reino Unido que te otorga la ley no quedan afectados por nada de lo aquí escrito. Preguntas, quejas y solicitudes de reembolso: yuyu@hopperlace.ai.',
           ]},
         ],
       },
       privacy: {
         title: 'Aviso de privacidad',
-        updated: 'Borrador — última actualización: 21 de noviembre de 2026',
-        intro: 'Este aviso es un borrador para revisión de la fundadora y no constituye asesoría legal. Explica qué recoge Once & Ours, dónde se guarda, quién nos ayuda a tratarlo y qué derechos tienes conforme al RGPD del Reino Unido. Once & Ours es operado por HOPPERLACE LTD (número de compañía 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contacto: yuyu@hopperlace.ai.',
+        updated: 'Última actualización: 22 de noviembre de 2026',
+        intro: 'Este aviso explica qué recoge Once & Ours, dónde se guarda, quién nos ayuda a tratarlo y qué derechos tienes conforme al RGPD del Reino Unido. Once & Ours es operado por HOPPERLACE LTD (número de compañía 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contacto: yuyu@hopperlace.ai.',
         sections: [
           {heading: 'Qué recogemos', paragraphs: [
             'Los datos de tu cuenta: la dirección de correo con la que inicias sesión (por código o con Google) y los identificadores que devuelve tu proveedor de inicio de sesión.',
@@ -344,8 +339,8 @@ export const legalCopy: Record<Story['language'], LegalCopy> = {
       },
       refunds: {
         title: 'Reembolsos y cancelación',
-        updated: 'Borrador — última actualización: 21 de noviembre de 2026',
-        intro: 'Esta página es un borrador para revisión de la fundadora y no constituye asesoría legal. Explica cómo cancelar una suscripción, qué ocurre con los paquetes de créditos y cuándo se conceden reembolsos. Once & Ours es operado por HOPPERLACE LTD (número de compañía 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contacto: yuyu@hopperlace.ai.',
+        updated: 'Última actualización: 22 de noviembre de 2026',
+        intro: 'Esta página explica cómo cancelar una suscripción, qué ocurre con los paquetes de créditos y cuándo se conceden reembolsos. Once & Ours es operado por HOPPERLACE LTD (número de compañía 16532585, 71-75 Shelton Street, Covent Garden, London WC2H 9JQ). Contacto: yuyu@hopperlace.ai.',
         sections: [
           {heading: 'Cancelar una suscripción', paragraphs: [
             'Puedes cancelar en cualquier momento de forma autónoma mediante el enlace «Gestionar facturación» de la aplicación —abre el portal de cliente de Stripe, donde se gestionan suscripciones y facturas—. No necesitas escribirnos para cancelar ni cobramos gastos de cancelación.',

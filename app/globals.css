@@ -150,12 +150,11 @@
 @keyframes make-stage-pulse{50%{transform:scale(.55);opacity:.45}}
 .paper-page .make-progress{max-width:800px;margin:0 auto 18px}
 
-/* DRAFT legal pages (/terms /privacy /refunds) — founder review required.
+/* Legal pages (/terms /privacy /refunds).
    One readable column in the pricing-page design language: serif headings,
-   a prominent draft banner up top, and founder-question callouts that refuse
+   a prominent page title, and founder-question callouts that refuse
    to be skimmed over. */
 .legal-page{max-width:720px;margin:30px auto 60px;padding:0 20px}
-.legal-draft-banner{background:#eee4c9;border:1px solid #d9c48d;border-radius:8px;padding:13px 17px;font-size:12px;line-height:1.6;color:#796236;font-weight:550;margin-bottom:30px}
 .legal-page>h1{font-size:44px;margin:0 0 8px}
 .legal-updated{font-size:11px;color:#818977;margin-bottom:20px}
 .legal-intro{font-size:15px;line-height:1.75;color:#637267;margin-bottom:28px}
