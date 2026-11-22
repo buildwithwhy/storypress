@@ -4,9 +4,9 @@ import {startCopy} from '../lib/start-copy';
 import type {Story} from '../lib/story';
 import {paywallCopy} from '../lib/paywall-copy';
 
-export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,limitReached,freeLimit,onUpgrade,onStart,onContinue,children}:{
+export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,limitReached,freeLimit,onUpgrade,onStart,onContinue,onSignIn,children}:{
  language:Story['language'];disabled:boolean;hasDraft:boolean;needsSignIn:boolean;fromShared:boolean;limitReached:boolean;freeLimit:number;onUpgrade:()=>void;
- onStart:(withPhoto?:boolean,prompt?:string)=>void;onContinue:()=>void;children:ReactNode;
+ onStart:(withPhoto?:boolean,prompt?:string)=>void;onContinue:()=>void;onSignIn?:()=>void;children:ReactNode;
 }) {
  const c=startCopy[language];
  const pw=paywallCopy[language];
@@ -27,7 +27,10 @@ export function StoryStart({language,disabled,hasDraft,needsSignIn,fromShared,li
   {showPrompts&&<div id="story-prompts" className="story-prompts"><p>{c.promptTitle}</p>{c.prompts.map(prompt=><button key={prompt.label} disabled={disabled||limitReached} onClick={()=>onStart(false,prompt.question)}><span>{prompt.label}</span><ArrowRight size={16}/></button>)}</div>}
   <details className="start-details"><summary>{c.details}</summary>{children}</details>
   <p className="start-privacy"><Lock size={13}/>{c.privacy}</p>
-  {needsSignIn&&<p className="start-auth-note">{c.signIn}</p>}
+  {/* §D5: the sign-in sentence keeps its full localized text but becomes the
+      interactive element itself — a real button that opens the account
+      dialog, not a bare paragraph dead-ending the reader. */}
+  {needsSignIn&&(onSignIn?<button type="button" className="text-button start-auth-note" onClick={onSignIn}>{c.signIn}</button>:<p className="start-auth-note">{c.signIn}</p>)}
  </div>;
 }
 

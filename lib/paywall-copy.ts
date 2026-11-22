@@ -40,6 +40,7 @@ export interface PaywallCopy{
  dormant:string;
  // Post-checkout return banner (webhook-lag rescue).
  checkoutConfirmed:string;
+ packConfirmed:string;
  checkoutPending:string;
  // Dedicated /pricing page (wave 6 §3, reworked wave 8 §3). While billing is
  // configured, amounts come from the server's Stripe-cached pricing payload —
@@ -81,6 +82,7 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   checkoutBusy:'Opening checkout…',
   dormant:'Online payment is not connected yet. Your stories remain fully available.',
   checkoutConfirmed:'Your plan is active. Thank you for supporting the studio.',
+  packConfirmed:'{size} stories added to your account.',
   checkoutPending:'Thank you! Your payment is still being confirmed — this page will show your plan shortly. Your stories remain fully available meanwhile.',
   pricingTitle:'Plans for every storyteller',
   pricingIntro:'Start free. Upgrade when you are ready — every story you have made stays yours either way.',
@@ -116,6 +118,7 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   checkoutBusy:'正在打开结账……',
   dormant:'在线支付尚未开通。你的故事仍然完全可用。',
   checkoutConfirmed:'你的方案已生效。感谢你对工作室的支持。',
+  packConfirmed:'已为你的账户加入 {size} 个故事。',
   checkoutPending:'感谢你！你的付款还在确认中——页面稍后会显示你的方案。期间你的故事仍然完全可用。',
   pricingTitle:'适合每位讲述者的方案',
   pricingIntro:'免费开始，准备好后再升级。无论哪种方案，你创作的一切都永远属于你。',
@@ -151,6 +154,7 @@ export const paywallCopy:Record<PaywallLanguage,PaywallCopy>={
   checkoutBusy:'Abriendo el pago…',
   dormant:'El pago en línea aún no está conectado. Tus historias siguen totalmente disponibles.',
   checkoutConfirmed:'Tu plan está activo. Gracias por apoyar el estudio.',
+  packConfirmed:'Se añadieron {size} historias a tu cuenta.',
   checkoutPending:'¡Gracias! Tu pago aún se está confirmando: esta página mostrará tu plan en breve. Mientras tanto, tus historias siguen totalmente disponibles.',
   pricingTitle:'Planes para cada narrador',
   pricingIntro:'Empieza gratis. Mejora cuando quieras: todo lo que hayas creado sigue siendo tuyo de todos modos.',

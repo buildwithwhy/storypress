@@ -25,7 +25,17 @@ export const billingStatusSchema=z.object({
  // DAILY_AI_UNIT_CAP, read from the same storypress_ai_usage row the reserve
  // RPC increments. Optional: absent when Supabase is unset or the read
  // degraded — the client then fails closed on auto-fire, never on manual use.
- dailyAiUnitsUsed:z.number().int().min(0).optional()
+ dailyAiUnitsUsed:z.number().int().min(0).optional(),
+ // Purchase history rows (purchase sheet revision A): rendered in the
+ // account panel's Plan and billing view when the payload carries them — the
+ // field itself ships server-side in the separate refund PR, so today it is
+ // always absent and the panel shows the localized empty state. Optional and
+ // additive: a payload without it parses unchanged.
+ history:z.array(z.object({
+  description:z.string(),
+  amount:z.string(),
+  date:z.string()
+ })).optional()
 });
 export type BillingStatus=z.infer<typeof billingStatusSchema>;
 export const billingFlagSchema=z.object({configured:z.boolean()});
