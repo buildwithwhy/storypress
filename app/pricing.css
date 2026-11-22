@@ -17,7 +17,7 @@
 /* The annual saving badge (wave 8 §3): computed from Stripe amounts, never copy. */
 .pricing-badge{align-self:center;font-size:12px;font-weight:600;color:#24513a;background:#dcead9;border-radius:999px;padding:2px 10px}
 .pricing-pay{display:grid;gap:4px}
-.pricing-link{margin-left:26px}
+.intro-links{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
 /* DRAFT legal pages (founder review required): the suggested immediate-start
    consent checkbox sits above the pay buttons; the legal links line closes
    the page below the plan cards. */
