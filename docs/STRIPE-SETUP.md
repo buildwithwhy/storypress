@@ -242,10 +242,18 @@ pack credits.
 ## Going live
 
 When the test-mode round-trip is green, switch Production to live mode — in
-order:
+order. The live-mode deployment serves **https://www.onceandours.com**, the
+canonical production domain superseding `ours.hopperlace.ai` for live billing
+(older references elsewhere in this file describe prior deployments and
+remain for provenance):
 
-1. Create the **live-mode** webhook endpoint in the Stripe Dashboard at
-   `https://ours.hopperlace.ai/api/stripe-webhook`, subscribed to exactly
+1. Name the live products as the founder configured them in the Stripe live
+   catalog: **Once & Ours subscription monthly**, **Once & Ours subscription
+   annual**, **Once & Ours 30-credit pack**, and **Once & Ours 100-credit
+   pack** — same amounts as test mode (see the product table above). Create
+   the **live-mode** webhook endpoint — named `once-and-ours-live` — in the
+   Stripe Dashboard at
+   `https://www.onceandours.com/api/stripe-webhook`, subscribed to exactly
    the five events listed above (`checkout.session.completed`,
    `checkout.session.async_payment_succeeded`,
    `customer.subscription.updated`, `customer.subscription.deleted`,
