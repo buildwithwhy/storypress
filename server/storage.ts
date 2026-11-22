@@ -1,6 +1,6 @@
 import {z} from 'zod';
 import {storySchema,artifactLanguage} from '../lib/story';
-import {billingStatusSchema,parseAddons,type BillingStatus} from '../lib/billing';
+import {billingStatusSchema,parseAddons,type BillingStatus,type BillingHistory} from '../lib/billing';
 import {multilingualSnapshot, editionHtml} from '../lib/edition';
 import {editionArtwork} from '../lib/artwork-data';
 import {ServiceError} from '../lib/providers';
@@ -195,8 +195,31 @@ export async function reserveStory(userId:string,env:Bindings){
 // PostgREST aggregate syntax (count(*), sum(column)) appears here: this
 // project's PostgREST rejects those select shapes outright, so raw rows are
 // summed and counted in JS. The read order below is fixed (entitlements,
-// counts, today's AI usage, month draws, pack grants, pack draws) — the
-// check suites' fetch mocks queue responses in exactly that order.
+// counts, today's AI usage, month draws, pack grants, pack draws, refund
+// adjustments) — the check suites' fetch mocks queue responses in exactly
+// that order.
+
+// Purchase history (wave 9 §): grant rows render as pack purchases and
+// adjustment rows as refunds, newest first. Pure over the raw ledger rows;
+// returns undefined when either read degraded, so the field degrades
+// independently exactly like the balance.
+function billingHistory(grantRows:unknown,adjustmentRows:unknown):BillingHistory|undefined{
+ if(!Array.isArray(grantRows)||!Array.isArray(adjustmentRows))return undefined;
+ type Stamped=BillingHistory[number]&{at:string};
+ const entries:Stamped[]=[
+  ...grantRows.flatMap(row=>{
+   const r=row as {credits?:unknown;checkout_session_id?:unknown;granted_at?:unknown};
+   const credits=Number(r.credits),at=r.granted_at,sessionId=r.checkout_session_id;
+   return typeof at==='string'&&Number.isFinite(credits)&&typeof sessionId==='string'?[{type:'pack' as const,credits,grantedAt:at,sessionId,at}]:[];
+  }),
+  ...adjustmentRows.flatMap(row=>{
+   const r=row as {credits?:unknown;checkout_session_id?:unknown;adjusted_at?:unknown};
+   const credits=Number(r.credits),at=r.adjusted_at,sessionId=r.checkout_session_id;
+   return typeof at==='string'&&Number.isFinite(credits)&&credits<0&&typeof sessionId==='string'?[{type:'refund' as const,credits,adjustedAt:at,sessionId,at}]:[];
+  })
+ ];
+ return entries.sort((left,right)=>Date.parse(right.at)-Date.parse(left.at)).map(({at,...entry})=>entry);
+}
 export async function billingStatus(env:Bindings,userId:string|null):Promise<BillingStatus>{
  // Env-tuned sizes ride the payload so the UI interpolates them; the dormant
  // mirror in server/vercel.mjs hand-copies this shape — keep the two in sync.
@@ -226,22 +249,26 @@ export async function billingStatus(env:Bindings,userId:string|null):Promise<Bil
  // granted credits minus drawn rows (draws never exceed grants under the
  // reserve lock; the clamp keeps a transient skew from displaying negative).
  const drawRows=await read(`storypress_subscription_draws?owner_id=eq.${userId}&period_month=eq.${new Date().toISOString().slice(0,7)}-01&select=stories_created`);
- const grantRows=await read(`storypress_pack_grants?owner_id=eq.${userId}&select=credits`);
+ const grantRows=await read(`storypress_pack_grants?owner_id=eq.${userId}&select=credits,checkout_session_id,granted_at`);
  const packDrawRows=await read(`storypress_pack_draws?owner_id=eq.${userId}&select=id`);
+ const adjustmentRows=await read(`storypress_pack_adjustments?owner_id=eq.${userId}&select=credits,checkout_session_id,adjusted_at`);
  const drawRow=Array.isArray(drawRows)?drawRows[0] as {stories_created?:number}|undefined:undefined;
  // Aggregated in JS (see the guard note above): grants carry one credit count
- // per row, draws are one row per consumed credit. A failed read on either
- // side reports the balance as zero — the conservative degrade — rather than
- // a half-computed number.
+ // per row, draws are one row per consumed credit, and refund adjustments
+ // carry negative credits (wave 9 §). A failed read on any side reports the
+ // balance as zero — the conservative degrade — rather than a half-computed
+ // number that could overstate spendable credits.
  const granted=Array.isArray(grantRows)?grantRows.reduce<number>((total,row)=>total+(Number((row as {credits?:unknown}).credits)||0),0):null;
  const drawn=Array.isArray(packDrawRows)?packDrawRows.length:null;
- const packBalance=granted!==null&&drawn!==null?Math.max(0,granted-drawn):0;
+ const adjusted=Array.isArray(adjustmentRows)?adjustmentRows.reduce<number>((total,row)=>total+(Number((row as {credits?:unknown}).credits)||0),0):null;
+ const packBalance=granted!==null&&drawn!==null&&adjusted!==null?Math.max(0,granted+adjusted-drawn):0;
+ const history=billingHistory(grantRows,adjustmentRows);
  // The plan is normalized at the read boundary: only 'subscription' passes
  // through — an unexpected or legacy plan value (the DB CHECK still permits
  // 'lifetime') reads as the free tier, so no account payload can ever emit
  // a retired plan and a stray legacy row renders fail-safe rather than
  // crashing the panel. The reserve RPC still meters the DB row itself.
- const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:packBalance,...(dailyAiUnitsUsed===undefined?{}:{dailyAiUnitsUsed})});
+ const parsed=billingStatusSchema.safeParse({configured:billingConfigured(env),plan:entitlement?.plan==='subscription'?'subscription':'free',addons:parseAddons(entitlement?.addons),storiesCreated:count?.stories_created??0,freeStoryLimit:freeStoryLimit(env),...sizes,subscriptionStoriesThisMonth:drawRow?.stories_created??0,packCreditsRemaining:packBalance,...(dailyAiUnitsUsed===undefined?{}:{dailyAiUnitsUsed}),...(history===undefined?{}:{history})});
  return parsed.success?parsed.data:fallback();
 }
 

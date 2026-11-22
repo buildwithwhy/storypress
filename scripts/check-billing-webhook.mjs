@@ -64,21 +64,45 @@ const grantInsert=(sessionId,credits,rows=[{checkout_session_id:sessionId}])=>({
  assert.ok(!url.includes('storypress_entitlements'),`A pack grant must never write the plan (got ${url})`);
  assert.ok(!url.includes('storypress_stories'),`A billing write must never touch stories (got ${url})`);
 }});
-// The six billing reads billingStatus performs for a signed-in owner, in its
+// The seven billing reads billingStatus performs for a signed-in owner, in its
 // fixed order: entitlements, story counts, today's AI usage, this month's
-// draws, pack grants sum, pack draws count.
+// draws, pack grants, pack draws count, refund adjustments.
 const ownerState=(state={})=>[
  {data:state.entitlements??[]},
  {data:state.counts??[]},
  {data:state.usage??[]},
  {data:state.draws??[]},
  {data:state.grants??[]},
- {data:state.packDraws??[]}];
+ {data:state.packDraws??[]},
+ {data:state.adjustments??[]}];
 // The exact error shapes the live Supabase project returned for aggregate
 // selects before the fix (reproduced with an owner JWT, Nov 11) — the guard
 // per read must degrade the field, not zero the block.
 const pgrstError=(code,message)=>({status:400,data:{code,message,hint:null,details:null}});
 const checkoutEvent=(id,overrides={})=>({id,type:'checkout.session.completed',data:{object:{id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',customer_details:{email:'fictional@example.invalid'},metadata:{userId:user},...overrides}}});
+// A charge.refunded event: data.object is a Charge (Stripe shape — training
+// knowledge, pinned findings §1.3). The checkout session comes from the
+// PaymentIntent's checkout field, fetched with expand[]=checkout.
+const refundEvent=(id,overrides={})=>({id,type:'charge.refunded',data:{object:{id:'ch_mock',amount:3000,amount_refunded:3000,refunded:true,payment_intent:'pi_mock',refunds:{data:[{id:'re_mock'}]},...overrides}}});
+const paymentIntentLookup=session=>({data:{id:'pi_mock',checkout:session},check:(url,init)=>{
+ assert.ok(url.includes('/v1/payment_intents/pi_mock?expand[]=checkout'),`payment intent lookup expected, got ${url}`);
+ assert.equal(init.headers.Authorization,`Bearer ${stripeEnv.STRIPE_SECRET_KEY}`);
+}});
+const grantLookup=(sessionId,rows=[{owner_id:user,credits:30}])=>({data:rows,check:url=>{
+ assert.ok(url.includes(`storypress_pack_grants?checkout_session_id=eq.${sessionId}`),`grant lookup by session expected, got ${url}`);
+}});
+// The two owner-level balance reads the refund path performs: the owner's
+// grant rows (summed in JS) and the owner's draw rows (counted).
+const balanceReads=(grantRows,drawCount)=>[
+ {data:grantRows,check:url=>{assert.ok(url.includes('storypress_pack_grants?owner_id=eq.')&&url.includes('select=credits'),`owner grants read expected, got ${url}`);}},
+ {data:Array.from({length:drawCount},(_,i)=>({id:`d${i}`})),check:url=>{assert.ok(url.includes('storypress_pack_draws?owner_id=eq.'),`owner draws read expected, got ${url}`);}}];
+// A refund adjustment insert: keyed on the Stripe refund id, negative credits.
+// rows=[] models the unique-constraint conflict a re-emitted event hits.
+const adjustmentInsert=(refundId,credits,rows=[{refund_id:refundId}])=>({data:rows,check:(url,init)=>{
+ assert.ok(url.includes('storypress_pack_adjustments?on_conflict=refund_id'),`adjustment insert expected, got ${url}`);
+ assert.match(String(init.headers.Prefer),/ignore-duplicates/,'resolution=ignore-duplicates is the only DO NOTHING value PostgREST honors');
+ assert.deepEqual(JSON.parse(init.body),{refund_id:refundId,owner_id:user,checkout_session_id:'cs_mock',credits});
+}});
 
 try{
  // --- Signature enforcement: nothing is parsed or changed on a bad signature ---
@@ -304,6 +328,82 @@ try{
   assert.deepEqual(await response.json(),{received:true,ignored:'customer.discount.created'});
   assert.equal(queue.length,0);
  }
+
+ // --- Refunds: charge.refunded removes a refunded pack's unused credits ---
+ {
+  // Full refund of an unused 30-credit grant: the adjustment removes the
+  // full 30, keyed on the Stripe refund id.
+  const body=JSON.stringify(refundEvent('evt_refund_full'));
+  queue=[claimInsert,paymentIntentLookup('cs_mock'),grantLookup('cs_mock'),...balanceReads([{credits:30}],0),adjustmentInsert('re_mock',-30)];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200,'a full refund of unused credits must be accepted');
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'exactly one adjustment row per refund');
+ }
+ {
+  // Owner-level clamp: the owner already spent all 30 credits (30 draws) —
+  // the removal bottoms out at zero, no adjustment row is written, and the
+  // event is still acknowledged 200.
+  const body=JSON.stringify(refundEvent('evt_refund_used'));
+  queue=[claimInsert,paymentIntentLookup('cs_mock'),grantLookup('cs_mock'),...balanceReads([{credits:30}],30)];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'never remove below what has already been used');
+ }
+ {
+  // Partial refund (Stripe emits one event per partial refund): half of a
+  // 30-credit pack is pro-rata 15 credits, keyed on this refund's own id.
+  const body=JSON.stringify(refundEvent('evt_refund_partial',{amount_refunded:1500,refunded:false,refunds:{data:[{id:'re_part'}]}}));
+  queue=[claimInsert,paymentIntentLookup('cs_mock'),grantLookup('cs_mock'),...balanceReads([{credits:30}],0),adjustmentInsert('re_part',-15)];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true});
+  assert.equal(queue.length,0,'partial refunds remove their pro-rata share only');
+ }
+ {
+  // Idempotency per refund: a re-emitted event with the same refund id
+  // conflicts on refund_id (the insert reads back []) — acknowledged as a
+  // duplicate, no double removal.
+  const body=JSON.stringify(refundEvent('evt_refund_redelivered'));
+  queue=[claimInsert,paymentIntentLookup('cs_mock'),grantLookup('cs_mock'),...balanceReads([{credits:30}],0),adjustmentInsert('re_mock',-30,[])];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true,duplicate:true});
+  assert.equal(queue.length,0,'a refund id can never remove credits twice');
+ }
+ {
+  // A charge without a payment_intent (an unrelated legacy charge) fails
+  // closed: logged skip, acknowledged ignored, no Stripe hop, no rows.
+  const body=JSON.stringify(refundEvent('evt_refund_nopi',{payment_intent:null}));
+  queue=[claimInsert];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true,ignored:'charge.refunded'});
+  assert.equal(queue.length,0,'a grantless refund must write nothing');
+ }
+ {
+  // A subscription-invoice charge (no pack grant on its session) also fails
+  // closed: the grant lookup reads empty and nothing is written — the
+  // owner-resolution fallbacks are never consulted on the refund path.
+  const body=JSON.stringify(refundEvent('evt_refund_sub',{payment_intent:'pi_sub'}));
+  queue=[claimInsert,
+   {data:{id:'pi_sub',checkout:'cs_subscription'},check:url=>{assert.ok(url.includes('/v1/payment_intents/pi_sub'),`payment intent lookup expected, got ${url}`);}},
+   grantLookup('cs_subscription',[])];
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true,ignored:'charge.refunded'});
+  assert.equal(queue.length,0,'no owner resolution, no writes for a grantless refund');
+ }
+ {
+  // Redelivery of a refund event: the claim conflicts → no lookup, no removal.
+  queue=[{...claimInsert,data:[]}];
+  const body=JSON.stringify(refundEvent('evt_refund_full'));
+  const response=await worker.fetch(webhookRequest(body,sign(body)),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{received:true,duplicate:true});
+  assert.equal(queue.length,0,'a replayed refund event must not remove again');
+ }
  {
   // A processing failure after the claim must release it, so Stripe's
   // redelivery reprocesses instead of skipping.
@@ -370,10 +470,10 @@ try{
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
-   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{credits:30}],packDraws:[{id:'draw_1'}]})];
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:3}],draws:[{stories_created:2}],grants:[{credits:30,checkout_session_id:'cs_hist_a',granted_at:'2026-11-20T10:00:00.000Z'}],packDraws:[{id:'draw_1'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29,dailyAiUnitsUsed:0});
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:3,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:2,packCreditsRemaining:29,dailyAiUnitsUsed:0,history:[{type:'pack',credits:30,grantedAt:'2026-11-20T10:00:00.000Z',sessionId:'cs_hist_a'}]});
   assert.equal(queue.length,0);
  }
  {
@@ -392,11 +492,12 @@ try{
    {data:[]},
    {data:[{stories_created:12}]},
    pgrstError('PGRST200','Could not find a relationship between \'storypress_pack_grants\' and \'sum\' in the schema cache'),
-   pgrstError('PGRST100','failed to parse select parameter (* is not valid inside select)')];
+   pgrstError('PGRST100','failed to parse select parameter (* is not valid inside select)'),
+   pgrstError('PGRST200','Could not find a relationship between \'storypress_pack_adjustments\' and \'sum\' in the schema cache')];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
   assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:54,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:12,packCreditsRemaining:0,dailyAiUnitsUsed:0},'two failed pack reads must degrade only the pack balance, never zero the whole billing block');
-  assert.equal(queue.length,0,'all six billing reads were attempted despite two failing');
+  assert.equal(queue.length,0,'all seven billing reads were attempted despite three failing');
  }
  {
   // Positive: raw rows present on both pack tables — grants sum their credits
@@ -406,10 +507,28 @@ try{
   queue=[auth(),
    {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
    entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
-   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:7}],draws:[{stories_created:5}],grants:[{credits:30},{credits:100}],packDraws:[{id:'d1'},{id:'d2'},{id:'d3'}]})];
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:7}],draws:[{stories_created:5}],grants:[{credits:30,checkout_session_id:'cs_hist_a',granted_at:'2026-11-20T10:00:00.000Z'},{credits:100,checkout_session_id:'cs_hist_b',granted_at:'2026-11-21T10:00:00.000Z'}],packDraws:[{id:'d1'},{id:'d2'},{id:'d3'}]})];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:5,packCreditsRemaining:127,dailyAiUnitsUsed:0},'grant and draw rows aggregate in JS to the real balances');
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:7,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:5,packCreditsRemaining:127,dailyAiUnitsUsed:0,history:[{type:'pack',credits:100,grantedAt:'2026-11-21T10:00:00.000Z',sessionId:'cs_hist_b'},{type:'pack',credits:30,grantedAt:'2026-11-20T10:00:00.000Z',sessionId:'cs_hist_a'}]},'grant and draw rows aggregate in JS to the real balances');
+  assert.equal(queue.length,0);
+ }
+ {
+  // Wave 9 §: refund adjustments join the balance and the history — 30
+  // granted, 1 drawn, a −15 adjustment reads as 14 remaining, and the history
+  // mixes the pack purchase and the refund, newest first.
+  const session={id:'cs_mock',mode:'subscription',payment_status:'paid',customer:'cus_mock',metadata:{userId:user}};
+  queue=[auth(),
+   {data:session,check:url=>{assert.ok(url.includes('/v1/checkout/sessions/cs_mock?expand[]=line_items'),`session lookup expected, got ${url}`);}},
+   entitlementUpsert({owner_id:user,plan:'subscription',subscription_status:'active'}),
+   ...ownerState({entitlements:[{plan:'subscription',addons:'[]'}],counts:[{stories_created:2}],draws:[{stories_created:1}],
+    grants:[{credits:30,checkout_session_id:'cs_hist_a',granted_at:'2026-11-20T10:00:00.000Z'}],
+    packDraws:[{id:'d1'}],
+    adjustments:[{credits:-15,checkout_session_id:'cs_hist_a',adjusted_at:'2026-11-22T08:00:00.000Z'}]})];
+  const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
+  assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'subscription',addons:[],storiesCreated:2,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:1,packCreditsRemaining:14,dailyAiUnitsUsed:0,
+   history:[{type:'refund',credits:-15,adjustedAt:'2026-11-22T08:00:00.000Z',sessionId:'cs_hist_a'},{type:'pack',credits:30,grantedAt:'2026-11-20T10:00:00.000Z',sessionId:'cs_hist_a'}]},'refund adjustments subtract from the balance and appear in the history');
   assert.equal(queue.length,0);
  }
  {
@@ -424,11 +543,12 @@ try{
    {data:[{stories_created:9}]},
    {data:[]},
    {data:[{stories_created:4}]},
-   {data:[{credits:30}]},
-   {data:[{id:'d1'}]}];
+   {data:[{credits:30,checkout_session_id:'cs_hist_a',granted_at:'2026-11-20T10:00:00.000Z'}]},
+   {data:[{id:'d1'}]},
+   {data:[]}];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),stripeEnv);
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:4,packCreditsRemaining:29,dailyAiUnitsUsed:0},'one failed billing table must cost only its own field');
+  assert.deepEqual((await response.json()).billing,{configured:true,plan:'free',addons:[],storiesCreated:9,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:4,packCreditsRemaining:29,dailyAiUnitsUsed:0,history:[{type:'pack',credits:30,grantedAt:'2026-11-20T10:00:00.000Z',sessionId:'cs_hist_a'}]},'one failed billing table must cost only its own field');
   assert.equal(queue.length,0);
  }
  {
@@ -481,7 +601,7 @@ try{
   queue=[auth(),...ownerState()];
   const response=await worker.fetch(billingRequest({action:'status',sessionId:'cs_mock'},authorized),{...stripeEnv,STRIPE_SECRET_KEY:undefined});
   assert.equal(response.status,200);
-  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0,dailyAiUnitsUsed:0});
+  assert.deepEqual((await response.json()).billing,{configured:false,plan:'free',addons:[],storiesCreated:0,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0,dailyAiUnitsUsed:0,history:[]});
   assert.equal(queue.length,0);
  }
  {
@@ -538,7 +658,7 @@ try{
   assert.equal(response.status,405,'GET /api/billing must be refused');
  }
 
- console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout flips and price-mapped pack grants exactly-once per session across sibling events and redeliveries (fail-closed on unknown prices and missing line items), replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, checkout identity and price variants (payment mode pack-only), portal sessions behind auth (fail-closed without a Stripe customer id, dormant refusal, request-origin return URL), webhook-lag rescue granting packs identically with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
+ console.log('Passed: signature enforcement (tampered, missing, stale, wrong-secret, fail-closed dormancy), verify-before-parse order, signed checkout flips and price-mapped pack grants exactly-once per session across sibling events and redeliveries (fail-closed on unknown prices and missing line items), replay no-op with a released claim on failure, downgrades that never touch stories, owner resolution via subscription/customer/email, charge.refunded removing a refunded pack\'s unused credits (full min(grant, unused), zero after full use, partial pro-rata, refund-id idempotency, grantless fail-closed skips, claim redelivery) with adjustments reflected in the balance and history, checkout identity and price variants (payment mode pack-only), portal sessions behind auth (fail-closed without a Stripe customer id, dormant refusal, request-origin return URL), webhook-lag rescue granting packs identically with foreign-session and unpaid-session refusal, and full dormancy. Stripe and Supabase mocked; no network calls.');
  process.exitCode=0;
 }catch(error){
  // Full object — a failing check must show its stack and location.
