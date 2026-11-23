@@ -6,7 +6,7 @@ import {type Language,type Story} from './story';
 // switcher targets on the paper stage and provenance labels in My stories.
 // The list query (server/storage.ts) aliases the two already-persisted signals
 // out of the data JSON; nothing new is stored.
-export type StoryListRow={id:string;title:string;origin_story_id?:string|null;paper_language?:Language|null};
+export type StoryListRow={id:string;title:string;origin_story_id?:string|null;paper_language?:Language|null;updated_at?:string|null};
 type RawListRow=Record<string,unknown>;
 const editionLanguages:Language[]=['en','zh','es'];
 
@@ -15,7 +15,18 @@ export function parseStoryRows(value:unknown):StoryListRow[]{
  return value.filter((row):row is RawListRow=>!!row&&typeof row==='object'&&typeof (row as RawListRow).id==='string'&&typeof (row as RawListRow).title==='string')
   .map(row=>({id:row.id as string,title:row.title as string,
    origin_story_id:typeof row.origin_story_id==='string'?row.origin_story_id:null,
-   paper_language:editionLanguages.includes(row.paper_language as Language)?row.paper_language as Language:null}));
+   paper_language:editionLanguages.includes(row.paper_language as Language)?row.paper_language as Language:null,
+   updated_at:typeof row.updated_at==='string'?row.updated_at:null}));
+}
+
+// The /stories card date (founder UX round): the list API already returns
+// updated_at — formatted here, per story language, and only when it parses.
+const dateLocales:Record<Language,string>={en:'en',zh:'zh-CN',es:'es'};
+export function formatStoryDate(iso:string|null|undefined,language:Language):string{
+ if(!iso)return '';
+ const date=new Date(iso);
+ if(Number.isNaN(date.getTime()))return '';
+ return date.toLocaleDateString(dateLocales[language],{year:'numeric',month:'short',day:'numeric'});
 }
 
 // A copy of a copy links to the original, never the intermediate: an existing

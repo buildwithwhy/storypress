@@ -6,7 +6,7 @@ import {purchaseCopy} from '../lib/purchase-copy';
 import {legalCopy} from '../lib/legal-copy';
 import {paywallCopy} from '../lib/paywall-copy';
 import {sharingCopy} from '../lib/sharing-copy';
-import {storePendingPurchase,clearPendingPurchase,pricingReturnTo} from '../lib/purchase-intent';
+import {storePendingPurchase,clearPendingPurchase,pageReturnTo} from '../lib/purchase-intent';
 import {EmailSignIn} from './email-sign-in';
 import {type Story} from '../lib/story';
 
@@ -18,7 +18,7 @@ import {type Story} from '../lib/story';
 // The same modal pattern as the account modal (modal-backdrop + dialog,
 // backdrop-click close, X icon-button); no new auth code — the Google button
 // and the email-code flow are the existing ones under pricing-context copy.
-export function PurchaseSheet({language,plan,planLabel,amount,signedIn,consented,onConsent,onClose,onPrepareSignIn}:{language:Story['language'];plan:CheckoutPlan;planLabel:string;amount:string|null;signedIn:boolean;consented:boolean;onConsent:(consented:boolean)=>void;onClose:()=>void;onPrepareSignIn:(email?:string)=>()=>void;}){
+export function PurchaseSheet({language,plan,planLabel,amount,signedIn,consented,onConsent,onClose,onPrepareSignIn,returnTo}:{language:Story['language'];plan:CheckoutPlan;planLabel:string;amount:string|null;signedIn:boolean;consented:boolean;onConsent:(consented:boolean)=>void;onClose:()=>void;onPrepareSignIn:(email?:string)=>()=>void;returnTo?:string;}){
  const c=purchaseCopy[language];
  const l=legalCopy[language];
  const pw=paywallCopy[language];
@@ -32,7 +32,7 @@ export function PurchaseSheet({language,plan,planLabel,amount,signedIn,consented
  async function googleSignIn(){
   const cancelHandoff=onPrepareSignIn();
   storePendingPurchase(localStorage,plan,Date.now());
-  try{await signInWithGoogle(pricingReturnTo(location.origin));}
+  try{await signInWithGoogle(returnTo??pageReturnTo(location.origin,'/pricing'));}
   catch(problem){cancelHandoff();clearPendingPurchase(localStorage);throw problem;}
  }
  async function checkout(){

@@ -1,5 +1,10 @@
 import {type Story} from './story';
 
+// The support address the terms name for account deletion and billing help
+// (terms §deletion, §cancellation): one constant so the /billing page and the
+// legal pages can never drift apart.
+export const supportEmail='yuyu@hopperlace.ai';
+
 // LEGAL PAGES — FOUNDER-APPROVED DRAFTS, NOT LEGAL ADVICE.
 //
 // This module carries the /terms, /privacy and /refunds page copy in the

@@ -98,3 +98,15 @@ export function parseAddons(text:string|undefined):string[]{
 export function freeStoryLimitReached(billing:BillingStatus):boolean{
  return billing.configured&&billing.plan==='free'&&billing.storiesCreated>=billing.freeStoryLimit;
 }
+
+// The quiet "<X> stories left" line on the account pages (founder UX round):
+// what the owner can still make before a metered refusal — the free allowance
+// remainder, or for subscribers the unused month cap plus never-expiring pack
+// credits. Pure, and mirrors the server's reserve gates; it deliberately
+// promises no reset date, which the payload does not carry.
+export function storiesLeft(billing:BillingStatus):number{
+ const remainder=billing.plan==='free'
+  ?Math.max(0,billing.freeStoryLimit-billing.storiesCreated)
+  :Math.max(0,billing.subscriptionMonthlyCap-billing.subscriptionStoriesThisMonth);
+ return remainder+Math.max(0,billing.packCreditsRemaining);
+}

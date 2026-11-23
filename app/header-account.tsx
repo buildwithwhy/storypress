@@ -4,22 +4,23 @@ import {purchaseCopy} from '../lib/purchase-copy';
 import {sharingCopy} from '../lib/sharing-copy';
 import {type Story} from '../lib/story';
 
-// The header's account entry (§D3, revision A; follow-up): signed out, a
-// Sign in button beside "New story"; signed in, an "Account" trigger with a
-// chevron so it reads as a menu, with the three destinations — "My stories"
-// first, then the plan and billing view, then sign-out. A native
-// details/summary popover, matching the sheet-modal language of the rest of
-// the app; each selection closes the menu first.
-export function HeaderAccount({language,signedIn,onSignIn,onAccount,onPlanAndBilling,onSignOut}:{language:Story['language'];signedIn:boolean;onSignIn?:()=>void;onAccount:()=>void;onPlanAndBilling:()=>void;onSignOut:()=>void;}){
- const c=sharingCopy[language];
+// The header's account entry (founder UX round): signed out, a quiet Sign in
+// text link; signed in, a small round avatar with the account's initial — no
+// "Account" label, "My stories" lives beside it as a top-level header entry —
+// opening a menu with the email (muted), Plan and billing, and Sign out. A
+// native details/summary popover, matching the sheet-modal language of the
+// rest of the app; each selection closes the menu first.
+export function HeaderAccount({language,signedIn,email,onSignIn,onPlanAndBilling,onSignOut}:{language:Story['language'];signedIn:boolean;email?:string;onSignIn?:()=>void;onPlanAndBilling:()=>void;onSignOut:()=>void;}){
  const pc=purchaseCopy[language];
+ const c=sharingCopy[language];
  const menu=useRef<HTMLDetailsElement>(null);
  function close(){menu.current?.removeAttribute('open');}
  if(!signedIn)return onSignIn?<button type="button" className="text-button sign-in" onClick={onSignIn}>{pc.signIn}</button>:null;
+ const initial=email?.trim()?.[0]?.toUpperCase()||'✳';
  return <details className="account-menu" ref={menu}>
-  <summary className="text-button account-nav" aria-label={c.accountMenuHint}>{c.accountMenu}<ChevronDown size={14} aria-hidden={true}/></summary>
+  <summary className="account-avatar" aria-label={c.accountMenuHint}><span className="account-avatar-initial" aria-hidden={true}>{initial}</span><ChevronDown size={13} aria-hidden={true}/></summary>
   <div className="account-menu-items">
-   <button type="button" onClick={()=>{close();onAccount();}}>{c.account}</button>
+   {email&&<p className="account-menu-email">{email}</p>}
    <button type="button" onClick={()=>{close();onPlanAndBilling();}}>{pc.planAndBilling}</button>
    <button type="button" onClick={()=>{close();onSignOut();}}>{c.logout}</button>
   </div>
