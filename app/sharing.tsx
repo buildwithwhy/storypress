@@ -18,7 +18,7 @@ import {purchaseCopy} from '../lib/purchase-copy';
 import {EmailSignIn} from './email-sign-in';
 import {readerCopy} from '../lib/reader';
 import {artifactSharePayload,shareSheetAvailable} from '../lib/share-payload';
-export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose,onViewPlans,cardsTrigger,signInContext='story'}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void;onViewPlans?:()=>void;cardsTrigger?:ReactNode;signInContext?:'story'|'account';}){
+export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharing,onLoad,onNew,onDelete,onPrepareSignIn,onRestoreEarlier,accountError,accountOnly=false,onClose,onViewPlans,cardsTrigger,signInContext='story',planFirst=false}:{story:Story;config:AccountConfig;saved:SavedStory|null;onSave:()=>Promise<SavedStory|null>;onSaveSeparate:()=>Promise<void>;onChangeSharing:(action:'share'|'private')=>Promise<SavedStory>;onLoad:(s:Story,saved:SavedStory|null)=>Promise<void>;onNew:()=>Promise<void>;onDelete:(id:string)=>Promise<void>;storageKey:string;onPrepareSignIn:(email?:string)=>()=>void;onRestoreEarlier?:()=>void;accountError?:string;accountOnly?:boolean;onClose?:()=>void;onViewPlans?:()=>void;cardsTrigger?:ReactNode;signInContext?:'story'|'account';planFirst?:boolean;}){
  const c={...sharingCopy[story.language],...shareFlowCopy[story.language]},sc=saveCopy[story.language];const [pending,setPending]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState(''),[emailPending,setEmailPending]=useState(false),[rows,setRows]=useState<StoryListRow[]>([]);
  const user=config.supabase?config.user:null,linkField=useRef<HTMLInputElement>(null);
  const cc=confirmCopy[story.language];
@@ -58,7 +58,7 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
    nothing could persist only through that button. */}
  {accountOnly&&<p className="account-email"><Lock size={15}/>{user.email}</p>}
  {!accountOnly&&url&&<div className="share-link"><label className="sr-only" htmlFor="published-story-link">{readerCopy[story.language].link}</label><input id="published-story-link" ref={linkField} type="url" value={url} readOnly spellCheck={false} dir="ltr" onFocus={e=>e.currentTarget.select()}/><div className="sharing-actions"><a className="secondary" href={url} target="_blank" rel="noreferrer">{c.openReader}</a></div><button className="text-button" disabled={pending} onClick={()=>void run(async()=>{await onChangeSharing('private');})}>{c.off}</button></div>}
- {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><UpgradePanel billing={config.billing} language={story.language} ownerTree onViewPlans={onViewPlans}/><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}{editionRowNote(row,rows,story.language)&&<span className="saved-story-edition">{editionRowNote(row,rows,story.language)}</span>}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
+ {accountOnly&&<><p className="account-note">{sc.listHelp}</p><button className="primary" disabled={pending} onClick={()=>void run(onNew)}>{sc.startNew}</button><p className="quiet left">{c.allowance}</p><UpgradePanel billing={config.billing} language={story.language} ownerTree planFirst={planFirst} onViewPlans={onViewPlans}/><div className="saved-stories">{rows.length?rows.map(row=><div className="saved-story" key={row.id}><strong>{row.title}{editionRowNote(row,rows,story.language)&&<span className="saved-story-edition">{editionRowNote(row,rows,story.language)}</span>}</strong><button className="text-button" disabled={pending} onClick={()=>{void run(async()=>{await onSave();const data=await accountRequest(undefined,row.id);await onLoad(storySchema.parse(data.data),data);onClose?.();});}}>{c.open}</button><button className="text-button" disabled={pending} onClick={()=>{if(!confirm(c.confirmDelete))return;void run(async()=>{await onDelete(row.id);await refresh();});}}>{c.delete}</button></div>):<p>{sc.empty}</p>}</div>
  <div className="sharing-actions">{onRestoreEarlier&&<button className="text-button" disabled={pending} onClick={onRestoreEarlier}>{c.earlierDraft}</button>}<button className="text-button" disabled={pending} onClick={()=>{
  let device:DraftSnapshot|null=readDraft(localStorage,GUEST_DRAFT_KEY);
  if(!device){const raw=localStorage.getItem(DRAFT_PREFIX);if(raw){try{const parsed=JSON.parse(raw) as DraftSnapshot|{story:unknown};device={story:storySchema.parse('story' in parsed?parsed.story:parsed),saved:null};}catch{return;}}}
@@ -84,26 +84,39 @@ export function Sharing({story,config,saved,onSave,onSaveSeparate,onChangeSharin
 // account read boundary, so the panel renders the free state it validates. The
 // guard is the free-forever invariant: outside the owner's Storypress tree the
 // panel renders nothing.
-export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean;onViewPlans?:()=>void}){
+export function UpgradePanel({billing,language,ownerTree,planFirst=false,onViewPlans}:{billing:BillingStatus;language:Story['language'];ownerTree:boolean;planFirst?:boolean;onViewPlans?:()=>void}){
  const c=paywallCopy[language];
  const [cadence,setCadence]=useState<'monthly'|'annual'>('monthly');
  const [busy,setBusy]=useState(false);
  const [error,setError]=useState('');
+ // Plan and billing deep-link (follow-up): when the dialog opens from the
+ // header's "Plan and billing" entry, the plan heading takes focus and the
+ // panel scrolls into view. The scroll honors prefers-reduced-motion; focus
+ // moves either way so keyboard and screen-reader users land on the plan.
+ const headingRef=useRef<HTMLHeadingElement>(null);
+ useEffect(()=>{
+  if(!planFirst||!headingRef.current)return;
+  const heading=headingRef.current;
+  heading.focus({preventScroll:true});
+  heading.scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+ },[]);
  if(!ownerTree)return null;
  const free=billing.plan==='free';
  const planLine=free?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):c.entitledActive;
  async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
  async function manage(){setBusy(true);setError('');try{location.assign(await startBillingPortal());}catch(problem){setError((problem as Error).message);setBusy(false);}}
  return <div className="upgrade-panel">
+  <h3 className="upgrade-heading" ref={headingRef} tabIndex={-1}>{c.planHeading}</h3>
   <p className="upgrade-plan" role="status">{planLine}</p>
   {!free&&<p className="upgrade-plan upgrade-usage" role="status">{c.monthlyUsage.replace('{used}',String(billing.subscriptionStoriesThisMonth)).replace('{cap}',String(billing.subscriptionMonthlyCap))}</p>}
   {billing.packCreditsRemaining>0&&<p className="upgrade-plan upgrade-usage" role="status">{c.packCredits.replace('{size}',String(billing.packCreditsRemaining))}</p>}
-  {/* Plan and billing (purchase sheet revision A): purchase history rows for
-      every owner once the payload carries them (the refund PR ships the
-      server field); until then the localized empty state keeps the section
-      honest instead of silently missing. */}
-  {billing.configured&&<div className="purchase-history">
-   {billing.history?.length?billing.history.map((row,i)=><div className="purchase-history-row" key={i}><span className="purchase-history-description">{row.description}</span><span className="purchase-history-amount">{row.amount}</span><span className="purchase-history-date">{row.date}</span></div>):<p className="quiet left">{purchaseCopy[language].noPurchasesYet}</p>}
+  {/* Plan and billing (follow-up, founder's D3 decision): the history block
+      renders only when the payload carries rows — the field ships server-side
+      in the refund PR (#81). No rows means no block at all: "No purchases
+      yet" read as false to an owner who bought and was refunded a pack, so
+      the empty state is gone until real purchase data is wired. */}
+  {billing.configured&&!!billing.history?.length&&<div className="purchase-history">
+   {billing.history.map((row,i)=><div className="purchase-history-row" key={i}><span className="purchase-history-description">{row.description}</span><span className="purchase-history-amount">{row.amount}</span><span className="purchase-history-date">{row.date}</span></div>)}
   </div>}
   {billing.configured&&!free&&<button className="secondary manage-billing" disabled={busy} onClick={()=>void manage()}>{c.manageBilling}</button>}
   {onViewPlans&&<button className="secondary view-plans" onClick={onViewPlans}>{c.viewPlans}<ArrowRight size={17}/></button>}
