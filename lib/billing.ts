@@ -6,6 +6,17 @@ import {z} from 'zod';
 // draws and the remaining pack balance — next to the env-tuned cap and pack
 // sizes the UI interpolates. The services payload reuses the configured flag
 // alone, next to the other capability flags.
+// Wave 9 §: one purchase-history entry per pack grant (credits granted) or
+// refund adjustment (credits removed, negative) — rendered newest first.
+export const billingHistorySchema=z.array(z.discriminatedUnion('type',[
+ z.object({type:z.literal('pack'),credits:z.number().int(),grantedAt:z.string(),sessionId:z.string()}),
+ z.object({type:z.literal('refund'),credits:z.number().int().negative(),adjustedAt:z.string(),sessionId:z.string()})
+]));
+export type BillingHistory=z.infer<typeof billingHistorySchema>;
+// Purchase sheet revision A: the panel's display row for one purchase.
+export const purchaseRowSchema=z.object({description:z.string(),amount:z.string(),date:z.string()});
+export type PurchaseRow=z.infer<typeof purchaseRowSchema>;
+
 export const billingStatusSchema=z.object({
  configured:z.boolean(),
  // No 'lifetime' in the schema: the zero-rows gate confirmed no legacy rows
@@ -26,18 +37,24 @@ export const billingStatusSchema=z.object({
  // RPC increments. Optional: absent when Supabase is unset or the read
  // degraded — the client then fails closed on auto-fire, never on manual use.
  dailyAiUnitsUsed:z.number().int().min(0).optional(),
- // Purchase history rows (purchase sheet revision A): rendered in the
- // account panel's Plan and billing view when the payload carries them — the
- // field itself ships server-side in the separate refund PR, so today it is
- // always absent and the panel shows the localized empty state. Optional and
- // additive: a payload without it parses unchanged.
- history:z.array(z.object({
-  description:z.string(),
-  amount:z.string(),
-  date:z.string()
- })).optional()
+ // Purchase history rows (purchase sheet revision A): the account panel's
+ // display shape — description, amount, date per row. The refund PR ships
+ // the server field as ledger rows instead (pack grants and refund
+ // adjustments, newest first), so the schema accepts either shape and both
+ // PRs parse unchanged; the panel maps display rows via purchaseDisplayRows
+ // until the follow-up wiring PR renders ledger rows in localized copy.
+ // Optional and additive: a payload without it parses unchanged.
+ history:z.union([z.array(purchaseRowSchema),billingHistorySchema]).optional()
 });
 export type BillingStatus=z.infer<typeof billingStatusSchema>;
+
+// The panel renders display rows (description/amount/date); the server ships
+// ledger rows until the follow-up wiring PR adds localized display copy.
+// Ledger rows are filtered out for now, so the panel keeps the localized
+// empty state — exactly the view it showed before the server field shipped.
+export function purchaseDisplayRows(history:BillingStatus['history']):PurchaseRow[]{
+ return (history??[]).filter((row):row is PurchaseRow=>'description' in row);
+}
 export const billingFlagSchema=z.object({configured:z.boolean()});
 export type BillingFlag=z.infer<typeof billingFlagSchema>;
 

@@ -12,7 +12,7 @@ import {type SavedStory} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {editionRowNote,parseStoryRows,type StoryListRow} from '../lib/editions';
 import {startCheckout,startBillingPortal,type CheckoutPlan} from '../lib/billing-client';
-import {type BillingStatus} from '../lib/billing';
+import {type BillingStatus,purchaseDisplayRows} from '../lib/billing';
 import {paywallCopy} from '../lib/paywall-copy';
 import {purchaseCopy} from '../lib/purchase-copy';
 import {EmailSignIn} from './email-sign-in';
@@ -91,6 +91,10 @@ export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:B
  const [error,setError]=useState('');
  if(!ownerTree)return null;
  const free=billing.plan==='free';
+ // The server ships ledger rows (pack grants and refund adjustments); the
+ // follow-up wiring PR renders them in localized copy, so until then only
+ // display rows (none today) make it past the empty state.
+ const historyRows=purchaseDisplayRows(billing.history);
  const planLine=free?c.freeUsage.replace('{used}',String(billing.storiesCreated)).replace('{limit}',String(billing.freeStoryLimit)):c.entitledActive;
  async function pay(plan:CheckoutPlan){setBusy(true);setError('');try{location.assign(await startCheckout(plan));}catch(problem){setError((problem as Error).message);setBusy(false);}}
  async function manage(){setBusy(true);setError('');try{location.assign(await startBillingPortal());}catch(problem){setError((problem as Error).message);setBusy(false);}}
@@ -99,11 +103,11 @@ export function UpgradePanel({billing,language,ownerTree,onViewPlans}:{billing:B
   {!free&&<p className="upgrade-plan upgrade-usage" role="status">{c.monthlyUsage.replace('{used}',String(billing.subscriptionStoriesThisMonth)).replace('{cap}',String(billing.subscriptionMonthlyCap))}</p>}
   {billing.packCreditsRemaining>0&&<p className="upgrade-plan upgrade-usage" role="status">{c.packCredits.replace('{size}',String(billing.packCreditsRemaining))}</p>}
   {/* Plan and billing (purchase sheet revision A): purchase history rows for
-      every owner once the payload carries them (the refund PR ships the
-      server field); until then the localized empty state keeps the section
-      honest instead of silently missing. */}
+      every owner once display copy is wired to the ledger rows the refund PR
+      ships; until then the localized empty state keeps the section honest
+      instead of silently missing. */}
   {billing.configured&&<div className="purchase-history">
-   {billing.history?.length?billing.history.map((row,i)=><div className="purchase-history-row" key={i}><span className="purchase-history-description">{row.description}</span><span className="purchase-history-amount">{row.amount}</span><span className="purchase-history-date">{row.date}</span></div>):<p className="quiet left">{purchaseCopy[language].noPurchasesYet}</p>}
+   {historyRows.length?historyRows.map((row,i)=><div className="purchase-history-row" key={i}><span className="purchase-history-description">{row.description}</span><span className="purchase-history-amount">{row.amount}</span><span className="purchase-history-date">{row.date}</span></div>):<p className="quiet left">{purchaseCopy[language].noPurchasesYet}</p>}
   </div>}
   {billing.configured&&!free&&<button className="secondary manage-billing" disabled={busy} onClick={()=>void manage()}>{c.manageBilling}</button>}
   {onViewPlans&&<button className="secondary view-plans" onClick={onViewPlans}>{c.viewPlans}<ArrowRight size={17}/></button>}

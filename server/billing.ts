@@ -140,6 +140,75 @@ async function applyPackGrantForSession(env:Bindings,ownerId:string,sessionId:st
  await db(env,'storypress_pack_grants?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,credits},{prefer:'return=representation, resolution=ignore-duplicates'});
 }
 
+// ---- Refunds (wave 9 §): charge.refunded removes unused pack credits ----
+
+// The Charge object a charge.refunded event carries (Stripe shape — training
+// knowledge, per the pinned findings §1.3): a Charge does not carry the
+// checkout session id directly; the PaymentIntent does (its `checkout` field,
+// an expandable string/object). Tolerant parsing — a charge that cannot be
+// read is a logged skip, never a state change.
+const chargeObject=z.object({
+ id:z.string(),
+ amount:z.number().int().nonnegative().nullable().optional(),
+ amount_refunded:z.number().int().nonnegative().nullable().optional(),
+ refunded:z.boolean().nullable().optional(),
+ payment_intent:z.string().nullable().optional(),
+ refunds:z.object({data:z.array(z.object({id:z.string().nullable().optional()}).nullable().optional()).nullable().optional()}).nullable().optional()
+});
+
+type RefundOutcome='applied'|'noop'|'duplicate'|'skipped';
+
+async function refundSkip(reason:string,anchor:{session?:string;charge:string}):Promise<RefundOutcome>{
+ // The session/charge id is the operator's search anchor (same discipline as
+ // pack_grant_skipped); owner ids and emails never enter logs.
+ console.error(JSON.stringify({event:'pack_refund_skipped',reason,...(anchor.session?{session:anchor.session}:{}),charge:anchor.charge}));
+ return 'skipped';
+}
+
+// Removes a refunded pack grant's unused credits, keyed on the Stripe refund
+// id. Draws are one row per consumed credit and NOT attributed to individual
+// grants (wave 8 §), so the clamp is owner-level: never remove more than the
+// owner's unused balance, max(0, granted − drawn). A grantless refund
+// (subscription invoice, pre-wave-8 purchase, guest edge) fails closed — a
+// logged, stateless skip with no owner-resolution writes. Transient failures
+// (Stripe or Supabase) throw: the caller releases the per-event claim so
+// Stripe's redelivery reprocesses.
+async function applyRefundForCharge(env:Bindings,charge:Record<string,unknown>):Promise<RefundOutcome>{
+ const parsed=chargeObject.safeParse(charge);
+ if(!parsed.success)return refundSkip('charge_unreadable',{charge:'unknown'});
+ const c=parsed.data;
+ if(typeof c.payment_intent!=='string'||!c.payment_intent)return refundSkip('payment_intent_missing',{charge:c.id});
+ // One Stripe hop: charge → PaymentIntent (checkout expanded) → session id.
+ const intent=await retrieveStripeJson(env,`payment_intents/${encodeURIComponent(c.payment_intent)}?expand[]=checkout`);
+ const checkout=(intent?.checkout??null) as unknown;
+ const sessionId=typeof checkout==='string'?checkout:typeof (checkout as {id?:unknown}|null)?.id==='string'?(checkout as {id:string}).id:null;
+ if(!sessionId)return refundSkip('session_unresolved',{charge:c.id});
+ const grantRows=await db(env,`storypress_pack_grants?checkout_session_id=eq.${encodeURIComponent(sessionId)}&select=owner_id,credits`) as unknown[]|null;
+ const grant=Array.isArray(grantRows)?grantRows[0] as {owner_id?:unknown;credits?:unknown}|undefined:undefined;
+ const ownerId=uuid.safeParse(grant?.owner_id);
+ if(!grant||!ownerId.success)return refundSkip('no_pack_grant',{session:sessionId,charge:c.id});
+ const grantedRows=await db(env,`storypress_pack_grants?owner_id=eq.${ownerId.data}&select=credits`);
+ const drawnRows=await db(env,`storypress_pack_draws?owner_id=eq.${ownerId.data}&select=id`);
+ if(!Array.isArray(grantedRows)||!Array.isArray(drawnRows))throw new ServiceError('The refund could not be recorded. Please try again shortly.',503);
+ const granted=grantedRows.reduce<number>((total,row)=>total+(Number((row as {credits?:unknown}).credits)||0),0);
+ const balance=Math.max(0,granted-drawnRows.length);
+ const grantCredits=Math.max(0,Number(grant.credits)||0);
+ // Full refund (refunded=true) removes the whole grant, clamped by the owner
+ // balance; a partial refund (amount_refunded < amount, refunded=false — one
+ // event per partial refund) removes the pro-rata share, clamped the same way.
+ const partial=c.refunded!==true&&typeof c.amount==='number'&&c.amount>0&&typeof c.amount_refunded==='number';
+ const proRata=partial?Math.floor(grantCredits*(c.amount_refunded as number)/(c.amount as number)):grantCredits;
+ const removed=Math.min(proRata,balance);
+ if(removed<=0)return 'noop';
+ // Keyed on the Stripe refund id (the refund object from the charge's refunds
+ // list; a synthetic fallback for charges that list none) so a re-emitted
+ // event or a refunded-again charge can never double-remove: refund_id is the
+ // adjustments table's primary key and a full conflict reads back [].
+ const refundId=typeof c.refunds?.data?.[0]?.id==='string'&&c.refunds.data[0]?.id?c.refunds.data[0].id:`refund:${c.id}`;
+ const inserted=await db(env,'storypress_pack_adjustments?on_conflict=refund_id','POST',{refund_id:refundId,owner_id:ownerId.data,checkout_session_id:sessionId,credits:-removed},{prefer:'return=representation, resolution=ignore-duplicates'}) as unknown[]|null;
+ return Array.isArray(inserted)&&inserted.length?'applied':'duplicate';
+}
+
 export async function billingApi(request:Request,env:Bindings){
  if(request.method!=='POST')return json({error:'Method not allowed'},405);
  try{
@@ -225,12 +294,13 @@ const CLOSING_STATUSES=['canceled','unpaid','incomplete_expired'];
 const stripeTime=(seconds:number)=>new Date(seconds*1000).toISOString();
 
 // Pure mapping from a webhook event to its billing effect — an entitlement
-// write, a pack grant keyed on the checkout session, or null (no effect:
-// unknown types, sessions still unpaid). Payment-mode sessions never write
-// the plan: the session's price decides between a pack grant and a logged,
-// stateless skip (fail closed, wave 8 §2). Never touches stories: writes
-// target billing tables only, so a downgrade cannot delete or lock anything.
-type BillingEffect={kind:'entitlement';write:EntitlementWrite}|{kind:'pack';sessionId:string}|null;
+// write, a pack grant keyed on the checkout session, a refund adjustment keyed
+// on the Stripe refund id, or null (no effect: unknown types, sessions still
+// unpaid). Payment-mode sessions never write the plan: the session's price
+// decides between a pack grant and a logged, stateless skip (fail closed,
+// wave 8 §2). Never touches stories: writes target billing tables only, so a
+// downgrade cannot delete or lock anything.
+type BillingEffect={kind:'entitlement';write:EntitlementWrite}|{kind:'pack';sessionId:string}|{kind:'refund'}|null;
 function effectForEvent(type:string,obj:Record<string,unknown>):BillingEffect{
  if(type==='checkout.session.completed'||type==='checkout.session.async_payment_succeeded'){
   const session=checkoutSessionObject.parse(obj);
@@ -250,6 +320,7 @@ function effectForEvent(type:string,obj:Record<string,unknown>):BillingEffect{
   const period=invoice.lines?.data?.[0]?.period?.end??invoice.lines?.data?.[0]?.current_period?.end;
   return {kind:'entitlement',write:{plan:'subscription',subscription_status:'active',...(period!==undefined?{current_period_end:stripeTime(period)}:{})}};
  }
+ if(type==='charge.refunded')return {kind:'refund'};
  return null;
 }
 
@@ -327,6 +398,14 @@ export async function stripeWebhook(request:Request,env:Bindings){
   }
   if(!Array.isArray(claimed)||!claimed.length)return json({received:true,duplicate:true});
   try{
+   // Refunds resolve their owner from the grant row itself — the generic
+   // fallbacks below are not used: a refund of a grantless charge (a
+   // subscription-invoice charge, a pre-wave-8 purchase) is a logged skip,
+   // acknowledged 200, never an owner-resolution write.
+   if(effect.kind==='refund'){
+    const outcome=await applyRefundForCharge(env,event.data.object);
+    return json(outcome==='skipped'?{received:true,ignored:event.type}:outcome==='duplicate'?{received:true,duplicate:true}:{received:true});
+   }
    const owner=await resolveEventOwner(env,event.data.object);
    // An owner that cannot be resolved is final (transient lookups throw
    // instead) — acknowledge without effects and keep the claim.
