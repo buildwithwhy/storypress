@@ -14,16 +14,20 @@ const bundle=await build({stdin:{contents:`
 import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PricingPanel} from './app/pricing.tsx';
+import {HeaderAccount} from './app/header-account.tsx';
+import {UpgradePanel} from './app/sharing.tsx';
 import {billingStatusSchema} from './lib/billing.ts';
 import {purchaseCopy} from './lib/purchase-copy.ts';
+import {sharingCopy} from './lib/sharing-copy.ts';
 import {paywallCopy} from './lib/paywall-copy.ts';
 import {storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo} from './lib/purchase-intent.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(PricingPanel,props));
-export {billingStatusSchema,purchaseCopy,paywallCopy,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo};
+export const renderNode=el=>renderToStaticMarkup(el);
+export {React as React,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,HeaderAccount,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo};
 `,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
 import fs from 'node:fs/promises';
 const path=new URL('../work/purchase-flow-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {render,billingStatusSchema,purchaseCopy,paywallCopy,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo}=await import(path.href);
+const {React,render,renderNode,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,HeaderAccount,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo}=await import(path.href);
 
 const billing={configured:true,plan:'free',addons:[],storiesCreated:1,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0};
 const pricing={currency:'usd',monthly:{amount:999},annual:{amount:5900},pack30:{amount:1200},pack100:{amount:2900}};
@@ -91,7 +95,7 @@ assert.equal(pricingReturnTo('https://onceandours.com'),'https://onceandours.com
 // Copy parity: every purchase key exists in en, zh and es; placeholders stay
 // interpolated and are asserted where they carry numbers.
 const keys=Object.keys(purchaseCopy.en);
-for(const key of ['signIn','purchaseSignInHelp','continueToSecureCheckout','startFreeStory','startNewStoryCta','accountMadeForYou','noPurchasesYet','planAndBilling'])
+for(const key of ['signIn','purchaseSignInHelp','continueToSecureCheckout','startFreeStory','startNewStoryCta','accountMadeForYou','planAndBilling'])
  assert.ok(keys.includes(key),`purchaseCopy.en carries ${key}`);
 for(const language of ['zh','es'])
  assert.deepEqual(Object.keys(purchaseCopy[language]).sort(),keys.sort(),`purchaseCopy.${language} has exactly the en key set`);
@@ -100,7 +104,39 @@ assert.ok(paywallCopy.en.packConfirmed.includes('{size}')&&paywallCopy.zh.packCo
 // Header copy: the menu keys ride on purchaseCopy + sharingCopy.
 for(const language of ['en','zh','es']){
  assert.ok(purchaseCopy[language].signIn&&purchaseCopy[language].planAndBilling,`header account-entry copy exists in ${language}`);
+ assert.ok(sharingCopy[language].accountMenu&&sharingCopy[language].accountMenuHint,`Account trigger copy exists in ${language}`);
  assert.ok(typeof paywallCopy[language].packConfirmed==='string',`pack copy parity in ${language}`);
+}
+
+// Header trigger (account-menu follow-up): signed in, the trigger reads
+// "Account" with a chevron — not "My stories" — while "My stories" stays the
+// first item inside the menu and Plan and billing remains a distinct entry.
+for(const language of ['en','zh','es']){
+ const header=renderNode(React.createElement(HeaderAccount,{language,signedIn:true,onAccount:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
+ assert.ok(header.includes(sharingCopy[language].accountMenu),`the signed-in trigger reads the Account label in ${language}`);
+ assert.ok(header.includes('lucide-chevron-down'),`the trigger carries the chevron that signals a menu in ${language}`);
+ assert.ok(header.includes(`aria-label="${sharingCopy[language].accountMenuHint}"`),`the trigger carries the chevron a11y label in ${language}`);
+ assert.ok(header.includes(sharingCopy[language].account),`My stories stays inside the menu in ${language}`);
+ assert.ok(header.includes(purchaseCopy[language].planAndBilling),`Plan and billing stays a distinct menu entry in ${language}`);
+ assert.ok(!new RegExp(`<summary[^>]*>${sharingCopy[language].account}<`).test(header),`the trigger no longer reads My stories in ${language}`);
+}
+// Signed out, the header state is untouched: a plain Sign in button, no menu.
+const signInHeader=renderNode(React.createElement(HeaderAccount,{language:'en',signedIn:false,onSignIn:()=>{},onAccount:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
+assert.ok(signInHeader.includes(purchaseCopy.en.signIn)&&!signInHeader.includes('account-menu'),`the signed-out header keeps the Sign in button with no account menu`);
+
+// Purchase history (follow-up, founder's D3 decision): no payload rows means
+// no purchase-history block at all — the "No purchases yet" empty state is
+// gone. Rows render once billing.history carries entries (the refund PR).
+const panelNoHistory=renderNode(React.createElement(UpgradePanel,{billing,language:'en',ownerTree:true}));
+assert.ok(!panelNoHistory.includes('purchase-history')&&!panelNoHistory.includes('No purchases yet'),'no purchase-history block renders when the payload carries no rows');
+const panelWithHistory=renderNode(React.createElement(UpgradePanel,{billing:{...billing,history:[{description:'30-story pack',amount:'$12.00',date:'Nov 2026'}]},language:'en',ownerTree:true}));
+assert.ok(panelWithHistory.includes('purchase-history')&&panelWithHistory.includes('30-story pack'),'history rows render once the payload carries them');
+
+// Plan and billing deep-link: the entry's target — a focusable plan section
+// heading the dialog can scroll to and focus — exists in every language.
+for(const language of ['en','zh','es']){
+ const panel=renderNode(React.createElement(UpgradePanel,{billing,language,ownerTree:true}));
+ assert.ok(panel.includes('tabindex="-1"')&&panel.includes(paywallCopy[language].planHeading),`the plan section has a focusable heading for the deep-link in ${language}`);
 }
 
 console.log('check-purchase-flow: all assertions passed');

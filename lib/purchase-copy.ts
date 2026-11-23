@@ -15,7 +15,6 @@ export interface PurchaseCopy{
  continueToSecureCheckout:string;
  startFreeStory:string;
  startNewStoryCta:string;
- noPurchasesYet:string;
  planAndBilling:string;
  packConfirmed:string; // {size} → pack size
 }
@@ -29,7 +28,6 @@ export const purchaseCopy:Record<PurchaseLanguage,PurchaseCopy>={
   continueToSecureCheckout:'Continue to secure checkout',
   startFreeStory:'Start a free story',
   startNewStoryCta:'Start a new story',
-  noPurchasesYet:'No purchases yet',
   planAndBilling:'Plan and billing',
   packConfirmed:'{size} stories added to your account'
  },
@@ -42,7 +40,6 @@ export const purchaseCopy:Record<PurchaseLanguage,PurchaseCopy>={
   continueToSecureCheckout:'前往安全结账',
   startFreeStory:'免费开始一个故事',
   startNewStoryCta:'开始新故事',
-  noPurchasesYet:'暂无购买记录',
   planAndBilling:'方案与账单',
   packConfirmed:'已为你的账户添加 {size} 个故事'
  },
@@ -55,7 +52,6 @@ export const purchaseCopy:Record<PurchaseLanguage,PurchaseCopy>={
   continueToSecureCheckout:'Ir al pago seguro',
   startFreeStory:'Empezar una historia gratis',
   startNewStoryCta:'Empezar una historia nueva',
-  noPurchasesYet:'Aún no hay compras',
   planAndBilling:'Plan y facturación',
   packConfirmed:'Se añadieron {size} historias a tu cuenta'
  }
