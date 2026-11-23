@@ -63,13 +63,16 @@ Storypress's production migrations were applied through the Supabase SQL editor,
    - Installer script: `curl -fsSL https://raw.githubusercontent.com/supabase/cli/main/install | bash`
 2. Authenticate. Run `supabase login` interactively, or set `SUPABASE_ACCESS_TOKEN` in your environment (generate it under Supabase → Account → Access Tokens). The token stays in your environment or shell profile, never in the repository.
 3. Link the project: `supabase link --project-ref ciciuohgtvsdkeakfiht` (the project ref is the subdomain of the Supabase URL, also returned by the production `/api/account` payload). It may prompt for the database password.
-4. Stamp the three migrations that the SQL editor already applied (202610110001 on Oct 11, 2026; 202610300001 and 202610300002 on Nov 5, 2026) as applied in the remote ledger:
+4. Stamp the four migrations that the SQL editor already applied (202610110001 on Oct 11, 2026; 202610300001 and 202610300002 on Nov 5, 2026; 20261122000000 on Nov 23, 2026) as applied in the remote ledger:
 
    ```
    supabase migration repair --status applied 202610110001 --remote
    supabase migration repair --status applied 202610300001 --remote
    supabase migration repair --status applied 202610300002 --remote
+   supabase migration repair --status applied 20261122000000 --remote
    ```
+
+   The `20261122000000_tos_agreements.sql` migration was applied manually through the SQL editor on Nov 23, 2026, immediately before PR #79 merged; stamp it so the ledger matches reality. PR #79's consent ledger (recorded checkout agreements) ships behind this migration — the feature requires the `tos_agreements` table to exist.
 
    As of CLI v3, remote commands need `--remote`; without a target they operate on the local stack. The migration id is the timestamp prefix of the file name in `supabase/migrations/` (for example `202610110001_storypress.sql` → `202610110001`).
 5. Confirm local and remote histories match: `supabase migration list --remote`. Every migration file in `supabase/migrations/` should show as applied both locally and remotely.
