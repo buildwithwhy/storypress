@@ -171,3 +171,30 @@
 @media(max-width:800px){.legal-page>h1{font-size:36px}.legal-section h2{font-size:21px}}
 
 
+/* Purchase sheet (§D1) — same modal language as the account modal: paper
+   surface, blurred backdrop, X icon-button. */
+.purchase-backdrop{z-index:30}
+.purchase-sheet{width:min(430px,100%)}
+.purchase-plan-line{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 16px;padding:12px 14px;background:#f3f3e9;border-radius:10px}
+.purchase-plan-line strong{font-size:16px;color:#283c2e}
+.purchase-plan-line .pricing-amount{font-weight:600}
+.purchase-sheet .google-sign-in{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:48px}
+.purchase-sheet .sharing-actions{margin-top:14px}
+.purchase-sheet .sharing-actions .primary{width:100%}
+.purchase-sheet .pricing-consent{margin:16px 0 0}
+/* Header account menu (§D3) — native details/summary popover. */
+.account-menu{position:relative}
+.account-menu summary{list-style:none;cursor:pointer}
+.account-menu summary::-webkit-details-marker{display:none}
+.account-menu-items{position:absolute;right:0;top:calc(100% + 6px);min-width:200px;background:var(--paper);border:1px solid #cbd2c2;border-radius:10px;box-shadow:0 14px 40px #10251b2b;padding:6px;z-index:25;display:grid}
+.account-menu-items button{background:none;border:0;padding:11px 12px;border-radius:8px;font-size:14px;color:#283c2e;text-align:left;cursor:pointer}
+.account-menu-items button:hover{background:#eaf0e2}
+/* Signed-in pricing usage lines (§D5) and purchase history (revision A). */
+.pricing-usage{display:grid;gap:4px;margin:0 0 18px}
+.upgrade-usage{font-size:13px;color:#687266}
+.purchase-history{display:grid;gap:6px;margin:12px 0 0;border-top:1px solid #dce0d3;padding-top:12px}
+.purchase-history-row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:baseline;font-size:13px}
+.purchase-history-row .purchase-history-description{flex:1;min-width:160px}
+.purchase-history-row .purchase-history-amount{font-weight:600}
+.purchase-history-row .purchase-history-date{color:#687266;font-size:12px}
+

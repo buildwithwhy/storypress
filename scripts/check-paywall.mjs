@@ -191,12 +191,12 @@ assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the
 globalThis.fetch=originalFetch;
 
 // ---- paywall copy module: shape, placeholders, and language coverage ----
-const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','monthlyUsage','packCredits','entitledActive','monthly','annual','checkout','checkoutBusy','dormant','checkoutConfirmed','checkoutPending','pricingTitle','pricingIntro','viewPlans','freeName','freePrice','freeAllowance','subscriptionName','capAllowance','saveBadge','priceMonthly','priceAnnual','packTitle','packNote','packBuy','pricePack30','pricePack100','pricesUnavailable','manageBilling'].sort();
+const expectedKeys=['limitTitle','limitBody','limitCta','planHeading','freeUsage','monthlyUsage','packCredits','entitledActive','monthly','annual','checkout','checkoutBusy','dormant','checkoutConfirmed','packConfirmed','checkoutPending','pricingTitle','pricingIntro','viewPlans','freeName','freePrice','freeAllowance','subscriptionName','capAllowance','saveBadge','priceMonthly','priceAnnual','packTitle','packNote','packBuy','pricePack30','pricePack100','pricesUnavailable','manageBilling'].sort();
 for(const language of ['en','zh','es']){
  const copy=paywallCopy[language];
  assert.deepEqual(Object.keys(copy).sort(),expectedKeys,`${language} carries exactly the paywall copy keys`);
  for(const [key,value] of Object.entries(copy))assert.ok(value.trim().length>0,`${language}.${key} is never empty`);
- assert.ok(copy.limitTitle.includes('{limit}')&&copy.freeUsage.includes('{used}')&&copy.freeUsage.includes('{limit}')&&copy.freeAllowance.includes('{limit}')&&copy.monthlyUsage.includes('{used}')&&copy.monthlyUsage.includes('{cap}')&&copy.packCredits.includes('{size}')&&copy.capAllowance.includes('{cap}')&&copy.saveBadge.includes('{percent}')&&copy.packTitle.includes('{size}')&&copy.packBuy.includes('{size}'),`${language} interpolation placeholders survive the module extraction`);
+ assert.ok(copy.limitTitle.includes('{limit}')&&copy.freeUsage.includes('{used}')&&copy.freeUsage.includes('{limit}')&&copy.freeAllowance.includes('{limit}')&&copy.monthlyUsage.includes('{used}')&&copy.monthlyUsage.includes('{cap}')&&copy.packCredits.includes('{size}')&&copy.capAllowance.includes('{cap}')&&copy.saveBadge.includes('{percent}')&&copy.packTitle.includes('{size}')&&copy.packBuy.includes('{size}')&&copy.packConfirmed.includes('{size}'),`${language} interpolation placeholders survive the module extraction`);
  assert.ok(!Object.values(copy).some(value=>value.includes('Lifetime')||value.includes('$120')),'no lifetime copy survives in the module');
 }
 assert.notEqual(paywallCopy.en.limitCta,paywallCopy.zh.limitCta,'translations are distinct, not copy-pasted');
