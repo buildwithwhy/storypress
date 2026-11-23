@@ -181,10 +181,10 @@ globalThis.fetch=async(url,init)=>{
   :requestBody.action==='portal'?{url:'https://billing.stripe.com/p/mock'}
   :{billing:{configured:true,plan:'subscription',addons:[],storiesCreated:4,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0}}};
 };
-assert.equal(await startCheckout('annual'),'https://checkout.stripe.com/pay/mock');
-assert.deepEqual(requestBody,{action:'checkout',mode:'subscription',plan:'annual'},'the checkout request names the cadence');
-assert.equal(await startCheckout('pack30'),'https://checkout.stripe.com/pay/mock');
-assert.deepEqual(requestBody,{action:'checkout',mode:'payment',plan:'pack30'},'a pack checkout is a one-time payment for the named pack');
+assert.equal(await startCheckout('annual','en'),'https://checkout.stripe.com/pay/mock');
+assert.deepEqual(requestBody,{action:'checkout',mode:'subscription',plan:'annual',language:'en'},'the checkout request names the cadence and language (ToS consent locale)');
+assert.equal(await startCheckout('pack30','en'),'https://checkout.stripe.com/pay/mock');
+assert.deepEqual(requestBody,{action:'checkout',mode:'payment',plan:'pack30',language:'en'},'a pack checkout is a one-time payment for the named pack');
 const rescued=await confirmCheckout('cs_test_a1b2C3d4');
 assert.deepEqual(rescued,{configured:true,plan:'subscription',addons:[],storiesCreated:4,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0},'the rescue parses the server-verified billing block');
 assert.deepEqual(requestBody,{action:'status',sessionId:'cs_test_a1b2C3d4'},'the rescue asks the server to verify the session');

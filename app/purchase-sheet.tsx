@@ -38,7 +38,7 @@ export function PurchaseSheet({language,plan,planLabel,amount,signedIn,consented
  async function checkout(){
   setBusy(true);setError('');
   storePendingPurchase(localStorage,plan,Date.now());
-  try{location.assign(await startCheckout(plan));}
+  try{location.assign(await startCheckout(plan,language));}
   catch(problem){setError((problem as Error).message);setBusy(false);}
  }
  return <div className="modal-backdrop purchase-backdrop no-print" onClick={onClose}>

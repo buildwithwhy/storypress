@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {db,identity,sameOrigin,billingConfigured,billingStatus,supabase,json,packCreditsForPrice,type Bindings} from './storage';
 import {ServiceError} from '../lib/providers';
+import {legalCopy} from '../lib/legal-copy';
 
 // Paywall §3 — the money path: checkout sessions, the webhook-lag status
 // rescue, and signature-verified idempotent webhooks. Everything here stays
@@ -30,7 +31,7 @@ async function applyEntitlement(env:Bindings,ownerId:string,write:EntitlementWri
 // a payment/subscription-plan combination has no price and must never reach
 // Stripe, so the legacy client shape (mode:'payment',plan:'monthly') is
 // refused here rather than mispriced later.
-const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual','pack30','pack100']).default('monthly')}).superRefine((input,ctx)=>{
+const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual','pack30','pack100']).default('monthly'),language:z.enum(['en','zh','es']).default('en')}).superRefine((input,ctx)=>{
  if(input.mode==='payment'?(input.plan!=='pack30'&&input.plan!=='pack100'):(input.plan!=='monthly'&&input.plan!=='annual'))ctx.addIssue({code:z.ZodIssueCode.custom,message:`${input.mode} checkout does not carry plan ${input.plan}`});
 });
 const statusInput=z.object({action:z.literal('status'),sessionId:z.string().trim().min(1).max(200)});
@@ -43,14 +44,20 @@ function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'ann
  return price.trim();
 }
 
-async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100',origin:string){
+async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100',language:'en'|'zh'|'es',origin:string){
  // Stripe accepts form-encoded parameters; no stripe-node SDK — the worker
  // bundle targets platform:'browser'. allow_promotion_codes lets the
  // operator's Stripe-side promotion codes (e.g. friends-and-family) apply at
  // checkout. The success return carries Stripe's
  // {CHECKOUT_SESSION_ID} template so the client can trigger the §5 rescue;
  // cancel returns plain, and both mirror the email sign-in return.
- const form=new URLSearchParams({mode,'line_items[0][price]':priceFor(env,mode,plan),'line_items[0][quantity]':'1',allow_promotion_codes:'true',success_url:`${origin}/?billing_checkout={CHECKOUT_SESSION_ID}`,cancel_url:origin+'/',client_reference_id:userId,'metadata[userId]':userId});
+ // Founder order (Nov 22): hosted Checkout must collect terms-of-service
+ // acceptance — consent_collection=required makes the ToS checkbox blocking
+ // and the session records the answer in consent.terms_of_service. The
+ // custom text reuses PR #76's localized checkout consent copy verbatim
+ // (never new legal wording), and `locale` renders the hosted page in the
+ // buyer's app language (en/zh/es).
+ const form=new URLSearchParams({mode,'line_items[0][price]':priceFor(env,mode,plan),'line_items[0][quantity]':'1',allow_promotion_codes:'true',success_url:`${origin}/?billing_checkout={CHECKOUT_SESSION_ID}`,cancel_url:origin+'/',client_reference_id:userId,'metadata[userId]':userId,'consent_collection[terms_of_service]':'required','custom_text[terms_of_service_acceptance][message]':legalCopy[language].checkoutConsentLabel,locale:language});
  if(email)form.set('customer_email',email);
  const response=await fetch(`${STRIPE_API}/v1/checkout/sessions`,{method:'POST',headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`,'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),signal:AbortSignal.timeout(15000)});
  const session=await response.json().catch(()=>null) as {url?:string}|null;
@@ -85,7 +92,7 @@ async function createPortalSession(env:Bindings,customerId:string,origin:string)
 
 // ---- Status rescue (§5): the webhook-lag path ----
 
-const checkoutSessionShape=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),line_items:z.unknown().optional()});
+const checkoutSessionShape=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),consent:z.unknown().nullable().optional(),line_items:z.unknown().optional()});
 
 async function retrieveCheckoutSession(env:Bindings,sessionId:string){
  // line_items expands in the same fetch so a payment-mode session's price is
@@ -140,6 +147,24 @@ async function applyPackGrantForSession(env:Bindings,ownerId:string,sessionId:st
  await db(env,'storypress_pack_grants?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,credits},{prefer:'return=representation, resolution=ignore-duplicates'});
 }
 
+// The session's recorded terms-of-service consent state (founder order,
+// Nov 22). Tolerant of any shape Stripe may send — absent, null, a foreign
+// enum value — everything but the exact string 'accepted' reads as not
+// accepted, which fails closed at the provisioning gates below.
+function tosState(session:{consent?:unknown}):string|undefined{
+ const consent=session.consent as {terms_of_service?:unknown}|null|undefined;
+ return typeof consent?.terms_of_service==='string'?consent.terms_of_service:undefined;
+}
+
+// Durable record of the buyer's ToS agreement, on the pack-grant ledger
+// pattern: one row per checkout session (primary key), the conflict reads
+// back empty on redeliveries and sibling events, and only the accepted state
+// is ever recorded — a refusal provisions nothing, so there is nothing to
+// store. The table exists only via the wave-9 migration; service_role only.
+async function recordTosAgreement(env:Bindings,ownerId:string,sessionId:string){
+ await db(env,'storypress_tos_agreements?on_conflict=checkout_session_id','POST',{owner_id:ownerId,checkout_session_id:sessionId,terms_of_service:'accepted'},{prefer:'return=representation, resolution=ignore-duplicates'});
+}
+
 export async function billingApi(request:Request,env:Bindings){
  if(request.method!=='POST')return json({error:'Method not allowed'},405);
  try{
@@ -153,7 +178,7 @@ export async function billingApi(request:Request,env:Bindings){
    if(input.action!=='status')throw new ServiceError('Online payment is not connected yet. Your stories remain fully available.',503);
    return json({billing:await billingStatus(env,user.id)});
   }
-  if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,new URL(request.url).origin)});
+  if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,input.language,new URL(request.url).origin)});
   if(input.action==='portal'){
    // Fail closed: without the app-written customer id there is nothing to
    // manage — a clean refusal, never a Stripe call with a guessed customer.
@@ -168,8 +193,13 @@ export async function billingApi(request:Request,env:Bindings){
   const session=await retrieveCheckoutSession(env,input.sessionId);
   const sessionOwner=uuid.safeParse(session.metadata?.userId);
   if(session.payment_status==='paid'&&sessionOwner.success&&sessionOwner.data===user.id){
-   if(session.mode==='subscription')await applyEntitlement(env,user.id,sessionToWrite(session));
-   else await applyPackGrantForSession(env,user.id,session.id,session.line_items);
+   // The same ToS fail-closed gate as the webhook (founder order, Nov 22):
+   // an accepted agreement is recorded first, then — and only then — the
+   // entitlement or pack grant lands. A refusal is a logged skip; nothing is
+   // written, exactly like an unknown price.
+   if(tosState(session)!=='accepted')console.error(JSON.stringify({event:'tos_consent_blocked',reason:'tos_not_accepted',session:session.id,via:'rescue'}));
+   else if(session.mode==='subscription'){await recordTosAgreement(env,user.id,session.id);await applyEntitlement(env,user.id,sessionToWrite(session));}
+   else{await recordTosAgreement(env,user.id,session.id);await applyPackGrantForSession(env,user.id,session.id,session.line_items);}
   }
   return json({billing:await billingStatus(env,user.id)});
  }catch(error){
@@ -216,7 +246,7 @@ export async function verifyStripeSignature(raw:string,header:string|null,secret
 }
 
 const webhookEvent=z.object({id:z.string().min(1).max(500),type:z.string().min(1).max(200),data:z.object({object:z.record(z.unknown())})});
-const checkoutSessionObject=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),customer_details:z.object({email:z.string().nullable().optional()}).nullable().optional(),metadata:z.record(z.string()).nullable().optional(),subscription:z.string().nullable().optional()});
+const checkoutSessionObject=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),customer_details:z.object({email:z.string().nullable().optional()}).nullable().optional(),metadata:z.record(z.string()).nullable().optional(),consent:z.unknown().nullable().optional(),subscription:z.string().nullable().optional()});
 const subscriptionObject=z.object({status:z.string(),current_period_end:z.number().optional(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),items:z.object({data:z.array(z.object({current_period_end:z.number().optional()}))}).nullable().optional()});
 const invoiceObject=z.object({subscription:z.string().nullable().optional(),customer:z.string().nullable().optional(),customer_email:z.string().nullable().optional(),lines:z.object({data:z.array(z.object({period:z.object({end:z.number().optional()}).optional(),current_period:z.object({end:z.number().optional()}).optional()}))}).nullable().optional()});
 // Statuses that end access; everything else stays a subscription in good
@@ -230,12 +260,17 @@ const stripeTime=(seconds:number)=>new Date(seconds*1000).toISOString();
 // the plan: the session's price decides between a pack grant and a logged,
 // stateless skip (fail closed, wave 8 §2). Never touches stories: writes
 // target billing tables only, so a downgrade cannot delete or lock anything.
-type BillingEffect={kind:'entitlement';write:EntitlementWrite}|{kind:'pack';sessionId:string}|null;
+type BillingEffect={kind:'entitlement';write:EntitlementWrite;sessionId?:string}|{kind:'pack';sessionId:string}|{kind:'tos_refused';sessionId:string}|null;
 function effectForEvent(type:string,obj:Record<string,unknown>):BillingEffect{
  if(type==='checkout.session.completed'||type==='checkout.session.async_payment_succeeded'){
   const session=checkoutSessionObject.parse(obj);
   if(session.payment_status!=='paid'&&session.payment_status!=='no_payment_required')return null;
-  if(session.mode==='subscription')return {kind:'entitlement',write:{plan:'subscription',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})}};
+  // ToS fail-closed gate (founder order, Nov 22): consent_collection requires
+  // acceptance at hosted Checkout, so a paid session without an 'accepted'
+  // consent must never provision — blocked like an unknown price: a logged,
+  // stateless skip with no grant and no plan write.
+  if(tosState(session)!=='accepted')return {kind:'tos_refused',sessionId:session.id};
+  if(session.mode==='subscription')return {kind:'entitlement',write:{plan:'subscription',subscription_status:'active',...(session.customer?{stripe_customer_id:session.customer}:{})},sessionId:session.id};
   return {kind:'pack',sessionId:session.id};
  }
  if(type==='customer.subscription.updated'){
@@ -331,8 +366,28 @@ export async function stripeWebhook(request:Request,env:Bindings){
    // An owner that cannot be resolved is final (transient lookups throw
    // instead) — acknowledge without effects and keep the claim.
    if(!owner)return json({received:true,unmatched:true});
-   if(effect.kind==='entitlement')await applyEntitlement(env,owner,effect.write);
-   else await applyPackGrantForSession(env,owner,effect.sessionId);
+   // ToS fail-closed (founder order, Nov 22): a paid session without an
+   // accepted consent provisions nothing. Acknowledged like a skip so Stripe
+   // does not retry a permanent refusal; the log line is the founder's
+   // search anchor (session id only — no owner ids or emails).
+   if(effect.kind==='tos_refused'){
+    console.error(JSON.stringify({event:'tos_consent_blocked',reason:'tos_not_accepted',session:effect.sessionId}));
+    return json({received:true});
+   }
+   if(effect.kind==='entitlement'){
+    // The agreement is recorded before the effect it authorizes: a failure
+    // here releases the claim below and Stripe retries; the insert's
+    // checkout_session_id key keeps retries and sibling events exactly-once.
+    // Subscription-lifecycle events carry no session id — no agreement to
+    // record; only checkout provisioning is consent-gated.
+    if(effect.sessionId!==undefined)await recordTosAgreement(env,owner,effect.sessionId);
+    await applyEntitlement(env,owner,effect.write);
+   }else{
+    // Pack grants record the agreement first, on the same ledger — a pack
+    // buyer accepted ToS at hosted Checkout just as a subscriber did.
+    await recordTosAgreement(env,owner,effect.sessionId);
+    await applyPackGrantForSession(env,owner,effect.sessionId);
+   }
   }catch(error){
    // A swallowed 500 on the money path is an invisible bug: log the failure
    // (session id only — no owner ids or emails), then release the claim so
