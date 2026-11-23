@@ -126,6 +126,8 @@ for(const language of ['en','zh','es']){
  const header=renderNode(React.createElement(HeaderNav,{language,signedIn:true,supabase:true,email:'ada@example.com',onNewStory:()=>{},onMyStories:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
  assert.ok(header.includes(saveCopy[language].newStory),`New story stays top-level in the header in ${language}`);
  assert.ok(header.includes(sharingCopy[language].account),`My stories stays top-level in the header in ${language}`);
+ assert.ok(/<button[^>]*class="text-button nav-primary"[^>]*>/.test(header)&&!header.slice(header.indexOf('nav-primary')+1).includes('nav-primary'),`New story is the single primary (filled) header button in ${language}`);
+ assert.ok(header.includes('nav-secondary'),`My stories is the secondary (outline) header button in ${language}`);
  assert.ok(header.includes('account-avatar')&&header.includes('account-avatar-initial'),`the signed-in entry is the round initial avatar in ${language}`);
  assert.ok(header.includes('lucide-chevron-down'),`the avatar carries the chevron that signals a menu in ${language}`);
  assert.ok(!header.includes(`>${sharingCopy[language].accountMenu}</summary>`),`the avatar carries no Account text label in ${language}`);
@@ -135,6 +137,7 @@ for(const language of ['en','zh','es']){
 }
 const signInHeader=renderNode(React.createElement(HeaderNav,{language:'en',signedIn:false,supabase:true,onNewStory:()=>{},onMyStories:()=>{},onSignIn:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
 assert.ok(signInHeader.includes(saveCopy.en.newStory)&&signInHeader.includes(sharingCopy.en.account),`the signed-out header keeps New story and My stories top-level`);
+assert.ok(signInHeader.includes('text-button nav-primary')&&signInHeader.includes('nav-secondary'),`the signed-out header keeps New story primary and My stories secondary`);
 assert.ok(signInHeader.includes(purchaseCopy.en.signIn)&&!signInHeader.includes('account-avatar'),`the signed-out entry is the quiet Sign in link, with no avatar menu`);
 const noAuthHeader=renderNode(React.createElement(HeaderNav,{language:'en',signedIn:false,supabase:false,onNewStory:()=>{},onMyStories:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
 assert.ok(!noAuthHeader.includes(purchaseCopy.en.signIn),`no Sign in link renders when Supabase is unset`);
