@@ -11,9 +11,13 @@ console.log('Bundled client and API into worker/index.js');
 
 // Vercel serves static assets separately; both hosts use the same bundled API.
 if(process.argv.includes('--vercel')){
+ // Vercel serves 404.html with a real 404 status for unmatched paths; the
+ // shell boots the same client, which renders the branded localized
+ // not-found stage. noindex mirrors the worker route map's X-Robots-Tag.
+ const notFoundHtml=html.replace('</title>','</title><meta name="robots" content="noindex">');
  await fs.rm('dist-public',{recursive:true,force:true});
  await fs.mkdir('dist-public',{recursive:true});
- await Promise.all(Object.entries({'index.html':html,'app.js':javascript,'app.css':css,'favicon.svg':icon}).map(([name,content])=>fs.writeFile('dist-public/'+name,content)));
+ await Promise.all(Object.entries({'index.html':html,'404.html':notFoundHtml,'app.js':javascript,'app.css':css,'favicon.svg':icon}).map(([name,content])=>fs.writeFile('dist-public/'+name,content)));
  await fs.cp('public/artwork','dist-public/artwork',{recursive:true});
  console.log('Built Vercel static assets in dist-public');
 }
