@@ -129,7 +129,8 @@ for(const language of ['en','zh','es']){
  assert.ok(/<button[^>]*class="text-button nav-primary"[^>]*>/.test(header)&&!header.slice(header.indexOf('nav-primary')+1).includes('nav-primary'),`New story is the single primary (filled) header button in ${language}`);
  assert.ok(header.includes('nav-secondary'),`My stories is the secondary (outline) header button in ${language}`);
  assert.ok(header.includes('account-avatar')&&header.includes('account-avatar-initial'),`the signed-in entry is the round initial avatar in ${language}`);
- assert.ok(header.includes('lucide-chevron-down'),`the avatar carries the chevron that signals a menu in ${language}`);
+ assert.ok(!header.includes('lucide-chevron-down'),`the avatar carries no chevron — the initial alone is the menu trigger in ${language}`);
+ assert.ok(header.includes('aria-haspopup="menu"')&&header.includes('aria-expanded'),`the avatar declares the menu-trigger semantics in ${language}`);
  assert.ok(!header.includes(`>${sharingCopy[language].accountMenu}</summary>`),`the avatar carries no Account text label in ${language}`);
  assert.ok(header.includes('ada@example.com'),`the avatar menu shows the email in ${language}`);
  assert.ok(header.includes(purchaseCopy[language].planAndBilling),`Plan and billing stays a distinct menu entry in ${language}`);

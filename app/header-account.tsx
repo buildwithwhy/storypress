@@ -1,5 +1,4 @@
-import {useRef} from 'react';
-import {ChevronDown} from 'lucide-react';
+import {useEffect,useRef,useState} from 'react';
 import {purchaseCopy} from '../lib/purchase-copy';
 import {sharingCopy} from '../lib/sharing-copy';
 import {type Story} from '../lib/story';
@@ -14,11 +13,19 @@ export function HeaderAccount({language,signedIn,email,onSignIn,onPlanAndBilling
  const pc=purchaseCopy[language];
  const c=sharingCopy[language];
  const menu=useRef<HTMLDetailsElement>(null);
+ const [open,setOpen]=useState(false);
+ useEffect(()=>{
+  const el=menu.current;
+  if(!el)return;
+  const sync=()=>setOpen(el.open);
+  el.addEventListener('toggle',sync);
+  return()=>el.removeEventListener('toggle',sync);
+ },[]);
  function close(){menu.current?.removeAttribute('open');}
  if(!signedIn)return onSignIn?<button type="button" className="text-button sign-in" onClick={onSignIn}>{pc.signIn}</button>:null;
  const initial=email?.trim()?.[0]?.toUpperCase()||'✳';
  return <details className="account-menu" ref={menu}>
-  <summary className="account-avatar" aria-label={c.accountMenuHint}><span className="account-avatar-initial" aria-hidden={true}>{initial}</span><ChevronDown size={13} aria-hidden={true}/></summary>
+  <summary className="account-avatar" aria-label={c.accountMenuHint} aria-haspopup="menu" aria-expanded={open}><span className="account-avatar-initial" aria-hidden={true}>{initial}</span></summary>
   <div className="account-menu-items">
    {email&&<p className="account-menu-email">{email}</p>}
    <button type="button" onClick={()=>{close();onPlanAndBilling();}}>{pc.planAndBilling}</button>
