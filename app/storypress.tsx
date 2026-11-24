@@ -32,6 +32,7 @@ import {PricingPanel} from "./pricing";
 import {Invites} from "./invites";
 import {InviteGuest} from "./invite-guest";
 import {parseInviteToken} from "../lib/invite-client";
+import {notFoundCopy, isKnownAppPath} from "../lib/notfound-copy";
 import {createStorySaver,hasStoryContent,type SavedStory,type SaveStatus} from '../lib/story-saver';
 import {saveCopy} from '../lib/save-copy';
 import {storageErrorText} from '../lib/storage-copy';
@@ -59,7 +60,7 @@ import {makeStageStates,type MakePipeline} from '../lib/make-progress';
 import {editionButtonLabel,editionCopy,editionTargets,parseStoryRows,translationOriginId,type StoryListRow} from '../lib/editions';
 
 type InterviewMode = InputMode;
-type Stage = "home" | "tell" | "discover" | "paper" | "pricing" | "legal";
+type Stage = "home" | "tell" | "discover" | "paper" | "pricing" | "legal" | "notfound";
 const copy = {
  en: { tell: "Your story", discover: "A little discovery", paper: "Your newspaper", start: "Start my story", sample: "Explore a sample", name: "What should we call you?", optional: "Your first name (optional)", question: "Take your time. The little details matter.", placeholder: "Start anywhere. A place, a person, a moment…", send: "Save & continue", record: "Tell it out loud", stop: "Finish recording", listen: "Hear the question", skip: "Ask something else", discovery: "Find a connection", create: "Make my newspaper", saved: "Saved on this device", own: "In your own words", back: "Back to my story", photo: "Add a photograph", continue: "Continue my story", fresh: "Start a new story", edit: "Edit my newspaper", print: "Print / save PDF", done: "Done editing", include: "Include in my newspaper", familiar: "Looks familiar", unsure: "Not sure", unfamiliar: "Not my memory", prompt: "Tell me more about this", no: "Continue without history", looking: "Looking for more of the past…", notice: "A thread to the past — take a look", your: "A story by", context: "The world around your story", moreInfo: "More information", privacy: "Drafts and photographs are saved in this browser. AI requests send your words to Gemini. Photo assistance sends a resized copy of your photo only when you choose it. Photo search sends only the query you review to Nimble; visual guesses are kept out of newspaper writing. Recordings are transcribed by Gemini and remain downloadable until you close the page." },
  zh: { tell: "你的故事", discover: "一点新发现", paper: "你的报纸", start: "开始讲故事", sample: "看看示例", name: "我们怎么称呼你？", optional: "你的名字（选填）", question: "慢慢来，小细节也很珍贵。", placeholder: "从哪里开始都可以。一个地方，一个人，一个瞬间……", send: "保存并继续", record: "说出你的故事", stop: "结束录音", listen: "听这个问题", skip: "换个问题", discovery: "寻找历史线索", create: "制作我的报纸", saved: "已保存在此设备", own: "你的原话", back: "回到我的故事", photo: "添加照片", continue: "继续我的故事", fresh: "开始新故事", edit: "编辑报纸", print: "打印 / 保存 PDF", done: "完成编辑", include: "加入我的报纸", familiar: "看着很熟悉", unsure: "不确定", unfamiliar: "与我无关", prompt: "聊聊这个发现", no: "不添加历史背景", looking: "正在寻找更多历史线索……", notice: "一条通往过去的线索——去看看", your: "讲述者", context: "故事发生时的世界", moreInfo: "更多信息", privacy: "草稿和照片保存在此浏览器中。AI 请求会将你的话发送给 Gemini。只有在你选择时，照片辅助功能才会发送调整大小后的照片副本。照片搜索只会把你确认过的搜索词发送给 Nimble；视觉猜测不会用于报纸写作。录音由 Gemini 转写，在你关闭页面前都可以下载。" },
@@ -119,7 +120,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const [setupPresentation,setSetupPresentation]=useState<Story["presentation"]>();
  const [setupName,setSetupName]=useState(initialStory.name);
  const [setupOccasion,setSetupOccasion]=useState<Story["occasion"]>(initialStory.occasion);
- const [stage, setStage] = useState<Stage>(location.pathname === "/pricing" ? "pricing" : legalPageFromPath(location.pathname) ? "legal" : "home");
+ const [stage, setStage] = useState<Stage>(location.pathname === "/pricing" ? "pricing" : legalPageFromPath(location.pathname) ? "legal" : isKnownAppPath(location.pathname) ? "home" : "notfound");
  // The legal page (/terms /privacy /refunds) served inside the app shell; the
  // language follows the header language picker like every other surface.
  const [legalPage, setLegalPage] = useState<LegalPageId | undefined>(() => legalPageFromPath(location.pathname) ?? undefined);
@@ -230,7 +231,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // The pricing page is a transient URL view, not a story stage: the draft
  // contract persists story stages only (readDraft whitelists them), so pricing
  // saves as "no stage" and resume falls back to its default stage.
- function currentDraft():DraftSnapshot{const current=draftState.current;return {story:{...current.story,draft:current.input},saved:current.saved,stage:current.stage==='pricing'||current.stage==='legal'?undefined:current.stage,mode:current.mode};}
+ function currentDraft():DraftSnapshot{const current=draftState.current;return {story:{...current.story,draft:current.input},saved:current.saved,stage:current.stage==='pricing'||current.stage==='legal'||current.stage==='notfound'?undefined:current.stage,mode:current.mode};}
  const saver=useRef<ReturnType<typeof createStorySaver>|null>(null);
  if(account.user&&!saver.current)saver.current=createStorySaver({save:(next,identity,derivative)=>accountRequest({action:'save',id:identity?.id,revision:identity?.revision,story:next,derivative}),changeSharing:(action,identity)=>accountRequest({action,id:identity.id,revision:identity.revision}),remove:async id=>{await accountRequest({action:'delete',id});},onSaved:identity=>{draftState.current.saved=identity;setSaved(identity);},onStatus:(status,problem,code)=>{setCloudStatus(status);setCloudErrorCode(code);setCloudError(problem||'');}});
  async function saveCurrent(){persistDraft();if(!saver.current)return null;saver.current.update(currentDraft().story);return saver.current.flush();}
@@ -376,7 +377,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // popstate keeps the stage honest when the user travels browser history.
  const stageBeforePricing=useRef<Stage>("home");
  useEffect(()=>{
-  const onPop=()=>{const page=legalPageFromPath(location.pathname);if(page){setLegalPage(page);setStage("legal");window.scrollTo({top:0,behavior:"smooth"});}else if(location.pathname==="/pricing"){setLegalPage(undefined);setStage("pricing");window.scrollTo({top:0,behavior:"smooth"});}else{setLegalPage(undefined);setStage(s=>s==="pricing"||s==="legal"?stageBeforePricing.current:s);}};
+  const onPop=()=>{const page=legalPageFromPath(location.pathname);if(page){setLegalPage(page);setStage("legal");window.scrollTo({top:0,behavior:"smooth"});}else if(location.pathname==="/pricing"){setLegalPage(undefined);setStage("pricing");window.scrollTo({top:0,behavior:"smooth"});}else if(!isKnownAppPath(location.pathname)){setLegalPage(undefined);setStage("notfound");window.scrollTo({top:0,behavior:"smooth"});}else{setLegalPage(undefined);setStage(s=>s==="pricing"||s==="legal"?stageBeforePricing.current:s);}};
   window.addEventListener("popstate",onPop);
   return()=>window.removeEventListener("popstate",onPop);
  },[]);
@@ -747,8 +748,8 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  return <div className="app-shell">
   <header className="site-header no-print"><button className="brand" disabled={interactionBusy || correcting} onClick={() => void flushThenNavigate("home")} aria-label="Once &amp; Ours home"><span className="brand-mark"><Asterisk size={30}/></span><span className="brand-name">Once &amp; Ours</span></button><LanguagePicker language={story.language} disabled={interactionBusy||correcting} onChange={language=>{voice.current?.cancel(); setVoicePaused(true); cancelResearch();patch(storyForLanguage(story,language));}}/><div className="header-right"><button className="text-button" disabled={interactionBusy||correcting||account.sampleOnly} onClick={()=>void startFresh()}><Plus size={16}/>{sc.newStory}</button>{account.user?<HeaderAccount language={story.language} signedIn onAccount={()=>{setAccountPlanFirst(false);void openAccount();}} onPlanAndBilling={()=>{setAccountContext('account');setAccountPlanFirst(true);void openAccount();}} onSignOut={()=>setMenuSignOut(true)}/>:<>{account.supabase&&<HeaderAccount language={story.language} signedIn={false} onSignIn={()=>{setAccountContext('account');void openAccount();}} onAccount={()=>{}} onPlanAndBilling={()=>{}} onSignOut={()=>{}}/>}<button className="text-button account-nav" disabled={interactionBusy || correcting || account.sampleOnly} onClick={()=>void openAccount()}>{sharingCopy[story.language].account}</button></>}</div></header>
   {account.sampleOnly&&<div className="message no-print" role="status">{{en:"This preview is in sample mode. Explore the formats below; creating and saving stories isn’t connected yet.",zh:"此预览目前为示例模式。你可以浏览作品格式；创建和保存故事功能尚未连接。",es:"Esta vista previa está en modo de ejemplo. Explora los formatos; crear y guardar historias aún no está conectado."}[story.language]}<button onClick={()=>setShowSample(true)}>{c.sample}</button></div>}
-  {(stage !== "home" && stage !== "pricing" && stage !== "legal") && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => void flushThenNavigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
-  {story.sample && stage !== "home" && stage !== "pricing" && stage !== "legal" && <div className="sample-banner no-print"><Sparkles size={14}/> {f.sampleBanner} <button disabled={interactionBusy || correcting} onClick={()=>begin()}>{d.tryOwn}</button></div>}
+  {(stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound") && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => void flushThenNavigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
+  {story.sample && stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound" && <div className="sample-banner no-print"><Sparkles size={14}/> {f.sampleBanner} <button disabled={interactionBusy || correcting} onClick={()=>begin()}>{d.tryOwn}</button></div>}
   {error && <div className="message error no-print" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss message"><X size={18}/></button></div>}
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&cloudStatus==='error'&&<div className="message error no-print" role="alert">{sc.error}<span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></div>}
@@ -768,6 +769,14 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   </main>}
   {stage === "pricing" && <main className="pricing-page"><h1>{paywallCopy[story.language].pricingTitle}</h1><p className="pricing-intro">{paywallCopy[story.language].pricingIntro}</p><PricingPanel billing={account.billing} pricing={account.pricing} language={story.language} signedIn={!!account.user} onPrepareSignIn={prepareSignIn} onStartFreeStory={()=>void startFresh()}/><p className="pricing-legal"><a href="/terms">{legalCopy[story.language].links.terms}</a> · <a href="/privacy">{legalCopy[story.language].links.privacy}</a> · <a href="/refunds">{legalCopy[story.language].links.refunds}</a></p></main>}
   {stage === "legal" && legalPage && <LegalPage id={legalPage} language={story.language} onOpen={openLegal}/>}
+  {/* Unknown route (the worker served this shell with a 404 status): a
+      branded, localized page with the site header and language picker above —
+      never a silent fallback to home. New story follows the header's button. */}
+  {stage === "notfound" && <main className="notfound">
+   <section className="intro"><p className="eyebrow"><span/> 404</p><h1>{notFoundCopy[story.language].title}</h1><p className="intro-text">{notFoundCopy[story.language].message}</p>
+    <div className="notfound-actions"><button className="primary" onClick={()=>void startFresh()}><Plus size={16}/>{notFoundCopy[story.language].newStory}</button><a className="text-button" href="/" onClick={e=>{e.preventDefault();navigate("home");}}>{notFoundCopy[story.language].backHome}</a></div>
+   </section>
+  </main>}
   {showSample&&<SamplePreview language={story.language} onClose={()=>setShowSample(false)}><FormatPicker story={{...createSampleStory(story.language),presentation:{version:1,format:sampleFormat}}} onChange={setSampleFormat}/><KeepsakeView story={{...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}],presentation:{version:1,format:sampleFormat}}}/></SamplePreview>}
   {stage === "tell" && <main className={`workspace interview-${mode}`}><section className="conversation">
    {modePicker()}
