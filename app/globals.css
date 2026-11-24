@@ -198,3 +198,13 @@
 .purchase-history-row .purchase-history-amount{font-weight:600}
 .purchase-history-row .purchase-history-date{color:#687266;font-size:12px}
 
+
+/* Not-found page (unknown routes): reuses the intro typography; one calm
+   column with the actions row under the copy. */
+.notfound{max-width:640px;margin:0 auto;padding:66px 20px 60px}
+.notfound .intro{max-width:none}
+.notfound .eyebrow{color:#75816f}
+.notfound h1{font-size:clamp(42px,5vw,60px);letter-spacing:-2px;margin:22px 0 18px}
+.notfound .intro-text{max-width:460px}
+.notfound-actions{display:flex;align-items:center;gap:26px;margin-top:28px;flex-wrap:wrap}
+@media(max-width:800px){.notfound{padding:40px 25px 50px}.notfound h1{font-size:38px}}

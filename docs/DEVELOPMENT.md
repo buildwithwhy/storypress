@@ -62,6 +62,7 @@ Use the focused scripts relevant to a change, alongside type checking and the ap
 
 ```sh
 node scripts/check-worker.mjs
+node scripts/check-notfound.mjs
 node scripts/check-voice.mjs
 node scripts/check-photo.mjs
 node scripts/check-sharing.mjs

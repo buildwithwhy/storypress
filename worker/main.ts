@@ -24,7 +24,11 @@ export default {
   if(/^\/i\/[a-f0-9]{64}$/.test(url.pathname)) return new Response(request.method==='HEAD'?null:html,{headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'"}});
   const routes: Record<string,[string|Uint8Array,string]> = {'/app.js':[javascript,'text/javascript; charset=utf-8'],'/app.css':[css,'text/css; charset=utf-8'],'/favicon.svg':[icon,'image/svg+xml'],'/artwork/sample-moon-night.webp':[sampleArtBytes,'image/webp'],'/':[html,'text/html; charset=utf-8'],'/pricing':[html,'text/html; charset=utf-8'],'/terms':[html,'text/html; charset=utf-8'],'/privacy':[html,'text/html; charset=utf-8'],'/refunds':[html,'text/html; charset=utf-8']};
   const route=routes[url.pathname];
-  if(!route) return new Response('Not found',{status:404});
+  // Unknown paths serve the app shell with a real 404 status: the client
+  // renders the branded, localized not-found page (lib/notfound-copy.ts) with
+  // the site header and language picker, instead of the platform's unbranded
+  // English-only error. Unknown paths are not indexed.
+  if(!route) return new Response(request.method==='HEAD'?null:html,{status:404,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','X-Robots-Tag':'noindex'}});
   const body:BodyInit=route[0] instanceof Uint8Array?(route[0] as Uint8Array).slice().buffer:route[0];
   return new Response(request.method==='HEAD'?null:body,{headers:{'Content-Type':route[1],'Cache-Control':'no-cache','X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}});
  }
