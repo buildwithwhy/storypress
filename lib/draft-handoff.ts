@@ -34,6 +34,20 @@ export function readDraft(store:Store,key:string):DraftSnapshot|null {
 export function readOwnerlessDraft(store:Store,key:string):DraftSnapshot|null{
  const snapshot=readDraft(store,key);return snapshot?.owner?null:snapshot;
 }
+// The explicit device-draft import in My stories (account modal and the
+// /stories page, device-draft privacy art_ZdXAkIsg): the guest key's draft is
+// offered only when it exists and is not stamped with another account's id —
+// a stranger's words stay invisible, never merely un-imported. The legacy
+// pre-snapshot format (a bare story under DRAFT_PREFIX) still reads.
+export function readImportableDraft(store:Store,userId?:string):DraftSnapshot|null{
+ let device:DraftSnapshot|null=readDraft(store,GUEST_DRAFT_KEY);
+ if(!device){
+  const raw=store.getItem(DRAFT_PREFIX);
+  if(raw){try{const parsed=JSON.parse(raw) as DraftSnapshot|{story:unknown};device={story:storySchema.parse('story' in parsed?parsed.story:parsed),saved:null};}catch{return null;}}
+ }
+ if(!device||(device.owner&&device.owner.userId!==userId))return null;
+ return device;
+}
 export function writeDraft(store:Store,key:string,snapshot:DraftSnapshot,userId?:string,now=Date.now()){
  let stamped:DraftSnapshot=snapshot;
  // Account keys (and their handoff slots) always carry their owner; the guest

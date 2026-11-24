@@ -15,19 +15,27 @@ import React from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {PricingPanel} from './app/pricing.tsx';
 import {HeaderAccount} from './app/header-account.tsx';
+import {HeaderNav} from './app/header-nav.tsx';
+import {StoriesPage} from './app/stories-page.tsx';
+import {BillingPage} from './app/billing-page.tsx';
+import {PageSignIn} from './app/page-sign-in.tsx';
+import {storiesLeft} from './lib/billing.ts';
+import {saveCopy} from './lib/save-copy.ts';
+import {accountPagesCopy} from './lib/account-pages-copy.ts';
 import {UpgradePanel} from './app/sharing.tsx';
 import {billingStatusSchema} from './lib/billing.ts';
 import {purchaseCopy} from './lib/purchase-copy.ts';
 import {sharingCopy} from './lib/sharing-copy.ts';
 import {paywallCopy} from './lib/paywall-copy.ts';
-import {storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo} from './lib/purchase-intent.ts';
+import {supportEmail} from './lib/legal-copy.ts';
+import {storePendingPurchase,readPendingPurchase,clearPendingPurchase,pageReturnTo} from './lib/purchase-intent.ts';
 export const render=props=>renderToStaticMarkup(React.createElement(PricingPanel,props));
 export const renderNode=el=>renderToStaticMarkup(el);
-export {React as React,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,HeaderAccount,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo};
+export {React as React,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,saveCopy,accountPagesCopy,storiesLeft,pageReturnTo,supportEmail,HeaderAccount,HeaderNav,StoriesPage,BillingPage,PageSignIn,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase};
 `,resolveDir:process.cwd()},bundle:true,write:false,platform:'node',format:'esm',jsx:'automatic',packages:'external'});
 import fs from 'node:fs/promises';
 const path=new URL('../work/purchase-flow-check.mjs',import.meta.url);await fs.mkdir(new URL('../work/',import.meta.url),{recursive:true});await fs.writeFile(path,bundle.outputFiles[0].text);
-const {React,render,renderNode,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,HeaderAccount,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase,pricingReturnTo}=await import(path.href);
+const {React,render,renderNode,billingStatusSchema,purchaseCopy,sharingCopy,paywallCopy,saveCopy,accountPagesCopy,storiesLeft,pageReturnTo,supportEmail,HeaderAccount,HeaderNav,StoriesPage,BillingPage,PageSignIn,UpgradePanel,storePendingPurchase,readPendingPurchase,clearPendingPurchase}=await import(path.href);
 
 const billing={configured:true,plan:'free',addons:[],storiesCreated:1,freeStoryLimit:3,subscriptionMonthlyCap:50,pack30Credits:30,pack100Credits:100,subscriptionStoriesThisMonth:0,packCreditsRemaining:0};
 const pricing={currency:'usd',monthly:{amount:999},annual:{amount:5900},pack30:{amount:1200},pack100:{amount:2900}};
@@ -90,7 +98,9 @@ storePendingPurchase(storage,'monthly',now+5);
 assert.equal(readPendingPurchase(storage,now+1000)?.plan,'monthly','a new selection overwrites the previous intent');
 clearPendingPurchase(storage);
 assert.equal(readPendingPurchase(storage,now+1000),null,'a consumed or cancelled intent is cleared');
-assert.equal(pricingReturnTo('https://onceandours.com'),'https://onceandours.com/pricing','the Google returnTo points at /pricing so the sheet can reopen');
+assert.equal(pageReturnTo('https://onceandours.com','/pricing'),'https://onceandours.com/pricing','the /pricing Google returnTo still points at /pricing so the sheet can reopen');
+assert.equal(pageReturnTo('https://onceandours.com','/stories'),'https://onceandours.com/stories','the /stories sign-in returnTo points back at /stories (same-route return)');
+assert.equal(pageReturnTo('https://onceandours.com','/billing'),'https://onceandours.com/billing','the /billing sign-in returnTo points back at /billing (same-route return)');
 
 // Copy parity: every purchase key exists in en, zh and es; placeholders stay
 // interpolated and are asserted where they carry numbers.
@@ -108,21 +118,30 @@ for(const language of ['en','zh','es']){
  assert.ok(typeof paywallCopy[language].packConfirmed==='string',`pack copy parity in ${language}`);
 }
 
-// Header trigger (account-menu follow-up): signed in, the trigger reads
-// "Account" with a chevron — not "My stories" — while "My stories" stays the
-// first item inside the menu and Plan and billing remains a distinct entry.
+// Header, both states (founder UX round): New story and My stories are ALWAYS
+// top-level; signed in, the account entry is a small round avatar with the
+// initial — no "Account" text label — opening a menu with the email (muted),
+// Plan and billing, and Sign out; signed out, a quiet Sign in text link.
 for(const language of ['en','zh','es']){
- const header=renderNode(React.createElement(HeaderAccount,{language,signedIn:true,onAccount:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
- assert.ok(header.includes(sharingCopy[language].accountMenu),`the signed-in trigger reads the Account label in ${language}`);
- assert.ok(header.includes('lucide-chevron-down'),`the trigger carries the chevron that signals a menu in ${language}`);
- assert.ok(header.includes(`aria-label="${sharingCopy[language].accountMenuHint}"`),`the trigger carries the chevron a11y label in ${language}`);
- assert.ok(header.includes(sharingCopy[language].account),`My stories stays inside the menu in ${language}`);
+ const header=renderNode(React.createElement(HeaderNav,{language,signedIn:true,supabase:true,email:'ada@example.com',onNewStory:()=>{},onMyStories:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
+ assert.ok(header.includes(saveCopy[language].newStory),`New story stays top-level in the header in ${language}`);
+ assert.ok(header.includes(sharingCopy[language].account),`My stories stays top-level in the header in ${language}`);
+ assert.ok(/<button[^>]*class="text-button nav-primary"[^>]*>/.test(header)&&!header.slice(header.indexOf('nav-primary')+1).includes('nav-primary'),`New story is the single primary (filled) header button in ${language}`);
+ assert.ok(header.includes('nav-secondary'),`My stories is the secondary (outline) header button in ${language}`);
+ assert.ok(header.includes('account-avatar')&&header.includes('account-avatar-initial'),`the signed-in entry is the round initial avatar in ${language}`);
+ assert.ok(!header.includes('lucide-chevron-down'),`the avatar carries no chevron — the initial alone is the menu trigger in ${language}`);
+ assert.ok(header.includes('aria-haspopup="menu"')&&header.includes('aria-expanded'),`the avatar declares the menu-trigger semantics in ${language}`);
+ assert.ok(!header.includes(`>${sharingCopy[language].accountMenu}</summary>`),`the avatar carries no Account text label in ${language}`);
+ assert.ok(header.includes('ada@example.com'),`the avatar menu shows the email in ${language}`);
  assert.ok(header.includes(purchaseCopy[language].planAndBilling),`Plan and billing stays a distinct menu entry in ${language}`);
- assert.ok(!new RegExp(`<summary[^>]*>${sharingCopy[language].account}<`).test(header),`the trigger no longer reads My stories in ${language}`);
+ assert.ok(header.includes(sharingCopy[language].logout),`Sign out stays a distinct menu entry in ${language}`);
 }
-// Signed out, the header state is untouched: a plain Sign in button, no menu.
-const signInHeader=renderNode(React.createElement(HeaderAccount,{language:'en',signedIn:false,onSignIn:()=>{},onAccount:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
-assert.ok(signInHeader.includes(purchaseCopy.en.signIn)&&!signInHeader.includes('account-menu'),`the signed-out header keeps the Sign in button with no account menu`);
+const signInHeader=renderNode(React.createElement(HeaderNav,{language:'en',signedIn:false,supabase:true,onNewStory:()=>{},onMyStories:()=>{},onSignIn:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
+assert.ok(signInHeader.includes(saveCopy.en.newStory)&&signInHeader.includes(sharingCopy.en.account),`the signed-out header keeps New story and My stories top-level`);
+assert.ok(signInHeader.includes('text-button nav-primary')&&signInHeader.includes('nav-secondary'),`the signed-out header keeps New story primary and My stories secondary`);
+assert.ok(signInHeader.includes(purchaseCopy.en.signIn)&&!signInHeader.includes('account-avatar'),`the signed-out entry is the quiet Sign in link, with no avatar menu`);
+const noAuthHeader=renderNode(React.createElement(HeaderNav,{language:'en',signedIn:false,supabase:false,onNewStory:()=>{},onMyStories:()=>{},onPlanAndBilling:()=>{},onSignOut:()=>{}}));
+assert.ok(!noAuthHeader.includes(purchaseCopy.en.signIn),`no Sign in link renders when Supabase is unset`);
 
 // Purchase history (follow-up, founder's D3 decision): no payload rows means
 // no purchase-history block at all — the "No purchases yet" empty state is
@@ -137,6 +156,53 @@ assert.ok(panelWithHistory.includes('purchase-history')&&panelWithHistory.includ
 for(const language of ['en','zh','es']){
  const panel=renderNode(React.createElement(UpgradePanel,{billing,language,ownerTree:true}));
  assert.ok(panel.includes('tabindex="-1"')&&panel.includes(paywallCopy[language].planHeading),`the plan section has a focusable heading for the deep-link in ${language}`);
+}
+
+// The /stories page (founder UX round): stories first — finished keepsakes
+// before drafts — with Open/Delete kept, the quiet stories-left line linking
+// Plan and billing, and NONE of the plan panel, checkout, AI-units copy or
+// email (those live on /billing now).
+const listRows=[{id:'r1',title:'A finished keepsake',paper_language:'en',updated_at:'2026-11-20T10:00:00Z'},{id:'r2',title:'Still a draft',paper_language:null,updated_at:'2026-11-21T10:00:00Z'}];
+const storiesProps={language:'en',rows:listRows,loaded:true,billing,userId:'u1',onStartNew:()=>{},onOpenRow:()=>{},onDeleteRow:()=>{},onLoadDraft:()=>{},onOpenBilling:()=>{}};
+const storiesPage=renderNode(React.createElement(StoriesPage,storiesProps));
+assert.ok(storiesPage.indexOf(accountPagesCopy.en.finishedHeading)<storiesPage.indexOf(accountPagesCopy.en.draftsHeading),'finished keepsakes render before drafts on /stories');
+assert.ok(storiesPage.includes('A finished keepsake')&&storiesPage.includes('Still a draft'),'both sections render their cards');
+assert.ok(storiesPage.includes(saveCopy.en.startNew),'Start a new story sits at the top of /stories');
+assert.ok(storiesPage.includes(String(storiesLeft(billing)))&&storiesPage.includes(purchaseCopy.en.planAndBilling),'the quiet stories-left line links Plan and billing');
+assert.ok(storiesPage.includes(sharingCopy.en.import),'the consent-gated device-draft import stays on /stories');
+assert.ok(!storiesPage.includes('purchase-sheet')&&!storiesPage.includes('I ask Once &amp; Ours'),'no plan panel or checkout renders on /stories');
+assert.ok(!storiesPage.includes(sharingCopy.en.allowance),'the AI-units allowance copy moved off /stories');
+assert.ok(!storiesPage.includes('@'),'no email renders on /stories');
+assert.ok(renderNode(React.createElement(StoriesPage,{...storiesProps,loaded:false})).includes(accountPagesCopy.en.loading),'the stories list shows a loading line before rows settle');
+
+// The /billing page (founder UX round): six sections; purchase history
+// renders NOTHING while the payload has no history (PR #81 parked).
+const billingProps={billing,pricing,language:'en',email:'ada@example.com',returnTo:'https://onceandours.com/billing',onSignOut:()=>{},onOpenLegal:()=>{},onPrepareSignIn:()=>()=>{}};
+const billingPage=renderNode(React.createElement(BillingPage,billingProps));
+for(const heading of [paywallCopy.en.planHeading,accountPagesCopy.en.storiesLeftHeading,accountPagesCopy.en.getMore,accountPagesCopy.en.allowanceHeading,accountPagesCopy.en.accountHeading,accountPagesCopy.en.helpHeading])
+ assert.ok(billingPage.includes(heading),`the /billing page carries the ${heading} section`);
+assert.ok(billingPage.includes('1 of 3 free stories used'),'the free usage line renders on /billing');
+assert.ok(billingPage.includes('$9.99')&&billingPage.includes('$59'),'plan amounts render from the Stripe payload (pack amounts show inside the sheet)');
+assert.ok(billingPage.includes('ada@example.com')&&billingPage.includes(supportEmail),'the account section shows the email and the terms support address');
+assert.ok(!billingPage.includes('purchase-history')&&!billingPage.includes('No purchases yet'),'purchase history renders nothing on /billing (PR #81 parked)');
+const subscriberPage=renderNode(React.createElement(BillingPage,{...billingProps,billing:{...billing,plan:'subscription',subscriptionStoriesThisMonth:12,packCreditsRemaining:30}}));
+assert.ok(subscriberPage.includes(paywallCopy.en.manageBilling)&&subscriberPage.includes('12 of 50 stories this month')&&subscriberPage.includes('30 pack credits remaining'),'a subscriber sees Manage billing, the month usage and pack credits');
+
+// Signed-out guards: /stories and /billing render the inline sign-in surface,
+// and the Google/email returnTo points back at the visited route.
+const storiesGuard=renderNode(React.createElement(PageSignIn,{language:'en',context:'story',returnTo:pageReturnTo('https://onceandours.com','/stories'),onPrepareSignIn:()=>()=>{}}));
+assert.ok(storiesGuard.includes('google-sign-in')&&storiesGuard.includes('email-sign-in'),'the signed-out /stories guard offers Google and email-code sign-in');
+const billingGuard=renderNode(React.createElement(PageSignIn,{language:'en',context:'account',returnTo:pageReturnTo('https://onceandours.com','/billing'),onPrepareSignIn:()=>()=>{}}));
+assert.ok(billingGuard.includes(purchaseCopy.en.accountSignInHelp),'the signed-out /billing guard uses the account sign-in wording');
+
+// Copy parity for the new pages: exactly the en key set in zh and es, with
+// the interpolated placeholders present everywhere.
+const pageKeys=Object.keys(accountPagesCopy.en);
+for(const language of ['zh','es'])
+ assert.deepEqual(Object.keys(accountPagesCopy[language]).sort(),[...pageKeys].sort(),`accountPagesCopy.${language} has exactly the en key set`);
+for(const language of ['en','zh','es']){
+ assert.ok(accountPagesCopy[language].storiesLeft.includes('{size}'),`storiesLeft carries the {size} placeholder in ${language}`);
+ assert.ok(accountPagesCopy[language].deleteAccount.includes('{email}'),`deleteAccount carries the {email} placeholder in ${language}`);
 }
 
 console.log('check-purchase-flow: all assertions passed');

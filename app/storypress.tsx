@@ -27,7 +27,10 @@ import { interviewCopy } from "../lib/interview-copy";
 
 import {setupAccount,accountHeaders,accountRequest,signOut,type AccountConfig} from "../lib/account-client";
 import {Sharing} from "./sharing";
-import {HeaderAccount} from "./header-account";
+import {HeaderNav} from "./header-nav";
+import {StoriesPage} from "./stories-page";
+import {BillingPage} from "./billing-page";
+import {PageSignIn} from "./page-sign-in";
 import {PricingPanel} from "./pricing";
 import {Invites} from "./invites";
 import {InviteGuest} from "./invite-guest";
@@ -40,7 +43,7 @@ import {freeStoryLimitReached,type BillingStatus} from '../lib/billing';
 import {checkoutReturnId,confirmCheckout} from '../lib/billing-client';
 import {paywallCopy} from '../lib/paywall-copy';
 import {purchaseCopy} from '../lib/purchase-copy';
-import {readPendingPurchase,clearPendingPurchase} from '../lib/purchase-intent';
+import {readPendingPurchase,clearPendingPurchase,pageReturnTo} from '../lib/purchase-intent';
 import {legalCopy,legalPageFromPath,type LegalPageId} from '../lib/legal-copy';
 import {LegalPage} from './legal';
 import {sharingCopy} from "../lib/sharing-copy";
@@ -60,7 +63,7 @@ import {makeStageStates,type MakePipeline} from '../lib/make-progress';
 import {editionButtonLabel,editionCopy,editionTargets,parseStoryRows,translationOriginId,type StoryListRow} from '../lib/editions';
 
 type InterviewMode = InputMode;
-type Stage = "home" | "tell" | "discover" | "paper" | "pricing" | "legal" | "notfound";
+type Stage = "home" | "tell" | "discover" | "paper" | "pricing" | "legal" | "notfound" | "stories" | "billing";
 const copy = {
  en: { tell: "Your story", discover: "A little discovery", paper: "Your newspaper", start: "Start my story", sample: "Explore a sample", name: "What should we call you?", optional: "Your first name (optional)", question: "Take your time. The little details matter.", placeholder: "Start anywhere. A place, a person, a moment…", send: "Save & continue", record: "Tell it out loud", stop: "Finish recording", listen: "Hear the question", skip: "Ask something else", discovery: "Find a connection", create: "Make my newspaper", saved: "Saved on this device", own: "In your own words", back: "Back to my story", photo: "Add a photograph", continue: "Continue my story", fresh: "Start a new story", edit: "Edit my newspaper", print: "Print / save PDF", done: "Done editing", include: "Include in my newspaper", familiar: "Looks familiar", unsure: "Not sure", unfamiliar: "Not my memory", prompt: "Tell me more about this", no: "Continue without history", looking: "Looking for more of the past…", notice: "A thread to the past — take a look", your: "A story by", context: "The world around your story", moreInfo: "More information", privacy: "Drafts and photographs are saved in this browser. AI requests send your words to Gemini. Photo assistance sends a resized copy of your photo only when you choose it. Photo search sends only the query you review to Nimble; visual guesses are kept out of newspaper writing. Recordings are transcribed by Gemini and remain downloadable until you close the page." },
  zh: { tell: "你的故事", discover: "一点新发现", paper: "你的报纸", start: "开始讲故事", sample: "看看示例", name: "我们怎么称呼你？", optional: "你的名字（选填）", question: "慢慢来，小细节也很珍贵。", placeholder: "从哪里开始都可以。一个地方，一个人，一个瞬间……", send: "保存并继续", record: "说出你的故事", stop: "结束录音", listen: "听这个问题", skip: "换个问题", discovery: "寻找历史线索", create: "制作我的报纸", saved: "已保存在此设备", own: "你的原话", back: "回到我的故事", photo: "添加照片", continue: "继续我的故事", fresh: "开始新故事", edit: "编辑报纸", print: "打印 / 保存 PDF", done: "完成编辑", include: "加入我的报纸", familiar: "看着很熟悉", unsure: "不确定", unfamiliar: "与我无关", prompt: "聊聊这个发现", no: "不添加历史背景", looking: "正在寻找更多历史线索……", notice: "一条通往过去的线索——去看看", your: "讲述者", context: "故事发生时的世界", moreInfo: "更多信息", privacy: "草稿和照片保存在此浏览器中。AI 请求会将你的话发送给 Gemini。只有在你选择时，照片辅助功能才会发送调整大小后的照片副本。照片搜索只会把你确认过的搜索词发送给 Nimble；视觉猜测不会用于报纸写作。录音由 Gemini 转写，在你关闭页面前都可以下载。" },
@@ -120,7 +123,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  const [setupPresentation,setSetupPresentation]=useState<Story["presentation"]>();
  const [setupName,setSetupName]=useState(initialStory.name);
  const [setupOccasion,setSetupOccasion]=useState<Story["occasion"]>(initialStory.occasion);
- const [stage, setStage] = useState<Stage>(location.pathname === "/pricing" ? "pricing" : legalPageFromPath(location.pathname) ? "legal" : isKnownAppPath(location.pathname) ? "home" : "notfound");
+ const [stage, setStage] = useState<Stage>(location.pathname === "/pricing" ? "pricing" : location.pathname === "/stories" ? "stories" : location.pathname === "/billing" ? "billing" : legalPageFromPath(location.pathname) ? "legal" : isKnownAppPath(location.pathname) ? "home" : "notfound");
  // The legal page (/terms /privacy /refunds) served inside the app shell; the
  // language follows the header language picker like every other surface.
  const [legalPage, setLegalPage] = useState<LegalPageId | undefined>(() => legalPageFromPath(location.pathname) ?? undefined);
@@ -132,6 +135,9 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // Saved story rows (My stories list): the originStoryId links the edition
  // switcher and translated-copy labels are derived from.
  const [storyRows,setStoryRows]=useState<StoryListRow[]>([]);
+ // The /stories page distinguishes "still loading" from a genuinely empty
+ // account: rows fetch on sign-in only, so the page needs the settled flag.
+ const [rowsLoaded,setRowsLoaded]=useState(false);
  const [rowsVersion,setRowsVersion]=useState(0);
  const [busy, setBusy] = useState("");
  // Make-flow progress (wave 7 PR C): the pipeline phase behind the three-stage
@@ -231,7 +237,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // The pricing page is a transient URL view, not a story stage: the draft
  // contract persists story stages only (readDraft whitelists them), so pricing
  // saves as "no stage" and resume falls back to its default stage.
- function currentDraft():DraftSnapshot{const current=draftState.current;return {story:{...current.story,draft:current.input},saved:current.saved,stage:current.stage==='pricing'||current.stage==='legal'||current.stage==='notfound'?undefined:current.stage,mode:current.mode};}
+ function currentDraft():DraftSnapshot{const current=draftState.current;return {story:{...current.story,draft:current.input},saved:current.saved,stage:current.stage==='pricing'||current.stage==='legal'||current.stage==='notfound'||current.stage==='stories'||current.stage==='billing'?undefined:current.stage,mode:current.mode};}
  const saver=useRef<ReturnType<typeof createStorySaver>|null>(null);
  if(account.user&&!saver.current)saver.current=createStorySaver({save:(next,identity,derivative)=>accountRequest({action:'save',id:identity?.id,revision:identity?.revision,story:next,derivative}),changeSharing:(action,identity)=>accountRequest({action,id:identity.id,revision:identity.revision}),remove:async id=>{await accountRequest({action:'delete',id});},onSaved:identity=>{draftState.current.saved=identity;setSaved(identity);},onStatus:(status,problem,code)=>{setCloudStatus(status);setCloudErrorCode(code);setCloudError(problem||'');}});
  async function saveCurrent(){persistDraft();if(!saver.current)return null;saver.current.update(currentDraft().story);return saver.current.flush();}
@@ -246,6 +252,9 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // finished response can never patch the newly loaded story.
  requestId.current++;autoArtTried.current=false;if(saver.current)await saver.current.switchTo(next,identity,!!identity);setStory(next);setInput(next.draft||'');setSaved(identity);setReadyToWrite(false);setSearched(false);setResumedDraft(false);navigate(next.paper?'paper':'tell');}finally{setSwitching(false);}}
  async function deleteStory(id:string){requestId.current++;autoArtTried.current=false;const wasCurrent=await saver.current?.remove(id);if(wasCurrent){const next={...initialStory,name:story.name,language:story.language,occasion:story.occasion};saver.current?.replace(next,null);setStory(next);setInput('');setSaved(null);setStage('home');}}
+ // Deleting from the /stories list refetches the rows so the card disappears
+ // without leaving the page (the modal path refreshed the same way).
+ async function deleteListedStory(id:string){await deleteStory(id);setRowsVersion(v=>v+1);}
  // One tap between editions loads the other saved row directly — never a
  // re-translation. loadStory saves the current draft first via switchTo.
  async function openEdition(row:StoryListRow){
@@ -295,9 +304,9 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // the current story. A read failure degrades to no switcher, like the boot
  // services fetch; a new translated copy bumps rowsVersion to refetch.
  useEffect(()=>{
-  if(!account.user||!account.supabase){setStoryRows([]);return;}
+  if(!account.user||!account.supabase){setStoryRows([]);setRowsLoaded(false);return;}
   let active=true;
-  accountRequest().then(data=>{if(active)setStoryRows(parseStoryRows(data.stories));}).catch(()=>{});
+  accountRequest().then(data=>{if(active){setStoryRows(parseStoryRows(data.stories));setRowsLoaded(true);}}).catch(()=>{if(active)setRowsLoaded(true);});
   return()=>{active=false;};
  },[account.user?.id,account.supabase,rowsVersion]);
  useEffect(() => {persistDraft();}, [story,input,saved,stage,mode,ready,storageKey]);
@@ -324,6 +333,11 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
    if(pending)setCheckoutPackSize(pending.plan==='pack30'?billing.pack30Credits:pending.plan==='pack100'?billing.pack100Credits:null);
    if(pending)clearPendingPurchase(localStorage);
    setCheckoutNotice('confirmed');
+   // Founder UX round: when the stored intent says a purchase was just made,
+   // land the confirmation on /billing — plan, credits and Get-more options
+   // are all there now. Without the intent (no returnTo came from a page),
+   // the confirmation stays wherever the returnTo put the visitor.
+   if(pending)navigate('billing');
   }).catch(()=>setCheckoutNotice('pending'));
  },[]);
  useEffect(()=>{if(!ready||!saver.current)return;saver.current.update({...story,draft:input});const timer=setTimeout(()=>{void saver.current?.flush().catch(()=>{});},700);return()=>clearTimeout(timer);},[story,input,ready]);
@@ -377,12 +391,20 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // popstate keeps the stage honest when the user travels browser history.
  const stageBeforePricing=useRef<Stage>("home");
  useEffect(()=>{
-  const onPop=()=>{const page=legalPageFromPath(location.pathname);if(page){setLegalPage(page);setStage("legal");window.scrollTo({top:0,behavior:"smooth"});}else if(location.pathname==="/pricing"){setLegalPage(undefined);setStage("pricing");window.scrollTo({top:0,behavior:"smooth"});}else if(!isKnownAppPath(location.pathname)){setLegalPage(undefined);setStage("notfound");window.scrollTo({top:0,behavior:"smooth"});}else{setLegalPage(undefined);setStage(s=>s==="pricing"||s==="legal"?stageBeforePricing.current:s);}};
+  const onPop=()=>{const page=legalPageFromPath(location.pathname);if(page){setLegalPage(page);setStage("legal");window.scrollTo({top:0,behavior:"smooth"});}else if(location.pathname==="/pricing"||location.pathname==="/stories"||location.pathname==="/billing"){setLegalPage(undefined);setStage(location.pathname.slice(1) as Stage);window.scrollTo({top:0,behavior:"smooth"});}else if(!isKnownAppPath(location.pathname)){setLegalPage(undefined);setStage("notfound");window.scrollTo({top:0,behavior:"smooth"});}else{setLegalPage(undefined);setStage(s=>s==="pricing"||s==="legal"||s==="stories"||s==="billing"?stageBeforePricing.current:s);}};
   window.addEventListener("popstate",onPop);
   return()=>window.removeEventListener("popstate",onPop);
  },[]);
- function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); if(next==="pricing"){stageBeforePricing.current=stage==="pricing"?stageBeforePricing.current:stage;history.pushState(null,"","/pricing");}else if(location.pathname!=="/"){history.pushState(null,"","/");} setLegalPage(undefined); setStage(next); setError(""); setReplyError(''); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
+ // The URL pages (/pricing, /stories, /billing) are transient URL views, not
+ // story stages: entering from a story stage remembers where to return, and
+ // leaving for a story stage lands on '/' the same way.
+ const PAGE_PATH={pricing:"/pricing",stories:"/stories",billing:"/billing"} as const;
+ function navigate(next: Stage) { voice.current?.cancel(); if (next !== "tell") setVoicePaused(true); const page=PAGE_PATH[next as keyof typeof PAGE_PATH];if(page){stageBeforePricing.current=next in PAGE_PATH&&stage in PAGE_PATH?stageBeforePricing.current:stage;history.pushState(null,"",page);}else if(location.pathname!=="/"){history.pushState(null,"","/");} setLegalPage(undefined); setStage(next); setError(""); setReplyError(''); setEditing(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
  function openPricing(){setShowAccount(false);navigate("pricing");}
+ function openStories(){setShowAccount(false);setAccountPlanFirst(false);navigate("stories");}
+ // Plan and billing is its own page now (founder round); the account modal
+ // stays for sign-in and the story-time account surfaces.
+ function openBilling(){setShowAccount(false);setAccountContext('account');navigate("billing");}
  // The legal pages are real URLs (like /pricing): a history entry so the
  // browser back button returns to the stage the visit came from, and direct
  // visits boot straight into the page (initial state above).
@@ -746,10 +768,10 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
  // original row when viewing a copy, translations pointing at the current one.
  const editions=editionTargets({id:saved?.id,originStoryId:story.originStoryId},storyRows);
  return <div className="app-shell">
-  <header className="site-header no-print"><button className="brand" disabled={interactionBusy || correcting} onClick={() => void flushThenNavigate("home")} aria-label="Once &amp; Ours home"><span className="brand-mark"><Asterisk size={30}/></span><span className="brand-name">Once &amp; Ours</span></button><LanguagePicker language={story.language} disabled={interactionBusy||correcting} onChange={language=>{voice.current?.cancel(); setVoicePaused(true); cancelResearch();patch(storyForLanguage(story,language));}}/><div className="header-right"><button className="text-button" disabled={interactionBusy||correcting||account.sampleOnly} onClick={()=>void startFresh()}><Plus size={16}/>{sc.newStory}</button>{account.user?<HeaderAccount language={story.language} signedIn onAccount={()=>{setAccountPlanFirst(false);void openAccount();}} onPlanAndBilling={()=>{setAccountContext('account');setAccountPlanFirst(true);void openAccount();}} onSignOut={()=>setMenuSignOut(true)}/>:<>{account.supabase&&<HeaderAccount language={story.language} signedIn={false} onSignIn={()=>{setAccountContext('account');void openAccount();}} onAccount={()=>{}} onPlanAndBilling={()=>{}} onSignOut={()=>{}}/>}<button className="text-button account-nav" disabled={interactionBusy || correcting || account.sampleOnly} onClick={()=>void openAccount()}>{sharingCopy[story.language].account}</button></>}</div></header>
+  <header className="site-header no-print"><button className="brand" disabled={interactionBusy || correcting} onClick={() => void flushThenNavigate("home")} aria-label="Once &amp; Ours home"><span className="brand-mark"><Asterisk size={30}/></span><span className="brand-name">Once &amp; Ours</span></button><LanguagePicker language={story.language} disabled={interactionBusy||correcting} onChange={language=>{voice.current?.cancel(); setVoicePaused(true); cancelResearch();patch(storyForLanguage(story,language));}}/><div className="header-right"><HeaderNav language={story.language} signedIn={!!account.user} supabase={!!account.supabase} sampleOnly={!!account.sampleOnly} disabled={interactionBusy||correcting} email={account.user?.email||undefined} onNewStory={()=>void startFresh()} onMyStories={()=>{if(account.user)void openStories();else void openAccount();}} onSignIn={account.supabase?()=>{setAccountContext('account');void openAccount();}:undefined} onPlanAndBilling={()=>void openBilling()} onSignOut={()=>setMenuSignOut(true)}/></div></header>
   {account.sampleOnly&&<div className="message no-print" role="status">{{en:"This preview is in sample mode. Explore the formats below; creating and saving stories isn’t connected yet.",zh:"此预览目前为示例模式。你可以浏览作品格式；创建和保存故事功能尚未连接。",es:"Esta vista previa está en modo de ejemplo. Explora los formatos; crear y guardar historias aún no está conectado."}[story.language]}<button onClick={()=>setShowSample(true)}>{c.sample}</button></div>}
-  {(stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound") && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => void flushThenNavigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
-  {story.sample && stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound" && <div className="sample-banner no-print"><Sparkles size={14}/> {f.sampleBanner} <button disabled={interactionBusy || correcting} onClick={()=>begin()}>{d.tryOwn}</button></div>}
+  {(stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound" && stage !== "stories" && stage !== "billing") && <nav className="steps no-print" aria-label="Story progress">{(["tell", "discover", "paper"] as const).map((s,i) => <button key={s} className={stage === s ? "step active" : "step"} disabled={interactionBusy || correcting || (s !== "tell" && !words.length) || (s === "paper" && !story.paper)} onClick={() => void flushThenNavigate(s)}><span>{i+1}</span>{c[s]}</button>)}</nav>}
+  {story.sample && stage !== "home" && stage !== "pricing" && stage !== "legal" && stage !== "notfound" && stage !== "stories" && stage !== "billing" && <div className="sample-banner no-print"><Sparkles size={14}/> {f.sampleBanner} <button disabled={interactionBusy || correcting} onClick={()=>begin()}>{d.tryOwn}</button></div>}
   {error && <div className="message error no-print" role="alert">{error}<button onClick={() => setError("")} aria-label="Dismiss message"><X size={18}/></button></div>}
   {saveError && <div className="message error no-print" role="alert">{v.saveError}</div>}
   {account.user&&hasStoryContent(story)&&cloudStatus==='error'&&<div className="message error no-print" role="alert">{sc.error}<span>{saveErrorText}</span><button onClick={()=>void saveCurrent().catch(()=>{})}>{sc.retry}</button></div>}
@@ -777,6 +799,15 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
     <div className="notfound-actions"><button className="primary" onClick={()=>void startFresh()}><Plus size={16}/>{notFoundCopy[story.language].newStory}</button><a className="text-button" href="/" onClick={e=>{e.preventDefault();navigate("home");}}>{notFoundCopy[story.language].backHome}</a></div>
    </section>
   </main>}
+  {/* Founder UX round: the account pages are real routes. Signed in, they
+    render; signed out, the guard keeps the visitor on the same route and the
+    sign-in returnTo brings them back here. */}
+  {stage === "stories" && (account.user
+   ?<StoriesPage language={story.language} rows={storyRows} loaded={rowsLoaded} billing={account.billing} userId={account.user.id} onStartNew={()=>void startFresh()} onOpenRow={row=>void openEdition(row)} onDeleteRow={row=>void deleteListedStory(row.id)} onLoadDraft={next=>void loadStory(next)} onOpenBilling={()=>void openBilling()}/>
+   :<PageSignIn language={story.language} context="story" returnTo={pageReturnTo(location.origin,location.pathname)} onPrepareSignIn={prepareSignIn}/>)}
+  {stage === "billing" && (account.user
+   ?<BillingPage billing={account.billing} pricing={account.pricing} language={story.language} email={account.user.email} returnTo={pageReturnTo(location.origin,location.pathname)} onSignOut={()=>setMenuSignOut(true)} onOpenLegal={openLegal} onPrepareSignIn={prepareSignIn}/>
+   :<PageSignIn language={story.language} context="account" returnTo={pageReturnTo(location.origin,location.pathname)} onPrepareSignIn={prepareSignIn}/>)}
   {showSample&&<SamplePreview language={story.language} onClose={()=>setShowSample(false)}><FormatPicker story={{...createSampleStory(story.language),presentation:{version:1,format:sampleFormat}}} onChange={setSampleFormat}/><KeepsakeView story={{...createSampleStory(story.language),paper:sample.paper,sources:[{...sample.source,selected:true}],presentation:{version:1,format:sampleFormat}}}/></SamplePreview>}
   {stage === "tell" && <main className={`workspace interview-${mode}`}><section className="conversation">
    {modePicker()}
@@ -843,4 +874,5 @@ export default function App(){
  const token=parseInviteToken(location.pathname);
  return token?<InviteGuest token={token}/>:<StoryApp/>;
 }
+
 

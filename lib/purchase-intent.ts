@@ -33,8 +33,10 @@ export function readPendingPurchase(storage:Storage,now:number):PendingPurchase|
 export function clearPendingPurchase(storage:Storage):void{
  try{storage.removeItem(PENDING_PURCHASE_KEY);}catch{/* as above — a hint, not a record */}
 }
-// The Google redirect comes back to /pricing (the invite page's returnTo
-// precedent), where the sheet reopens with the plan remembered.
-export function pricingReturnTo(origin:string):string{
- return `${origin}/pricing`;
+// The Google redirect comes back to the page the buyer (or visitor) started
+// from — the /pricing precedent generalized (founder UX round): the sign-in
+// entries on /stories and /billing pass their own path so the round trip
+// lands on the same page, and /pricing keeps reopening the sheet.
+export function pageReturnTo(origin:string,path:string):string{
+ return `${origin}${path}`;
 }
