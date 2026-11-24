@@ -15,6 +15,12 @@ try{
   const config=JSON.parse(await fs.readFile('vercel.json','utf8'));
   assert.equal(config.outputDirectory,'dist-public');
   assert.match(await fs.readFile('dist-public/index.html','utf8'),/id="root"/);
+  // The unmatched-path shell must boot the same client so Vercel's 404
+  // renders the branded localized not-found stage, and must be noindex.
+  const notFoundShell=await fs.readFile('dist-public/404.html','utf8');
+  assert.match(notFoundShell,/id="root"/);
+  assert.match(notFoundShell,/name="robots" content="noindex"/);
+  assert.match(notFoundShell,/src="\/app\.js"/);
   assert.ok((await fs.stat('dist-public/app.js')).size>10000);
   for(const key of ['memories','together','journey'])assert.deepEqual(await fs.readFile('dist-public/artwork/'+key+'.jpg'),await fs.readFile('public/artwork/'+key+'.jpg'));
   assert.equal((await serveVercel(request('/api/story',{action:'interview'}),'/api/story',{})).status,503);
