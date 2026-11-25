@@ -2,6 +2,8 @@ import {z} from 'zod';
 import {db,identity,sameOrigin,billingConfigured,billingStatus,supabase,json,packCreditsForPrice,type Bindings} from './storage';
 import {ServiceError} from '../lib/providers';
 import {legalCopy} from '../lib/legal-copy';
+import {cleanAttribution,ATTRIBUTION_KEYS,type Attribution} from '../lib/growth';
+import {reportGrowthEvent} from './growth';
 
 // Paywall §3 — the money path: checkout sessions, the webhook-lag status
 // rescue, and signature-verified idempotent webhooks. Everything here stays
@@ -31,7 +33,7 @@ async function applyEntitlement(env:Bindings,ownerId:string,write:EntitlementWri
 // a payment/subscription-plan combination has no price and must never reach
 // Stripe, so the legacy client shape (mode:'payment',plan:'monthly') is
 // refused here rather than mispriced later.
-const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual','pack30','pack100']).default('monthly'),language:z.enum(['en','zh','es']).default('en')}).superRefine((input,ctx)=>{
+const checkoutInput=z.object({action:z.literal('checkout'),mode:z.enum(['subscription','payment']),plan:z.enum(['monthly','annual','pack30','pack100']).default('monthly'),language:z.enum(['en','zh','es']).default('en'),attribution:z.unknown().optional().transform(cleanAttribution)}).superRefine((input,ctx)=>{
  if(input.mode==='payment'?(input.plan!=='pack30'&&input.plan!=='pack100'):(input.plan!=='monthly'&&input.plan!=='annual'))ctx.addIssue({code:z.ZodIssueCode.custom,message:`${input.mode} checkout does not carry plan ${input.plan}`});
 });
 const statusInput=z.object({action:z.literal('status'),sessionId:z.string().trim().min(1).max(200)});
@@ -44,7 +46,7 @@ function priceFor(env:Bindings,mode:'subscription'|'payment',plan:'monthly'|'ann
  return price.trim();
 }
 
-async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100',language:'en'|'zh'|'es',origin:string){
+async function createCheckoutSession(env:Bindings,userId:string,email:string,mode:'subscription'|'payment',plan:'monthly'|'annual'|'pack30'|'pack100',language:'en'|'zh'|'es',origin:string,attribution:Attribution={}){
  // Stripe accepts form-encoded parameters; no stripe-node SDK — the worker
  // bundle targets platform:'browser'. allow_promotion_codes lets the
  // operator's Stripe-side promotion codes (e.g. friends-and-family) apply at
@@ -59,6 +61,15 @@ async function createCheckoutSession(env:Bindings,userId:string,email:string,mod
  // buyer's app language (en/zh/es).
  const form=new URLSearchParams({mode,'line_items[0][price]':priceFor(env,mode,plan),'line_items[0][quantity]':'1',allow_promotion_codes:'true',success_url:`${origin}/?billing_checkout={CHECKOUT_SESSION_ID}`,cancel_url:origin+'/',client_reference_id:userId,'metadata[userId]':userId,'consent_collection[terms_of_service]':'required','custom_text[terms_of_service_acceptance][message]':legalCopy[language].checkoutConsentLabel,locale:language});
  if(email)form.set('customer_email',email);
+ // Growth engine attribution (docs/GROWTH-ENGINE.md): the landing's UTMs,
+ // already cleaned to known keys, ride the session's metadata so the verified
+ // webhook can attribute the purchase — and the subscription's, for renewals.
+ for(const key of ATTRIBUTION_KEYS){
+  const value=attribution[key];
+  if(!value)continue;
+  form.set(`metadata[${key}]`,value);
+  if(mode==='subscription')form.set(`subscription_data[metadata][${key}]`,value);
+ }
  const response=await fetch(`${STRIPE_API}/v1/checkout/sessions`,{method:'POST',headers:{Authorization:`Bearer ${env.STRIPE_SECRET_KEY!}`,'Content-Type':'application/x-www-form-urlencoded'},body:form.toString(),signal:AbortSignal.timeout(15000)});
  const session=await response.json().catch(()=>null) as {url?:string}|null;
  if(!response.ok||!session?.url)throw new ServiceError('Payment could not be started. Please try again shortly.',502);
@@ -178,7 +189,7 @@ export async function billingApi(request:Request,env:Bindings){
    if(input.action!=='status')throw new ServiceError('Online payment is not connected yet. Your stories remain fully available.',503);
    return json({billing:await billingStatus(env,user.id)});
   }
-  if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,input.language,new URL(request.url).origin)});
+  if(input.action==='checkout')return json({url:await createCheckoutSession(env,user.id,user.email,input.mode,input.plan,input.language,new URL(request.url).origin,input.attribution)});
   if(input.action==='portal'){
    // Fail closed: without the app-written customer id there is nothing to
    // manage — a clean refusal, never a Stripe call with a guessed customer.
@@ -245,7 +256,7 @@ export async function verifyStripeSignature(raw:string,header:string|null,secret
  if(!provided.some(signature=>/^[0-9a-f]{64}$/i.test(signature)&&timingSafeEqual(signature.toLowerCase(),expected)))throw new ServiceError('The webhook signature could not be verified. Nothing was processed.',400,'webhook_invalid');
 }
 
-const webhookEvent=z.object({id:z.string().min(1).max(500),type:z.string().min(1).max(200),data:z.object({object:z.record(z.unknown())})});
+const webhookEvent=z.object({id:z.string().min(1).max(500),type:z.string().min(1).max(200),created:z.number().optional(),data:z.object({object:z.record(z.unknown())})});
 const checkoutSessionObject=z.object({id:z.string(),mode:z.enum(['subscription','payment']),payment_status:z.string(),customer:z.string().nullable().optional(),customer_details:z.object({email:z.string().nullable().optional()}).nullable().optional(),metadata:z.record(z.string()).nullable().optional(),consent:z.unknown().nullable().optional(),subscription:z.string().nullable().optional()});
 const subscriptionObject=z.object({status:z.string(),current_period_end:z.number().optional(),customer:z.string().nullable().optional(),metadata:z.record(z.string()).nullable().optional(),items:z.object({data:z.array(z.object({current_period_end:z.number().optional()}))}).nullable().optional()});
 const invoiceObject=z.object({subscription:z.string().nullable().optional(),customer:z.string().nullable().optional(),customer_email:z.string().nullable().optional(),lines:z.object({data:z.array(z.object({period:z.object({end:z.number().optional()}).optional(),current_period:z.object({end:z.number().optional()}).optional()}))}).nullable().optional()});
@@ -361,6 +372,7 @@ export async function stripeWebhook(request:Request,env:Bindings){
    throw error;
   }
   if(!Array.isArray(claimed)||!claimed.length)return json({received:true,duplicate:true});
+  let growthOwner:string|null=null;
   try{
    const owner=await resolveEventOwner(env,event.data.object);
    // An owner that cannot be resolved is final (transient lookups throw
@@ -388,6 +400,7 @@ export async function stripeWebhook(request:Request,env:Bindings){
     await recordTosAgreement(env,owner,effect.sessionId);
     await applyPackGrantForSession(env,owner,effect.sessionId);
    }
+   growthOwner=owner;
   }catch(error){
    // A swallowed 500 on the money path is an invisible bug: log the failure
    // (session id only — no owner ids or emails), then release the claim so
@@ -399,6 +412,10 @@ export async function stripeWebhook(request:Request,env:Bindings){
    catch{/* claim release failed; the primary error below still returns 5xx */}
    throw error;
   }
+  // Growth engine (docs/GROWTH-ENGINE.md): only after the verified effect has
+  // landed, and only when the engine env is set. It never throws and waits a
+  // bounded few seconds at most, so it cannot fail or stall this webhook.
+  if(growthOwner&&(effect.kind==='entitlement'||effect.kind==='pack'))await reportGrowthEvent(env,{id:event.id,type:event.type,created:event.created,object:event.data.object},effect.kind,growthOwner);
   return json({received:true});
  }catch(error){
   if(error instanceof ServiceError)return json({error:error.message,code:error.code},error.status);

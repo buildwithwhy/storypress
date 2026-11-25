@@ -1,5 +1,6 @@
 import {createClient,type SupabaseClient} from '@supabase/supabase-js';
 import type {BillingStatus,Pricing} from './billing';
+import {isFreshSignup,trackGrowth} from './growth';
 export type Account={id:string;email?:string};
 // pricing: the server's Stripe-cached price payload (wave 8 §3) — null while
 // dormant or when Stripe is unreachable with no cache; the pricing page hides
@@ -12,6 +13,10 @@ export async function setupAccount(onUser:(user:Account|null,config?:AccountConf
  if(config.supabase){
   client=createClient(config.supabase.url,config.supabase.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
   const {data}=await client.auth.getSession();config.user=data.session?.user||null;
+  // Growth engine signup step: an account's first sign-in, whether it lands
+  // here (Google or an email link reloads the page) or in the listener below
+  // (email code, in page). Sends only the step name — never the user.
+  if(isFreshSignup(data.session?.user,Date.now()))trackGrowth('signup');
   // The boot fetch above is necessarily anonymous — the Supabase client does
   // not exist yet when the app needs its config — so the server answered it
   // with the signed-out free-tier defaults (todo_dotc5MdR: a restored session
@@ -26,6 +31,7 @@ export async function setupAccount(onUser:(user:Account|null,config?:AccountConf
   const {data:subscription}=client.auth.onAuthStateChange((event,session)=>{
    const user=session?{id:session.user.id,email:session.user.email||''}:null;
    onUser(user);
+   if(event==='SIGNED_IN'&&isFreshSignup(session?.user,Date.now()))trackGrowth('signup');
    if(event==='SIGNED_IN'&&user)void signedInAccountConfig(user).then(next=>{if(next)onUser(user,next);});
   });
   return {config,dispose:()=>subscription.subscription.unsubscribe()};

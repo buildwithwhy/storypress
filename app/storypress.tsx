@@ -26,6 +26,7 @@ import { createVoiceSession, type VoicePhase } from "../lib/voice-session";
 import { interviewCopy } from "../lib/interview-copy";
 
 import {setupAccount,accountHeaders,accountRequest,signOut,type AccountConfig} from "../lib/account-client";
+import {configureGrowth,trackGrowth} from "../lib/growth";
 import {Sharing} from "./sharing";
 import {HeaderAccount} from "./header-account";
 import {PricingPanel} from "./pricing";
@@ -275,7 +276,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
    setDraftOffer(loaded.offer??null);
    applyLoadedDraft(loaded,!!account.user);
   }catch{setSaveError(true);}
-  setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);setMode(bootInputMode(restoredMode.current,data.liveVoice));}).catch(()=>{});
+  setReady(true);void accountHeaders().then(headers=>fetch('/api/story',{headers})).then(r=>r.json()).then(data=>{setServices(data);setMode(bootInputMode(restoredMode.current,data.liveVoice));configureGrowth(data.growth?.sdkUrl);}).catch(()=>configureGrowth(null));
  }, []);
  // A resumed session returns the narrator to their typing spot: focus the
  // editor and bring it into view once it renders. Runs once per resume —
@@ -563,7 +564,7 @@ function Storypress({account,flushDraft,patchBilling}:{account:AccountConfig;flu
   const next:Story=input.trim()?{...story,turns:[...story.turns,{role:'user',text:input.trim()}],draft:'',approved:false}:story;
   if(next.turns.length>60){setError(v.maxTurns);return;}
   voice.current?.cancel();setStory(next);setInput('');setBusy(d.makeProgress.title);setError('');if(!next.sample)setMakePhase('writing');
-  try{const paper=next.sample?{...sample.paper,paragraphs:[...sample.paper.paragraphs,...originalWords(next).slice(1)]}:(await callApi('write',next)).paper;patch({paper,paperLanguage:next.language,translation:undefined,approved:true});navigate('paper');if(!next.sample)setMakePhase('layingOut');}
+  try{const paper=next.sample?{...sample.paper,paragraphs:[...sample.paper.paragraphs,...originalWords(next).slice(1)]}:(await callApi('write',next)).paper;patch({paper,paperLanguage:next.language,translation:undefined,approved:true});navigate('paper');if(!next.sample)setMakePhase('layingOut');if(!next.sample)trackGrowth('story_completed');}
   catch(e){setError(problemText(e));setMakePhase(null);}finally{setBusy('');}
  }
 

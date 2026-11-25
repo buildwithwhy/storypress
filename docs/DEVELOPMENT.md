@@ -50,6 +50,8 @@ Device drafts use browser storage. Signed-in drafts and completed newspapers sav
 
 Website access and story sharing are separate settings. Keep `STORYPRESS_PUBLIC_SHARING=false` until the deployment is ready for anonymous recipients. An unlisted link exposes an approved edition snapshot, not private interview notes or unfinished text. Owners can revoke links. AI allowances do not constitute payment collection; payment stays dormant until the Stripe environment keys are configured (see [Vercel setup](VERCEL-SETUP.md)).
 
+Funnel reporting to the growth engine is also dormant until its environment variables are set; see [Growth engine events](GROWTH-ENGINE.md).
+
 ## Editorial and media behavior
 
 Canonical interview and writing instructions live in `skills/` and are loaded by `lib/editorial.ts`. See [Editorial skills](EDITORIAL-SKILLS.md) for their sources and evaluation notes. The application explicitly selects each step; this is not an autonomous agent loop.
@@ -69,6 +71,7 @@ node scripts/check-sharing.mjs
 node scripts/check-social-share.mjs
 node scripts/check-draft-handoff.mjs
 node scripts/check-model-routing.mjs
+node scripts/check-growth.mjs
 ```
 
 Mocked provider and browser checks establish request handling and state behavior; they do not prove live provider access, email delivery, or physical-device microphone compatibility. Test those separately in the intended deployment. Use fictional stories for fixtures and remove temporary accounts and data afterward.
