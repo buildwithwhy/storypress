@@ -13,6 +13,7 @@ import {storyFocus} from '../lib/story-modes';
 import {interviewBehavior,interviewContext} from '../lib/interview-behavior';
 import {interviewResult} from '../lib/interview-result';
 import {streamInterview} from './interview-stream';
+import {growthClientConfig} from './growth';
 import type { AiCallReport } from '../lib/call-log';
 
 // Server-Timing span details for AI calls: the tokens the provider actually
@@ -54,7 +55,7 @@ export async function handleApi(request: Request, env: Bindings) {
     if(request.method === "GET"){
       const providers: TextProvider = createProviders(envRecord);
       const {setting,backend,modelConfigured,modelFor}=providers;
-      return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)},languageRouting:languageRoutesSchema.parse(languageRoutes(envRecord)),video:videoFlagSchema.parse(videoFlag(envRecord)),billing:billingFlagSchema.parse({configured:billingConfigured(envRecord)}),socialCredit:socialCreditSchema.parse(socialCredit(envRecord,new URL(request.url).origin))},{headers:{"Cache-Control":"no-store"}});
+      return Response.json({liveVoice:await liveAccess(request,env),gemini:modelConfigured(),nimble:!!setting("NIMBLE_API_KEY"),geminiBackend:backend(),models:{interview:modelFor('interview'),write:modelFor('write'),photo:modelFor('photo'),transcribe:modelFor('transcribe'),research:modelFor('research'),image:imageModel(env)},languageRouting:languageRoutesSchema.parse(languageRoutes(envRecord)),video:videoFlagSchema.parse(videoFlag(envRecord)),billing:billingFlagSchema.parse({configured:billingConfigured(envRecord)}),socialCredit:socialCreditSchema.parse(socialCredit(envRecord,new URL(request.url).origin)),...growthClientConfig(envRecord)},{headers:{"Cache-Control":"no-store"}});
     }
     const userId = await span("identity", () => owner(request,env));
     const origin = request.headers.get("origin");

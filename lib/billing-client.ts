@@ -1,5 +1,6 @@
 import {billingStatusSchema,type BillingStatus} from './billing';
 import {accountHeaders} from './account-client';
+import {checkoutAttribution,trackGrowth} from './growth';
 
 // Wave 8: the two subscriptions plus the two one-time story packs. 'lifetime'
 // is gone from the checkout surface entirely (its archived Stripe product stays
@@ -33,7 +34,13 @@ export function checkoutReturnId(search:string):string|undefined{
 // and its ToS consent text in that language (consent_collection, founder
 // order Nov 22).
 export async function startCheckout(plan:CheckoutPlan,language:'en'|'zh'|'es'):Promise<string>{
- return (await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan,language})).url;
+ // Growth engine (docs/GROWTH-ENGINE.md): the landing's UTMs ride along only
+ // when the engine is configured, and checkout_opened fires once Stripe has
+ // minted the session — never a money event, which only the webhook sends.
+ const attribution=checkoutAttribution();
+ const url=(await billingRequest<{url:string}>({action:'checkout',mode:plan==='monthly'||plan==='annual'?'subscription':'payment',plan,language,...(attribution?{attribution}:{})})).url;
+ trackGrowth('checkout_opened');
+ return url;
 }
 
 // Opens the Stripe customer portal (cancel at period end, update card,
